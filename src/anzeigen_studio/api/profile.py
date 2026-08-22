@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
+from anzeigen_studio.core import zugang as zugang_dienst
+from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.core.settings import Settings
 
 if TYPE_CHECKING:
@@ -95,3 +97,65 @@ MitDaten = Annotated[bool, Query(description = "Anzeigenbestand mitlöschen")]
 @router.delete("/{slug}", status_code = 204)
 def loeschen(slug: str, conn: Verbindung, cfg: Konfiguration, *, mit_daten: MitDaten = False) -> None:
     profile_dienst.loeschen(conn, cfg.profiles_dir, slug, mit_daten = mit_daten)
+
+
+# --- Zugangsdaten (AP-1.4) --------------------------------------------------
+
+
+class ZugangAusgabe(BaseModel):
+    """Was die Oberfläche sehen darf.
+
+    Enthält bewusst kein Passwort und auch keine Längenangabe - nur die
+    Tatsache, ob eines hinterlegt ist.
+    """
+
+    benutzername: str
+    passwort_hinterlegt: bool
+    geaendert_am: str
+
+
+class ZugangEingabe(BaseModel):
+    benutzername: str = Field(min_length = 1, max_length = 200)
+    #: None lässt ein vorhandenes Passwort unverändert - so kann der
+    #: Benutzername korrigiert werden, ohne das Passwort erneut einzugeben.
+    passwort: str | None = Field(default = None, min_length = 1, max_length = 400)
+
+
+def _profil_id(conn: sqlite3.Connection, slug: str) -> int:
+    p = profile_dienst.nach_slug(conn, slug)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404)
+    return p.id
+
+
+@router.get("/{slug}/zugang", response_model = ZugangAusgabe | None)
+def zugang_lesen(slug: str, conn: Verbindung) -> ZugangAusgabe | None:
+    st = zugang_dienst.status(conn, _profil_id(conn, slug))
+    if st is None:
+        return None
+    return ZugangAusgabe(
+        benutzername = st.benutzername,
+        passwort_hinterlegt = st.passwort_hinterlegt,
+        geaendert_am = st.geaendert_am,
+    )
+
+
+@router.put("/{slug}/zugang", response_model = ZugangAusgabe)
+def zugang_setzen(slug: str, daten: ZugangEingabe, conn: Verbindung, cfg: Konfiguration) -> ZugangAusgabe:
+    st = zugang_dienst.setzen(
+        conn,
+        _profil_id(conn, slug),
+        benutzername = daten.benutzername,
+        passwort = daten.passwort,
+        schluessel = cfg.secret_key,
+    )
+    return ZugangAusgabe(
+        benutzername = st.benutzername,
+        passwort_hinterlegt = st.passwort_hinterlegt,
+        geaendert_am = st.geaendert_am,
+    )
+
+
+@router.delete("/{slug}/zugang", status_code = 204)
+def zugang_entfernen(slug: str, conn: Verbindung) -> None:
+    zugang_dienst.entfernen(conn, _profil_id(conn, slug))

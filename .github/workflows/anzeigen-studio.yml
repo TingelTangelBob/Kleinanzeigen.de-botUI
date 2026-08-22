@@ -67,7 +67,7 @@ jobs:
         run: |
           python -m pip install --quiet --upgrade pip
           # ruff und mypy in den Versionen, die auch der Upstream benutzt.
-          python -m pip install --quiet ruff mypy pytest pytest-cov
+          python -m pip install --quiet ruff mypy pytest pytest-cov pytest-asyncio
           # Backend-Abhängigkeiten, damit mypy die FastAPI-Typen sieht.
           # Ohne sie meldet mypy "Untyped decorator" bei jedem Endpunkt.
           python -m pip install --quiet -r docker/anzeigen-studio/requirements.txt

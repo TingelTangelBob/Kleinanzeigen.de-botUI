@@ -17,9 +17,12 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
+from anzeigen_studio.api import jobs as jobs_api
 from anzeigen_studio.api import profile as profile_api
 from anzeigen_studio.core import db, errors
 from anzeigen_studio.core.settings import Settings
+from anzeigen_studio.jobs import speicher as job_speicher
+from anzeigen_studio.jobs.warteschlange import Warteschlange
 
 LOG = logging.getLogger(__name__)
 
@@ -49,9 +52,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             angewandt = db.migrate(conn)
             if angewandt:
                 LOG.info("%d Migration(en) ausgefuehrt", angewandt)
+            # Jobs, die beim letzten Beenden noch liefen, koennen es nicht mehr
+            # sein - ihr Prozess ist mit dem Backend gestorben. Ehrlich als
+            # abgebrochen melden statt einen Zustand anzuzeigen, den es nicht
+            # mehr gibt.
+            with db.transaction(conn):
+                verwaist = job_speicher.verwaiste_aufraeumen(conn)
+            if verwaist:
+                LOG.warning("%d Lauf/Laeufe als abgebrochen markiert (Neustart)", verwaist)
         finally:
             conn.close()
-        yield
+
+        _app.state.warteschlange = Warteschlange(cfg)
+        try:
+            yield
+        finally:
+            await _app.state.warteschlange.stillegen()
 
     app = FastAPI(
         title = "Anzeigen-Studio",
@@ -63,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     errors.register(app)
     app.include_router(profile_api.router)
+    app.include_router(jobs_api.router)
 
     missing = cfg.missing_for_production()
     if missing:

@@ -31,6 +31,19 @@ WORKDIR /app
 COPY docker/anzeigen-studio/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
+# Laufzeitabhaengigkeiten des Bots. Er wird hier als Unterprozess gestartet -
+# Chromium liegt aber NICHT in diesem Abbild, sondern im eigenen Browser-Dienst
+# (AP-1.1). Der Bot verbindet sich dorthin ueber das Fernsteuerungsprotokoll.
+#
+# requests steht bewusst hier: der Upstream importiert es in update_checker.py
+# zur Laufzeit, deklariert aber nur types-requests. Ohne diese Zeile bricht der
+# Import ab. Ein Pull Request dazu ist vorbereitet (AP-0.10); sobald er drin
+# ist, kann die Zeile weg.
+RUN pip install --no-cache-dir \
+      certifi colorama "jaraco.text" "nodriver==0.50.3" "platformdirs>=2.1.0" \
+      "pydantic>=2.11.0" "ruamel.yaml" psutil wcmatch "sanitize-filename>=1.2.0" \
+      requests rich typer
+
 COPY --chown=studio:studio src/ /app/src/
 COPY --chown=studio:studio schemas/ /app/schemas/
 

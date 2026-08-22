@@ -54,6 +54,40 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        2,
+        "jobs",
+        """
+        CREATE TABLE job (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            profil_id      INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            befehl         TEXT    NOT NULL,
+            argumente      TEXT    NOT NULL DEFAULT '',
+            zustand        TEXT    NOT NULL,
+            eingereicht_am TEXT    NOT NULL,
+            gestartet_am   TEXT,
+            beendet_am     TEXT,
+            rueckgabecode  INTEGER,
+            aufmerksamkeit TEXT    NOT NULL DEFAULT '',
+            eingriff       TEXT,
+            meldung        TEXT
+        );
+
+        -- Die Warteschlange fragt staendig nach dem naechsten wartenden Job
+        -- eines Profils; ohne Index waere das ein voller Tabellendurchlauf.
+        CREATE INDEX idx_job_profil_zustand ON job(profil_id, zustand, id);
+
+        CREATE TABLE job_log (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id    INTEGER NOT NULL REFERENCES job(id) ON DELETE CASCADE,
+            zeitpunkt TEXT    NOT NULL,
+            stufe     TEXT    NOT NULL,
+            text      TEXT    NOT NULL
+        );
+
+        CREATE INDEX idx_job_log_job ON job_log(job_id, id);
+        """,
+    ),
 ]
 
 
@@ -65,7 +99,18 @@ def _now() -> str:
 def connect(database_path: Path) -> sqlite3.Connection:
     """Oeffnet die Datenbank mit den Einstellungen, die wir ueberall brauchen."""
     database_path.parent.mkdir(parents = True, exist_ok = True)
-    conn = sqlite3.connect(database_path, isolation_level = None)
+    # check_same_thread = False ist hier notwendig und sicher:
+    #
+    # NOTWENDIG, weil FastAPI synchrone Abhaengigkeiten im Threadpool ausfuehrt,
+    # asynchrone Endpunkte aber in der Ereignisschleife. Die Verbindung entsteht
+    # damit in einem anderen Thread als sie benutzt wird - SQLite verbietet das
+    # standardmaessig.
+    #
+    # SICHER, weil jede Anfrage ihre EIGENE Verbindung bekommt und sie nicht an
+    # nebenlaeufige Aufgaben weiterreicht. Der Hintergrund-Worker oeffnet
+    # ebenfalls eine eigene. Es gibt also nie zwei Zugriffe gleichzeitig auf
+    # dieselbe Verbindung - nur nacheinander aus verschiedenen Threads.
+    conn = sqlite3.connect(database_path, isolation_level = None, check_same_thread = False)
     conn.row_factory = sqlite3.Row
     # WAL: erlaubt Lesen waehrend geschrieben wird. Bei einer Anwendung mit
     # laufenden Hintergrundjobs und gleichzeitiger Bedienung ist das kein Luxus.

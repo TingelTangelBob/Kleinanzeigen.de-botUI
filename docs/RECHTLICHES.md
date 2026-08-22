@@ -75,6 +75,48 @@ Absätze hier herein und ergänzt Abschnittsnummer und Datum. Bis dahin gilt die
 Was der Upstream selbst sagt, ist dagegen belegt – seine README enthält den Hinweis, die Nutzung
 könne gegen die jeweils geltenden AGB verstoßen und die Verantwortung liege beim Nutzer.
 
+### Darf man das überhaupt veröffentlichen?
+
+Häufigste Sorge, deshalb hier festgehalten. **Stand 2026-08-23, keine Rechtsberatung.**
+
+**Quelltext veröffentlichen und Bot betreiben sind zwei verschiedene Dinge.** Ein Repository
+*benutzt* kleinanzeigen.de nicht; die AGB binden Nutzer der Plattform. Software zu schreiben und
+zu veröffentlichen ist für sich genommen kein AGB-Verstoß. Der Upstream steht seit Jahren
+öffentlich da und verlinkt in seiner README fünf weitere vergleichbare Projekte — ohne sichtbares
+Vorgehen dagegen. Indiz, kein Freibrief.
+
+**Ein AGB-Verstoß ist kein Straftatbestand.** AGB sind Vertragsrecht. Die realistische Folge ist
+die **Sperrung des Kontos**, nicht eine Klage. Für Schadensersatz bräuchte es einen Schaden — der
+ist schwer zu begründen, wenn jemand seine eigenen Anzeigen automatisiert verwaltet.
+
+**Rechtsprechung, soweit recherchiert:**
+
+- BGH „Automobil-Onlinebörse" (I ZR 159/10, 22.06.2011): AGB verboten automatisches Auslesen,
+  technische Sperren fehlten. Ergebnis: **kein Verstoß gegen § 87b UrhG** (Datenbankherstellerrecht).
+- BGH 2014 (Flugsuchmaschinen): Automatisierter Abruf kann wettbewerbsrechtlich zulässig sein;
+  **im AGB-Verstoß allein** sah der BGH **keine wettbewerbswidrige Behinderung**.
+
+§ 87b UrhG schützt gegen Übernahme **wesentlicher Teile** einer Datenbank. Dieses Werkzeug
+verwaltet die eigenen Anzeigen des Nutzers und liest den Anzeigenbestand der Plattform nicht aus —
+ein erheblicher Unterschied.
+
+**Was das Risiko deutlich erhöht** — und in diesem Projekt jeweils ausgeschlossen ist:
+
+| Risikofaktor | Stand hier |
+|---|---|
+| Als Dienst für Dritte anbieten (SaaS) | ausgeschlossen, Entscheidung des Projektinhabers 2026-08-23 |
+| Fremde Anzeigen massenhaft auslesen | ausgeschlossen, siehe Produktentscheidung 4 unten |
+| **Captchas oder Bot-Erkennung umgehen** | ausgeschlossen, siehe Abschnitt 3 |
+| Marke, Logo oder Wortmarke verwenden | ausgeschlossen, siehe Abschnitt 6 |
+
+Der Captcha-Punkt wiegt am schwersten: Eine technische Zugangssicherung zu überwinden verlässt das
+reine Vertragsrecht und kommt in die Nähe von § 202a StGB. Diese Linie ist billig einzuhalten und
+der einzige Punkt, an dem es ernsthaft unangenehm werden könnte.
+
+**Was bleibt:** Das Konto kann gesperrt werden. Das ist das reale Risiko und eine bewusste
+Entscheidung des Betreibers. Bei ernsthaften Bedenken ist eine Beratung durch einen Fachanwalt für
+IT-Recht der richtige Weg — dieses Dokument ersetzt sie nicht.
+
 ### Produktentscheidungen daraus
 
 1. **Der Hinweis bleibt sichtbar in der Oberfläche.** Nicht im Kleingedruckten. Eine Oberfläche
@@ -179,6 +221,8 @@ Vollständige Prüfung ist AP-6.1 und noch nicht erfolgt.
 | Lizenz und Abhängigkeiten | **geklärt und belegt** |
 | `robots.txt` | **geprüft, belegt** – sperrt Nachrichten- und Verwaltungspfade |
 | AGB im Wortlaut | **offen** – maschinell nicht abrufbar, vom Projektinhaber nachzutragen |
+| Veröffentlichung des Quelltexts | **eingeordnet** – getrennt vom Betrieb zu bewerten, Rechtsprechung recherchiert |
+| Betrieb als Dienst für Dritte | **ausgeschlossen** – Entscheidung des Projektinhabers 2026-08-23 |
 | Captcha-Haltung | **entschieden** |
 | Umgang mit Nachrichtendaten | **Regeln stehen**, DSGVO-Bewertung bei gewerblicher Nutzung offen |
 | LLM-Datenabfluss | **Regeln stehen** |

@@ -25,10 +25,11 @@ RUN groupadd --gid 10001 studio \
 
 WORKDIR /app
 
-# TODO(AP-1.2): Abhaengigkeiten ueber pdm aus pyproject.toml installieren,
-# sobald die Backend-Pakete tatsaechlich Code enthalten. Bis dahin genuegt der
-# minimale Satz, um das Geruest zu starten und die Kette zu pruefen.
-RUN pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.32"
+# Backend-Abhaengigkeiten aus einer eigenen Datei - nicht aus pyproject.toml.
+# Begruendung steht in requirements.txt: pdm.lock wird upstream automatisiert
+# neu erzeugt, und generierte Dateien sind der teuerste Konflikttyp.
+COPY docker/anzeigen-studio/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
 COPY --chown=studio:studio src/ /app/src/
 COPY --chown=studio:studio schemas/ /app/schemas/

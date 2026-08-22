@@ -51,18 +51,6 @@ dependencies = [
 ]
 
 [dependency-groups] # https://peps.python.org/pep-0735/
-
-# --- Anzeigen-Studio-Fork, hinzugefuegt 2026-08-22 ---------------------------
-# Abhaengigkeiten der Weboberflaeche. Bewusst eine eigene Gruppe: die Liste
-# unter [project].dependencies bleibt unberuehrt, damit `pdm install` fuer den
-# reinen Bot unveraendert funktioniert und der Fork die Bot-Auslieferung nicht
-# aufblaeht. Installation des Backends: `pdm install --group anzeigen-studio`.
-anzeigen-studio = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-]
-# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
-
 dev = [
     "pip-audit",
     "pytest>=8.3.4",

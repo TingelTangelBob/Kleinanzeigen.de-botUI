@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Laufzeitabhaengigkeiten des Backends.
+#
+# Bewusst NICHT in pyproject.toml und pdm.lock: Der Upstream aktualisiert seine
+# Abhaengigkeiten automatisiert (.github/workflows/update-python-deps.yml) und
+# erzeugt pdm.lock dabei neu. Stuenden unsere Pakete dort, gaebe es bei jedem
+# dieser Laeufe einen Merge-Konflikt in einer generierten Datei - der teuerste
+# Konflikttyp ueberhaupt. Die Trennung kostet eine eigene Datei und spart
+# dauerhaft Reibung.
+#
+# Lizenzen dieser Pakete gehoeren nach docs/LIZENZEN.md, sobald sie ueber das
+# Geruest hinaus benutzt werden.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0

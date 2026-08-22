@@ -1,0 +1,141 @@
+# SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Qualitätstor des Anzeigen-Studio-Forks (AP-0.7).
+#
+# Bewusst eine EIGENE Datei neben build.yml des Upstreams, statt dessen Workflow
+# zu erweitern: build.yml hat über 700 Zeilen mit Matrix-Builds, Veröffentlichung
+# und Auto-Merge. Jede Änderung daran wäre ein Konflikt bei jedem Upstream-Merge.
+# Diese Datei existiert im Upstream nicht und kann daher nie kollidieren.
+
+name: Anzeigen-Studio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/anzeigen_studio/**'
+      - 'webui/**'
+      - 'docker/anzeigen-studio/**'
+      - 'docker-compose.yml'
+      - 'scripts/check_spdx.py'
+      - '.github/workflows/anzeigen-studio.yml'
+  pull_request:
+    paths:
+      - 'src/anzeigen_studio/**'
+      - 'webui/**'
+      - 'docker/anzeigen-studio/**'
+      - 'docker-compose.yml'
+      - 'scripts/check_spdx.py'
+      - '.github/workflows/anzeigen-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Ein laufender Lauf je Zweig genügt; ältere abbrechen spart Wartezeit.
+  group: anzeigen-studio-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  lizenzkopf:
+    name: SPDX-Kennungen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Prüft die Fork-Verzeichnisse. Schlägt fehl, sobald eine neue Datei ohne
+      # Lizenzkennung dazukommt - sonst fällt das erst beim nächsten Lesen auf.
+      - run: python3 scripts/check_spdx.py
+
+  backend:
+    name: Backend (ruff, mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Werkzeuge und Abhängigkeiten installieren
+        run: |
+          python -m pip install --quiet --upgrade pip
+          # ruff und mypy in den Versionen, die auch der Upstream benutzt.
+          python -m pip install --quiet ruff mypy
+          # Backend-Abhängigkeiten, damit mypy die FastAPI-Typen sieht.
+          # Ohne sie meldet mypy "Untyped decorator" bei jedem Endpunkt.
+          python -m pip install --quiet -r docker/anzeigen-studio/requirements.txt
+
+      # Die ruff- und mypy-Konfiguration des Upstreams erfasst src/**/*.py und
+      # damit auch src/anzeigen_studio/ - sie wird hier bewusst mitbenutzt,
+      # statt daneben eine eigene aufzumachen.
+      - name: ruff
+        run: ruff check src/anzeigen_studio scripts/check_spdx.py
+
+      - name: mypy
+        run: mypy src/anzeigen_studio scripts/check_spdx.py
+
+  frontend:
+    name: Frontend (ESLint, tsc, Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Abhängigkeiten installieren
+        # npm ci verlangt eine Sperrdatei; solange keine eingecheckt ist,
+        # weicht npm install aus.
+        run: npm ci || npm install
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+  container:
+    name: Container bauen
+    runs-on: ubuntu-latest
+    # Erst bauen, wenn die schnellen Prüfungen durch sind - spart Laufzeit bei
+    # offensichtlichen Fehlern.
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # Baut beide Abbilder, ohne sie zu veröffentlichen. Der Frontend-Build
+      # enthält Lint und Typprüfung ein zweites Mal - das ist Absicht: hier wird
+      # geprüft, dass es auch im Container funktioniert, nicht nur auf dem Runner.
+      - name: docker compose build
+        run: docker compose build
+
+      - name: Stack starten und Gesundheit prüfen
+        run: |
+          docker compose up -d
+          # Auf den Healthcheck des Backends warten, statt blind zu schlafen.
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' anzeigen-studio-backend-1 2>/dev/null || echo starting)
+            [ "$status" = "healthy" ] && break
+            sleep 2
+          done
+          docker compose ps
+          [ "$status" = "healthy" ] || { echo "Backend wurde nicht healthy"; docker compose logs backend; exit 1; }
+
+      - name: Endpunkte prüfen
+        run: |
+          curl -fsS http://127.0.0.1:8080/api/health | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+
+      - name: Backend läuft nicht als root
+        run: docker compose exec -T backend id | grep -q 'uid=10001'
+
+      - name: Aufräumen
+        if: always()
+        run: docker compose down -v

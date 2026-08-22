@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+# SPDX-ArtifactOfProjectHomePage: https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Neue Datei der Anzeigen-Studio-Fork-Weiterentwicklung. Nicht im Upstream vorhanden.

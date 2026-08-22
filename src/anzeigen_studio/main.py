@@ -3,20 +3,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # ASGI-Einstiegspunkt des Backends.
-#
-# Stand: Geruest aus AP-0.6. Es gibt bewusst nur den Gesundheitsendpunkt - alles
-# Weitere kommt mit den Paketen der Phase 1, damit hier keine leeren Attrappen
-# stehen, die Funktion vortaeuschen.
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
+from anzeigen_studio.api import profile as profile_api
+from anzeigen_studio.core import db, errors
 from anzeigen_studio.core.settings import Settings
 
 LOG = logging.getLogger(__name__)
@@ -30,22 +32,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     cfg = settings or Settings.from_env()
 
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Migrationen einmal beim Start, mit einer eigenen, sofort wieder
+        # geschlossenen Verbindung.
+        #
+        # Bewusst KEINE dauerhafte Verbindung im App-Zustand: FastAPI fuehrt
+        # synchrone Endpunkte in einem Threadpool aus, und SQLite-Verbindungen
+        # sind threadgebunden ("SQLite objects created in a thread can only be
+        # used in that same thread"). Stattdessen oeffnet jede Anfrage ihre
+        # eigene Verbindung - bei einer lokalen Datei kostet das kaum etwas und
+        # umgeht das Problem grundsaetzlich, statt es mit check_same_thread und
+        # Sperren abzudichten.
+        conn = db.connect(cfg.database_path)
+        try:
+            angewandt = db.migrate(conn)
+            if angewandt:
+                LOG.info("%d Migration(en) ausgefuehrt", angewandt)
+        finally:
+            conn.close()
+        yield
+
     app = FastAPI(
         title = "Anzeigen-Studio",
         version = __version__,
-        # Die Oberflaeche ist deutsch; die API-Dokumentation bleibt technisch.
         description = "Backend der Weboberflaeche fuer kleinanzeigen-bot.",
+        lifespan = lifespan,
     )
     app.state.settings = cfg
 
+    errors.register(app)
+    app.include_router(profile_api.router)
+
     missing = cfg.missing_for_production()
     if missing:
-        # Kein harter Abbruch: das Geruest soll sich starten lassen, um die
-        # Werkzeugkette zu pruefen. Sobald Zugangsdaten gespeichert werden
-        # koennen (AP-1.4), wird daraus ein Startfehler.
+        # Kein harter Abbruch: das Geruest soll sich starten lassen. Sobald
+        # Zugangsdaten gespeichert werden koennen (AP-1.4), wird daraus ein
+        # Startfehler - eine Anwendung, die Geheimnisse unverschluesselt
+        # ablegen wuerde, darf nicht anlaufen.
         LOG.warning(
-            "Nicht gesetzte Umgebungsvariablen: %s. "
-            "Fuer den produktiven Betrieb erforderlich.",
+            "Nicht gesetzte Umgebungsvariablen: %s. Fuer den produktiven Betrieb erforderlich.",
             ", ".join(missing),
         )
 
@@ -60,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         return JSONResponse(payload)
 
+    _ = health
     return app
 
 

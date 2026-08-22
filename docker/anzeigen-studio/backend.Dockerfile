@@ -34,6 +34,13 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.
 COPY --chown=studio:studio src/ /app/src/
 COPY --chown=studio:studio schemas/ /app/schemas/
 
+# Das Datenverzeichnis muss dem Dienstbenutzer gehoeren, BEVOR das benannte
+# Volume das erste Mal eingehaengt wird - Docker uebernimmt beim Anlegen die
+# Eigentumsrechte des Pfads aus dem Abbild. Ohne diesen Schritt gehoert /data
+# root, und der Start scheitert mit "unable to open database file".
+RUN mkdir -p /data && chown studio:studio /data
+VOLUME ["/data"]
+
 ENV PYTHONPATH=/app/src \
     ANZEIGEN_STUDIO_DATA_DIR=/data
 

@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - 'src/anzeigen_studio/**'
+      - 'tests_studio/**'
       - 'webui/**'
       - 'docker/anzeigen-studio/**'
       - 'docker-compose.yml'
@@ -23,6 +24,7 @@ on:
   pull_request:
     paths:
       - 'src/anzeigen_studio/**'
+      - 'tests_studio/**'
       - 'webui/**'
       - 'docker/anzeigen-studio/**'
       - 'docker-compose.yml'
@@ -53,7 +55,7 @@ jobs:
       - run: python3 scripts/check_spdx.py
 
   backend:
-    name: Backend (ruff, mypy)
+    name: Backend (ruff, mypy, pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +67,7 @@ jobs:
         run: |
           python -m pip install --quiet --upgrade pip
           # ruff und mypy in den Versionen, die auch der Upstream benutzt.
-          python -m pip install --quiet ruff mypy
+          python -m pip install --quiet ruff mypy pytest pytest-cov
           # Backend-Abhängigkeiten, damit mypy die FastAPI-Typen sieht.
           # Ohne sie meldet mypy "Untyped decorator" bei jedem Endpunkt.
           python -m pip install --quiet -r docker/anzeigen-studio/requirements.txt
@@ -74,10 +76,16 @@ jobs:
       # damit auch src/anzeigen_studio/ - sie wird hier bewusst mitbenutzt,
       # statt daneben eine eigene aufzumachen.
       - name: ruff
-        run: ruff check src/anzeigen_studio scripts/check_spdx.py
+        run: ruff check src/anzeigen_studio tests_studio scripts/check_spdx.py
 
       - name: mypy
         run: mypy src/anzeigen_studio scripts/check_spdx.py
+
+      # tests_studio/ liegt bewusst NEBEN tests/: dessen conftest.py importiert
+      # den kompletten Bot, den unsere Tests nicht brauchen. --no-cov schaltet
+      # die Abdeckungsmessung des Bots ab, die in den Upstream-addopts steht.
+      - name: pytest
+        run: pytest tests_studio -q --no-cov
 
   frontend:
     name: Frontend (ESLint, tsc, Build)

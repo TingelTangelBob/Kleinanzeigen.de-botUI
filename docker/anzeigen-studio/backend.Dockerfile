@@ -28,6 +28,7 @@ RUN apt-get update \
       ca-certificates tzdata \
       chromium \
       xvfb x11-utils \
+      x11vnc novnc websockify \
       fonts-liberation fonts-dejavu-core \
       procps \
  && rm -rf /var/lib/apt/lists/*

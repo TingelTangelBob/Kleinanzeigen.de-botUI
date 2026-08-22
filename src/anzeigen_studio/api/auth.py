@@ -134,3 +134,14 @@ def passwort_aendern(daten: PasswortAendern, request: Request, conn: Verbindung)
     if benutzer is None:
         raise FachlicherFehler("Nicht angemeldet.", status = 401)
     auth.passwort_aendern(conn, benutzer.id, daten.alt, daten.neu)
+
+
+@router.get("/pruefen", status_code = 204)
+def pruefen() -> None:
+    """Antwortet 204, wenn eine gültige Sitzung besteht - sonst 401.
+
+    Wird von nginx über auth_request abgefragt, bevor die Browsersicht aus
+    AP-1.8 durchgelassen wird. Dass hier nichts steht, ist Absicht: Die
+    eigentliche Prüfung macht die Middleware, und dieser Pfad ist bewusst
+    NICHT in OEFFENTLICH eingetragen.
+    """

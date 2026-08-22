@@ -32,6 +32,9 @@ services:
     # Das Backend haelt fremde Zugangsdaten und gehoert nicht ins Netz.
     expose:
       - "8000"
+      # Browsersicht (AP-1.8). Nur im Docker-Netz, nicht auf dem Wirt - der
+      # Zugang läuft über nginx und nur mit gültiger Sitzung.
+      - "6080"
 
   webui:
     build:

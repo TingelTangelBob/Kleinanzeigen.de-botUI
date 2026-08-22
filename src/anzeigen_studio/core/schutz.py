@@ -45,6 +45,13 @@ def register(app: FastAPI, settings: Settings) -> None:
         conn = db.connect(settings.database_path)
         try:
             if not auth.gibt_es_benutzer(conn):
+                # Fuer die Sitzungspruefung ist "noch nicht eingerichtet"
+                # schlicht "nicht angemeldet". Ein 409 wuerde nginx bei
+                # auth_request in einen 500 verwandeln - siehe nginx.conf.
+                if pfad == "/api/auth/pruefen":
+                    return JSONResponse(
+                        {"fehler": {"meldung": "Nicht angemeldet."}}, status_code = 401,
+                    )
                 return JSONResponse(
                     {"fehler": {"meldung": "Die Anwendung ist noch nicht eingerichtet."}},
                     status_code = 409,

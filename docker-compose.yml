@@ -25,6 +25,9 @@ services:
       TZ: Europe/Berlin
     volumes:
       - studio-data:/data
+    # Chromium stuerzt bei knappem /dev/shm reproduzierbar ab. Die Vorgabe von
+    # 64 MB reicht nicht, sobald Bilder hochgeladen werden.
+    shm_size: 512m
     # Kein Port nach aussen: der Zugang laeuft ausschliesslich ueber webui.
     # Das Backend haelt fremde Zugangsdaten und gehoert nicht ins Netz.
     expose:

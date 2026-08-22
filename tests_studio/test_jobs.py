@@ -78,7 +78,8 @@ def _ereignis(text:str, **kwargs:object) -> Ereignis:
 
 @pytest.fixture
 def umgebung(tmp_path:Path) -> tuple[Settings, sqlite3.Connection, int, Path]:
-    cfg = Settings(data_dir = tmp_path, secret_key = SCHLUESSEL, dev_mode = True)
+    cfg = Settings(data_dir = tmp_path, secret_key = SCHLUESSEL, dev_mode = True,
+                   chromium = "/usr/bin/chromium")
     cfg.profiles_dir.mkdir(parents = True, exist_ok = True)
     conn = db.connect(cfg.database_path)
     db.migrate(conn)

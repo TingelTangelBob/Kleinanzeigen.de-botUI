@@ -38,7 +38,7 @@ GESPERRTE_FELDER: Final[frozenset[str]] = frozenset({
 })
 
 
-def _basis(anzeigen_glob: str) -> dict[str, Any]:
+def _basis(anzeigen_glob: str, chromium: str) -> dict[str, Any]:
     """Serverseitig festgelegter Teil. Nicht ueberschreibbar."""
     return {
         # Fest auf das Anzeigenverzeichnis des Profils begrenzt. Kein
@@ -52,9 +52,14 @@ def _basis(anzeigen_glob: str) -> dict[str, Any]:
         "browser": {
             # Chromium kommt aus dem Container-Abbild, nicht aus der
             # Konfiguration. Erweiterungen und freie Schalter sind ausgeschlossen.
+            "binary_location": chromium,
             "arguments": [
+                # Im Container ohne eigenen Kernel-Namensraum unvermeidbar.
                 "--no-sandbox",
+                # Ohne dies stuerzt Chromium bei knappem /dev/shm reproduzierbar
+                # ab - der haeufigste Containerfehler ueberhaupt.
                 "--disable-dev-shm-usage",
+                "--disable-gpu",
             ],
             "extensions": [],
             "use_private_window": False,
@@ -102,11 +107,12 @@ def gesperrte_entfernen(nutzer: dict[str, Any]) -> list[str]:
     return entfernt
 
 
-def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str) -> list[str]:
+def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str,
+              chromium: str = "/usr/bin/chromium") -> list[str]:
     """Schreibt die config.yaml. Gibt die verworfenen Felder zurueck."""
     entwurf = dict(nutzer)
     entfernt = gesperrte_entfernen(entwurf)
-    vollstaendig = zusammenfuehren(entwurf, _basis(anzeigen_glob))
+    vollstaendig = zusammenfuehren(entwurf, _basis(anzeigen_glob, chromium))
 
     ziel.parent.mkdir(parents = True, exist_ok = True)
     yaml = YAML()

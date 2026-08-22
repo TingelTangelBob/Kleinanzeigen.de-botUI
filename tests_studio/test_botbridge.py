@@ -123,6 +123,15 @@ class TestKonfiguration:
         assert "use_private_window" in inhalt
         assert "NEVER" in inhalt
 
+    def test_chromium_pfad_kommt_vom_server(self, tmp_path:Path) -> None:
+        ziel = tmp_path / "config.yaml"
+        konfiguration.schreiben(ziel, {"browser": {"binary_location": "/bin/sh"}},
+                                anzeigen_glob = "./ads/**/ad_*.yaml",
+                                chromium = "/usr/bin/chromium")
+        inhalt = ziel.read_text(encoding = "utf-8")
+        assert "/usr/bin/chromium" in inhalt
+        assert "/bin/sh" not in inhalt
+
     def test_zugangsdaten_nur_als_platzhalter(self, tmp_path:Path) -> None:
         ziel = tmp_path / "config.yaml"
         konfiguration.schreiben(ziel, {"login": {"password": "GEHEIM123"}},

@@ -16,6 +16,7 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Final
 
+from anzeigen_studio.botbridge import konfiguration
 from anzeigen_studio.botbridge.runner import BotLauf, LaufAuftrag
 from anzeigen_studio.core import db, zugang
 from anzeigen_studio.core.errors import FachlicherFehler
@@ -102,6 +103,14 @@ class Warteschlange:
 
     # -- intern --------------------------------------------------------------
 
+    def _nutzer_konfiguration(self, _profil_id: int) -> dict[str, object]:
+        """Der nutzereditierbare Teil der Bot-Konfiguration.
+
+        Noch leer: Die Einstellungsoberflaeche ist AP-2.9. Bis dahin laeuft der
+        Bot mit seinen Vorgaben plus der festen Basis.
+        """
+        return {}
+
     def _sperre(self, profil_id: int) -> asyncio.Lock:
         if profil_id not in self._profil_sperren:
             self._profil_sperren[profil_id] = asyncio.Lock()
@@ -137,6 +146,18 @@ class Warteschlange:
         # Zugangsdaten erst hier entschluesseln - so kurz wie moeglich im
         # Speicher, und nur fuer diesen einen Unterprozess.
         umgebung = zugang.umgebung_fuer_lauf(conn, profil_id, schluessel = self._settings.secret_key)
+
+        # config.yaml vor jedem Lauf neu schreiben. So koennen Aenderungen von
+        # Hand an der Datei nichts umgehen, was die Oberflaeche verbietet - die
+        # gesperrten Felder aus AP-1.11 werden dabei erneut gesetzt.
+        verworfen = konfiguration.schreiben(
+            profil_verzeichnis / "config.yaml",
+            self._nutzer_konfiguration(profil_id),
+            anzeigen_glob = "./ads/**/ad_*.{yaml,yml,json}",
+            chromium = self._settings.chromium,
+        )
+        if verworfen:
+            LOG.warning("Gesperrte Konfigurationsfelder verworfen: %s", ", ".join(verworfen))
 
         lauf = self._lauf_fabrik(LaufAuftrag(
             befehl = job.befehl,

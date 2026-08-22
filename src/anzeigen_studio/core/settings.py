@@ -42,6 +42,10 @@ class Settings:
     #: Entwicklungsmodus: ausfuehrlichere Fehler, CORS fuer den Vite-Server.
     dev_mode: bool
 
+    #: Pfad zum Chromium im Abbild. Serverseitig gesetzt, nie aus der
+    #: Oberflaeche - binary_location startet ein beliebiges Programm (AP-1.11).
+    chromium: str
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / "app.db"
@@ -56,6 +60,7 @@ class Settings:
             data_dir = Path(os.environ.get("ANZEIGEN_STUDIO_DATA_DIR", _DEFAULT_DATA_DIR)),
             secret_key = os.environ.get("ANZEIGEN_STUDIO_SECRET_KEY") or None,
             dev_mode = _env_flag("ANZEIGEN_STUDIO_DEV"),
+            chromium = os.environ.get("ANZEIGEN_STUDIO_CHROMIUM", "/usr/bin/chromium"),
         )
 
     def missing_for_production(self) -> list[str]:

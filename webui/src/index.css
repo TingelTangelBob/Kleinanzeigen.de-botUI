@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+ * Designsystem. Das vollstaendige Stylesheet wird in AP-2.1 aus SoloOffice
+ * uebernommen (AGPL-3.0-or-later, Herkunftsvermerk beim Uebernehmen ergaenzen).
+ * Hier steht bisher nur, was das Geruest zum Bauen braucht.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primaerfarbe. In AP-2.2 auf den Kleinanzeigen-Gruenton umgestellt und auf
+     Kontrast geprueft; bis dahin ein neutraler Platzhalter. Die abgeleiteten
+     Varianten setzt spaeter DynamicColors.tsx aus SoloOffice. */
+  --primary-color: #64748b;
+  --primary-text-color: #ffffff;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}

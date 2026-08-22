@@ -33,7 +33,10 @@ __pycache__
 # Zusätzliche Ausschlüsse für die neuen Verzeichnisse src/anzeigen_studio/ und webui/
 # sowie für Laufzeitdaten des Fork-Backends. Siehe NOTICE.md.
 
-# Vorlagen ohne Geheimnisse bleiben trotz ".*"-Regel oben sichtbar
+# Vorlagen ohne Geheimnisse bleiben trotz ".*"-Regel oben sichtbar.
+# Beide Muster noetig: ".env.example" hat kein Segment zwischen den Punkten und
+# wird von ".env.*.example" nicht erfasst.
+!.env.example
 !.env.*.example
 
 # Laufzeit- und Bestandsdaten (Profile, Zugangsdaten, Anzeigen, Nachrichten)

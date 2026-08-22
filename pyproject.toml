@@ -51,6 +51,18 @@ dependencies = [
 ]
 
 [dependency-groups] # https://peps.python.org/pep-0735/
+
+# --- Anzeigen-Studio-Fork, hinzugefuegt 2026-08-22 ---------------------------
+# Abhaengigkeiten der Weboberflaeche. Bewusst eine eigene Gruppe: die Liste
+# unter [project].dependencies bleibt unberuehrt, damit `pdm install` fuer den
+# reinen Bot unveraendert funktioniert und der Fork die Bot-Auslieferung nicht
+# aufblaeht. Installation des Backends: `pdm install --group anzeigen-studio`.
+anzeigen-studio = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
+
 dev = [
     "pip-audit",
     "pytest>=8.3.4",
@@ -81,6 +93,17 @@ CI            = "https://github.com/Second-Hand-Friends/kleinanzeigen-bot/action
 #####################
 # pdm https://github.com/pdm-project/pdm/
 #####################
+# --- Anzeigen-Studio-Fork, hinzugefuegt 2026-08-22 ---------------------------
+# Ohne diese Angabe sammelt pdm-backend alle Pakete unter src/ ein - seit der
+# Fork src/anzeigen_studio/ angelegt hat, waere das Backend sonst im Wheel des
+# Bots gelandet. Die Auslieferung des Bots bleibt damit unveraendert.
+# (Das PyInstaller-Bundle ist nicht betroffen: dessen Einstiegspunkt ist
+# src/kleinanzeigen_bot/__main__.py, und von dort fuehrt kein Importpfad ins
+# Backend.)
+[tool.pdm.build]
+includes = ["src/kleinanzeigen_bot"]
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
+
 [tool.pdm.version]  # https://backend.pdm-project.org/metadata/#dynamic-project-version
 source = "call"
 getter = "version:get_version"  # uses get_version() of <project_root>/version.py

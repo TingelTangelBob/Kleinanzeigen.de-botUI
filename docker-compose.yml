@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Anzeigen-Studio - Entwicklungs- und Teststand. Neue Datei, nicht im Upstream.
+#
+# Stand AP-0.6: Geruest. Der Browser-Dienst fehlt noch bewusst - er kommt mit
+# AP-1.1 (Chromium unter Xvfb, persistentes Profil) und AP-1.8 (noVNC), weil er
+# ohne den Bot-Adapter nichts zu tun haette.
+#
+# Produktivstand ist AP-7.1 und wird davon getrennt gehalten.
+
+name: anzeigen-studio
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/anzeigen-studio/backend.Dockerfile
+    restart: unless-stopped
+    environment:
+      # Ohne Schluessel startet das Backend, meldet den Mangel aber und
+      # verweigert spaeter das Speichern von Zugangsdaten (AP-1.4).
+      ANZEIGEN_STUDIO_SECRET_KEY: ${ANZEIGEN_STUDIO_SECRET_KEY:-}
+      ANZEIGEN_STUDIO_DATA_DIR: /data
+      ANZEIGEN_STUDIO_DEV: ${ANZEIGEN_STUDIO_DEV:-false}
+      TZ: Europe/Berlin
+    volumes:
+      - studio-data:/data
+    # Kein Port nach aussen: der Zugang laeuft ausschliesslich ueber webui.
+    # Das Backend haelt fremde Zugangsdaten und gehoert nicht ins Netz.
+    expose:
+      - "8000"
+
+  webui:
+    build:
+      context: .
+      dockerfile: docker/anzeigen-studio/webui.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # Nur an localhost gebunden. Wer die Oberflaeche im Netz erreichbar
+      # machen will, stellt bewusst einen Reverse Proxy davor - siehe
+      # Entscheidung 7 im Projektplan.
+      - "127.0.0.1:8080:80"
+    environment:
+      TZ: Europe/Berlin
+
+volumes:
+  studio-data:

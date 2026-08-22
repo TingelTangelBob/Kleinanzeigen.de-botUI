@@ -88,6 +88,41 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         CREATE INDEX idx_job_log_job ON job_log(job_id, id);
         """,
     ),
+    (
+        3,
+        "anmeldung",
+        """
+        CREATE TABLE benutzer (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            name          TEXT    NOT NULL UNIQUE,
+            passwort_hash TEXT    NOT NULL,
+            angelegt_am   TEXT    NOT NULL,
+            geaendert_am  TEXT    NOT NULL
+        );
+
+        -- Sitzungen serverseitig. Der Browser bekommt nur ein Zufallstoken;
+        -- gespeichert wird ausschliesslich dessen Hash, damit ein Blick in die
+        -- Datenbank keine gueltigen Sitzungen verschafft.
+        CREATE TABLE sitzung (
+            token_hash    TEXT    PRIMARY KEY,
+            benutzer_id   INTEGER NOT NULL REFERENCES benutzer(id) ON DELETE CASCADE,
+            angelegt_am   TEXT    NOT NULL,
+            gueltig_bis   TEXT    NOT NULL,
+            letzter_zugriff TEXT  NOT NULL
+        );
+
+        CREATE INDEX idx_sitzung_benutzer ON sitzung(benutzer_id);
+
+        -- Fehlversuche, um Rateversuche zu bremsen.
+        CREATE TABLE anmeldeversuch (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            name      TEXT NOT NULL,
+            zeitpunkt TEXT NOT NULL
+        );
+
+        CREATE INDEX idx_anmeldeversuch ON anmeldeversuch(name, zeitpunkt);
+        """,
+    ),
 ]
 
 

@@ -28,3 +28,32 @@ __pycache__
 # Vim
 *.swo
 *.swp
+
+# --- Anzeigen-Studio-Fork-Ergänzung, 2026-08-22, additiv, nichts Obiges verändert ---
+# Zusätzliche Ausschlüsse für die neuen Verzeichnisse src/anzeigen_studio/ und webui/
+# sowie für Laufzeitdaten des Fork-Backends. Siehe NOTICE.md.
+
+# Vorlagen ohne Geheimnisse bleiben trotz ".*"-Regel oben sichtbar
+!.env.*.example
+
+# Laufzeit- und Bestandsdaten (Profile, Zugangsdaten, Anzeigen, Nachrichten)
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python (Backend)
+.venv/
+.pdm-python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node / Frontend (webui/)
+webui/node_modules/
+webui/dist/
+webui/*.tsbuildinfo
+
+.DS_Store

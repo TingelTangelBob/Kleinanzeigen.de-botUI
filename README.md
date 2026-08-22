@@ -1,3 +1,31 @@
+<!--
+Fork-Hinweis, hinzugefügt 2026-08-22 durch die Anzeigen-Studio-Fork-Weiterentwicklung.
+Einzige Änderung an dieser Datei; der übrige Inhalt stammt unverändert aus dem Upstream.
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+> ## ⚠️ Dies ist ein Fork
+>
+> Dieses Repository ist eine **Fork-Weiterentwicklung** von
+> [`Second-Hand-Friends/kleinanzeigen-bot`](https://github.com/Second-Hand-Friends/kleinanzeigen-bot)
+> und wird von dessen Autoren **weder betreut noch unterstützt**.
+> Fehlermeldungen zu diesem Fork gehören hierher, nicht in den Upstream-Bugtracker.
+>
+> Ziel des Forks ist eine selbst gehostete Weboberfläche für den Bot, ein Modul zur
+> KI-gestützten Anzeigenerstellung sowie eine reine Leseansicht des Postfachs.
+> Der Bot-Kern unter `src/kleinanzeigen_bot/` bleibt dabei so unverändert wie möglich,
+> damit Updates aus dem Upstream weiter übernommen werden können.
+>
+> Herkunft, Lizenzpflichten und die Liste geänderter Upstream-Dateien: [`NOTICE.md`](NOTICE.md).
+>
+> **Lizenz:** AGPL-3.0-or-later. Wird die Weboberfläche über ein Netzwerk auch von anderen
+> Personen benutzt, greift § 13 – der Quelltext der laufenden Fassung muss diesen dann
+> angeboten werden. Siehe [`NOTICE.md`](NOTICE.md).
+>
+> Der folgende Text stammt unverändert aus dem Upstream.
+
+---
+
 # kleinanzeigen-bot
 
 [![Build Status](https://github.com/Second-Hand-Friends/kleinanzeigen-bot/actions/workflows/build.yml/badge.svg)](https://github.com/Second-Hand-Friends/kleinanzeigen-bot/actions/workflows/build.yml)

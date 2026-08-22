@@ -130,8 +130,18 @@ jobs:
 
       - name: Endpunkte prüfen
         run: |
+          # Auf nginx warten, nicht nur auf das Backend: webui startet erst,
+          # nachdem das Backend healthy ist, und braucht dann selbst noch einen
+          # Moment. Ohne diese Schleife ist der Schritt ein Wettlauf - genau
+          # daran ist der erste Lauf gescheitert.
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
+            sleep 2
+          done
+          echo "--- /api/health ---"
           curl -fsS http://127.0.0.1:8080/api/health | tee /dev/stderr | grep -q '"status":"ok"'
-          curl -fsS -o /dev/null http://127.0.0.1:8080/
+          echo "--- Oberfläche ---"
+          curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8080/
 
       - name: Backend läuft nicht als root
         run: docker compose exec -T backend id | grep -q 'uid=10001'

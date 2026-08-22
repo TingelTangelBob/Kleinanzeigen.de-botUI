@@ -70,6 +70,7 @@ Diese Liste wird bei jeder Änderung fortgeschrieben.
 |---|---|---|
 | `.gitignore` | 2026-08-22 | Additiver Abschnitt am Dateiende für die neuen Verzeichnisse `src/anzeigen_studio/` und `webui/` sowie für Laufzeitdaten. Bestehende Regeln unverändert. |
 | `README.md` | 2026-08-22 | Fork-Hinweis am Dateianfang vorangestellt. Übriger Inhalt unverändert. |
+| `pyproject.toml` | 2026-08-22 | Zwei abgegrenzte, kommentierte Blöcke: eigene Abhängigkeitsgruppe `anzeigen-studio` sowie `[tool.pdm.build] includes = ["src/kleinanzeigen_bot"]`, damit das Backend nicht ins Wheel des Bots gerät. `[project].dependencies` unverändert. |
 
 **Neue Dateien** dieses Forks stehen nicht in dieser Liste – sie sind keine Änderungen an fremdem
 Werk. Sie tragen die SPDX-Kennung und sind an ihrer Lage erkennbar: `src/anzeigen_studio/`,

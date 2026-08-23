@@ -56,21 +56,64 @@ dass diese Bereiche nicht automatisiert abgerufen werden. Wer das ignoriert, kan
 berufen, es nicht gewusst zu haben. Für die Bewertung von Phase 5 ist das das stärkste
 Einzelargument, das wir bisher haben.
 
-### Was nicht geprüft werden konnte
+### Der Wortlaut der Nutzungsbedingungen
 
-Die Nutzungsbedingungen selbst (`https://themen.kleinanzeigen.de/nutzungsbedingungen/`) waren
-**maschinell nicht abrufbar** – zwei Abrufversuche liefen in eine Zeitüberschreitung, vermutlich
-durch Bot-Abwehr. Damit sind **nicht** belegt:
+**Stand der AGB: gültig ab 17. Februar 2024.** Betreiber laut AGB: kleinanzeigen.de GmbH,
+Dernburgstraße 50, 14057 Berlin. Abgerufen am 2026-08-23 über einen echten Browser – der einfache
+Abruf scheiterte zweimal an der Bot-Abwehr.
 
-- ob und mit welchem Wortlaut die AGB automatisierten Zugriff untersagen
-- die zugehörigen Abschnittsnummern
-- Regelungen zu mehreren Konten
-- die Abgrenzung privat/gewerblich
-- der Stand der AGB
+**Die einschlägige Klausel steht in § 5 „Besondere Pflichten des Nutzers".** Der Nutzer ist
+verpflichtet, es zu unterlassen,
 
-**Offene Aufgabe:** Der Projektinhaber ruft die Seite im Browser auf, kopiert die einschlägigen
-Absätze hier herein und ergänzt Abschnittsnummer und Datum. Bis dahin gilt dieser Punkt als
-**ungeklärt** und darf nicht als geklärt dargestellt werden.
+> „ohne die ausdrückliche schriftliche Zustimmung von Kleinanzeigen Crawler, Spider, Scraper oder
+> andere automatisierte Mechanismen zu nutzen, um auf die Kleinanzeigen-Dienste zuzugreifen **und
+> Inhalte zu sammeln**"
+
+**Die Formulierung ist enger, als sie in Zusammenfassungen meist wiedergegeben wird.** Verboten ist
+nicht Automatisierung an sich, sondern automatisierter Zugriff **verbunden mit dem Sammeln von
+Inhalten**. Das ist eine Und-Verknüpfung, keine Aufzählung zweier getrennter Verbote.
+
+Für dieses Projekt heißt das, abgestuft:
+
+| Funktion | Einordnung |
+|---|---|
+| Eigene Anzeigen veröffentlichen, ändern, löschen, verlängern | Automatisierter Zugriff, aber **kein Sammeln von Inhalten**. Fällt nach dem Wortlaut nicht unter die Klausel. |
+| Eigene Anzeigen herunterladen | Grenzfall. Es werden Inhalte gesammelt – aber die **eigenen**. |
+| **Postfach auslesen (Phase 5)** | **Am nächsten am Verbot.** Hier werden Inhalte gesammelt, darunter Nachrichten Dritter. Zusammen mit dem `robots.txt`-Befund der klarste Punkt gegen Phase 5. |
+| Fremde Anzeigen auslesen (Preisrecherche) | Eindeutig erfasst. Ist ausgeschlossen. |
+
+**Zwei weitere Klauseln aus § 5 sind relevant:**
+
+> „die Infrastruktur der Kleinanzeigen-Dienste einer übermäßigen Belastung auszusetzen oder auf
+> andere Weise das Funktionieren der Kleinanzeigen-Dienste zu stören oder zu gefährden"
+
+Deshalb die Taktung aus AP-1.12: Mindestpause zwischen Läufen, Zeitfenster, keine parallelen
+Sitzungen je Konto.
+
+> „Maßnahmen zu umgehen, die dazu dienen, den Zugriff auf die Kleinanzeigen-Dienste zu verhindern
+> oder einzuschränken"
+
+**Das ist die Captcha-Klausel**, und sie bestätigt die von Anfang an gezogene Grenze. Sie ist
+außerdem die einzige der drei, die klar und ohne Auslegungsspielraum formuliert ist.
+
+Und für den Fall von Entscheidung 11 (Dienst für Dritte):
+
+> „Informationen, insbesondere E-Mail-Adressen oder Rufnummern, über andere Nutzer ohne die
+> vorherige Einwilligung der Nutzer zu sammeln bzw. zu verwenden"
+
+**Privat oder gewerblich (§ 2).** Bei der Registrierung muss angegeben werden, ob das Konto
+ausschließlich privat oder ausschließlich gewerblich genutzt wird. Ein privates Konto gewerblich
+zu nutzen ist ausdrücklich untersagt. Eine Regelung, die **mehrere Konten** derselben Person
+allgemein verbietet, findet sich im Text nicht.
+
+**Folgen eines Verstoßes (§ 6).** Kleinanzeigen kann Anzeigen löschen, verzögern, den Nutzer
+verwarnen und **vorläufig oder dauerhaft von der Nutzung ausschließen**. Von Vertragsstrafen oder
+Schadensersatz ist in diesem Zusammenhang nicht die Rede. Das deckt sich mit der Einschätzung
+oben: Das reale Risiko ist die Kontosperrung.
+
+**Nicht abschließend geprüft:** die in die AGB einbezogenen „Grundsätze von Kleinanzeigen" – ein
+eigenes Dokument, das hier nicht mitgelesen wurde. Sollte Phase 5 tatsächlich kommen, gehört es
+vorher gelesen.
 
 Was der Upstream selbst sagt, ist dagegen belegt – seine README enthält den Hinweis, die Nutzung
 könne gegen die jeweils geltenden AGB verstoßen und die Verantwortung liege beim Nutzer.
@@ -220,7 +263,7 @@ Vollständige Prüfung ist AP-6.1 und noch nicht erfolgt.
 |---|---|
 | Lizenz und Abhängigkeiten | **geklärt und belegt** |
 | `robots.txt` | **geprüft, belegt** – sperrt Nachrichten- und Verwaltungspfade |
-| AGB im Wortlaut | **offen** – maschinell nicht abrufbar, vom Projektinhaber nachzutragen |
+| AGB im Wortlaut | **geprüft und zitiert** – § 5, Stand 17.02.2024. Verbot ist enger gefasst als meist wiedergegeben |
 | Veröffentlichung des Quelltexts | **eingeordnet** – getrennt vom Betrieb zu bewerten, Rechtsprechung recherchiert |
 | Betrieb als Dienst für Dritte | **ausgeschlossen** – Entscheidung des Projektinhabers 2026-08-23 |
 | Captcha-Haltung | **entschieden** |

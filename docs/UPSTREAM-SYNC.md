@@ -134,8 +134,13 @@ Dann **nicht** einfach durchbeißen, sondern die Ursache beheben:
 2. Lässt sich die Änderung dort durch eine additive Lösung in einem neuen Modul ersetzen?
 3. Oder gehört sie als Pull Request in den Upstream, damit sie dort dauerhaft gepflegt wird?
 
-Möglichkeit 3 ist fast immer die beste. Der Upstream verlangt kein CLA. Die vorbereiteten
-Kandidaten stehen in AP-0.10 des Projektplans.
+Möglichkeit 3 steht seit dem 2026-08-23 **nicht mehr zur Verfügung**: Der Projektinhaber hat
+entschieden, keine Beiträge an den Upstream zurückzugeben (AP-0.10). Damit bleibt nur Möglichkeit 2
+– eine additive Lösung in einem neuen Modul –, und sie wird dadurch wichtiger, nicht unwichtiger.
+
+**Die Richtung vom Upstream hierher bleibt unverändert bestehen.** Diese Datei beschreibt genau
+diese Richtung, und sie ist der Grund, warum der Fork so wenig wie möglich an Upstream-Dateien
+ändert.
 
 ## Erste Durchführung
 

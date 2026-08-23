@@ -123,6 +123,17 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         CREATE INDEX idx_anmeldeversuch ON anmeldeversuch(name, zeitpunkt);
         """,
     ),
+    (
+        4,
+        "wartegrund",
+        """
+        -- Warum ein Job noch nicht laeuft und bis wann. Ohne das steht er auf
+        -- "wartet", ohne Grund und ohne Restzeit - und wer mehrere Laeufe
+        -- einreiht, haelt die Taktung fuer ein Haengen.
+        ALTER TABLE job ADD COLUMN wartet_bis TEXT;
+        ALTER TABLE job ADD COLUMN wartegrund TEXT;
+        """,
+    ),
 ]
 
 

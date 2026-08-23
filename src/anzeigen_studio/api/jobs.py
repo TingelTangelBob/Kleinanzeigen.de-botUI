@@ -76,6 +76,8 @@ class JobAusgabe(BaseModel):
     aufmerksamkeit: list[str]
     eingriff: str | None
     meldung: str | None
+    wartet_bis: str | None
+    wartegrund: str | None
 
 
 class JobEingabe(BaseModel):
@@ -95,6 +97,7 @@ def _ausgabe(job: Job) -> JobAusgabe:
         eingereicht_am = job.eingereicht_am, gestartet_am = job.gestartet_am,
         beendet_am = job.beendet_am, rueckgabecode = job.rueckgabecode,
         aufmerksamkeit = job.aufmerksamkeit, eingriff = job.eingriff, meldung = job.meldung,
+        wartet_bis = job.wartet_bis, wartegrund = job.wartegrund,
     )
 
 

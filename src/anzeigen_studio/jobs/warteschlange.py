@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from anzeigen_studio.botbridge import konfiguration
@@ -129,11 +130,20 @@ class Warteschlange:
         Laeuft INNERHALB der Profilsperre: Waehrend gewartet wird, startet kein
         anderer Lauf desselben Profils. Ein Abbruch waehrend der Wartezeit
         wirkt sofort, weil asyncio.sleep abbrechbar ist.
+
+        Der Grund und das Ende der Wartezeit werden in der Datenbank vermerkt.
+        Ohne das steht der Job auf "wartet", ohne Erklaerung - und wer mehrere
+        Laeufe einreiht, haelt die absichtliche Bremse fuer ein Haengen. Genau
+        das ist im ersten Test mit einem echten Konto passiert.
         """
         bis_fenster = self._taktung.wartezeit_bis_fenster()
         if bis_fenster > 0:
             LOG.info("Job %d wartet %.0f Minuten auf das Zeitfenster", job_id, bis_fenster / 60)
-            await asyncio.sleep(bis_fenster)
+            await self._warten_mit_vermerk(
+                job_id, bis_fenster,
+                f"Wartet auf das erlaubte Zeitfenster ab "
+                f"{self._taktung.fenster_von.strftime('%H:%M')} Uhr.",
+            )
 
         letztes = self._letztes_ende.get(profil_id)
         if letztes is None:
@@ -143,7 +153,32 @@ class Warteschlange:
         rest = pause - verstrichen
         if rest > 0:
             LOG.info("Job %d wartet %.0f s Mindestpause", job_id, rest)
-            await asyncio.sleep(rest)
+            await self._warten_mit_vermerk(
+                job_id, rest,
+                "Mindestabstand zwischen zwei Läufen desselben Profils. "
+                "Schützt davor, dass viele Aktionen kurz hintereinander auffallen.",
+            )
+
+    async def _warten_mit_vermerk(self, job_id: int, sekunden: float, grund: str) -> None:
+        """Wartet und haelt dabei fest, warum und bis wann."""
+        bis = (datetime.now(UTC) + timedelta(seconds = sekunden)).isoformat(timespec = "seconds")
+        conn = db.connect(self._settings.database_path)
+        try:
+            with db.transaction(conn):
+                speicher.warten_setzen(conn, job_id, bis = bis, grund = grund)
+        finally:
+            conn.close()
+        try:
+            await asyncio.sleep(sekunden)
+        finally:
+            # Auch bei Abbruch aufraeumen, sonst zeigt die Oberflaeche eine
+            # Wartezeit an, die es nicht mehr gibt.
+            conn = db.connect(self._settings.database_path)
+            try:
+                with db.transaction(conn):
+                    speicher.warten_setzen(conn, job_id, bis = None, grund = None)
+            finally:
+                conn.close()
 
     def _sperre(self, profil_id: int) -> asyncio.Lock:
         if profil_id not in self._profil_sperren:

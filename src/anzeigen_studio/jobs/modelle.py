@@ -62,6 +62,12 @@ class Job:
     eingriff: str | None = None
     meldung: str | None = None
 
+    #: Bis wann der Job absichtlich wartet (ISO-8601), und warum. Gesetzt von
+    #: der Taktung aus AP-1.12. Eine Funktion, die bremst, muss sagen dass sie
+    #: bremst - sonst sieht sie aus wie ein Fehler.
+    wartet_bis: str | None = None
+    wartegrund: str | None = None
+
     @property
     def laeuft_noch(self) -> bool:
         return self.zustand not in ENDZUSTAENDE

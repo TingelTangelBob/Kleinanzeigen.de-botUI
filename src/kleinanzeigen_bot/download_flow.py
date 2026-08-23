@@ -3,6 +3,7 @@
 # SPDX-ArtifactOfProjectHomePage: https://github.com/Second-Hand-Friends/kleinanzeigen-bot/
 """Ad download browser workflow."""
 
+import asyncio  # Anzeigen-Studio-Fork 2026-08-23: fuer CancelledError in _download_tolerant
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -43,6 +44,35 @@ def resolve_download_dir(
     if trimmed_dir == DEFAULT_DOWNLOAD_DIR:
         return workspace.download_dir
     return Path(abspath(trimmed_dir, relative_to = str(Path(config_file_path).parent))).resolve()
+
+
+# --- Anzeigen-Studio-Fork, 2026-08-23 ---------------------------------------
+# Eine einzelne unlesbare Anzeige darf den Lauf nicht beenden.
+#
+# Aufgefallen im ersten Lauf gegen ein echtes Konto: Bei Anzeige 7 von 8
+# schlug die Modellvalidierung fehl ("sell_directly requires at least one
+# predefined shipping_options entry"). Weil keine der drei Schleifen unten den
+# Download absichert, endete der gesamte Lauf - die Anzeigen 7 und 8 wurden nie
+# geholt. Ein Grenzfall kostete damit den Rest des Bestands.
+#
+# Die Ausnahme wird protokolliert und gezaehlt, nicht verschluckt: Am Ende
+# steht, wie viele Anzeigen uebersprungen wurden.
+async def _download_tolerant(
+    ad_extractor:extract.AdExtractor,
+    ad_id:int,
+    published_ads_by_id:dict[int, PublishedAd],
+) -> bool:
+    """Laedt eine Anzeige. Gibt False zurueck, statt bei einem Fehler zu werfen."""
+    try:
+        await _download_ad_with_resolved_state(ad_extractor, ad_id, published_ads_by_id)
+    except asyncio.CancelledError:
+        # Abbruch gehoert durchgereicht, nicht als "uebersprungen" behandelt.
+        raise
+    except Exception as ex:  # noqa: BLE001 - bewusst breit: kein Grenzfall darf den Lauf beenden
+        LOG.error("Ad %d could not be downloaded and was skipped: %s", ad_id, ex)
+        return False
+    return True
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
 
 
 async def _download_ad_with_resolved_state(
@@ -119,13 +149,18 @@ async def _download_all_ads(
         valid_ad_refs.append((ad_url, ad_id))
 
     success_count = 0
+    skipped_count = 0
     for idx, (ad_url, ad_id) in enumerate(valid_ad_refs, start = 1):
         LOG.info("Downloading %d/%d ads...", idx, len(valid_ad_refs))
 
         if await ad_extractor.navigate_to_ad_page(ad_url):
-            await _download_ad_with_resolved_state(ad_extractor, ad_id, published_ads_by_id)
-            success_count += 1
+            if await _download_tolerant(ad_extractor, ad_id, published_ads_by_id):
+                success_count += 1
+            else:
+                skipped_count += 1
     LOG.info("%d of %d ads were downloaded from your profile.", success_count, len(valid_ad_refs))
+    if skipped_count:
+        LOG.warning("%d ad(s) were skipped because they could not be read.", skipped_count)
 
 
 async def _download_new_ads(
@@ -162,13 +197,18 @@ async def _download_new_ads(
         ads_to_download.append((ad_url, ad_id))
 
     new_count = 0
+    skipped_count = 0
     for idx, (ad_url, ad_id) in enumerate(ads_to_download, start = 1):
         LOG.info("Downloading %d/%d ads...", idx, len(ads_to_download))
 
         if await ad_extractor.navigate_to_ad_page(ad_url):
-            await _download_ad_with_resolved_state(ad_extractor, ad_id, published_ads_by_id)
-            new_count += 1
+            if await _download_tolerant(ad_extractor, ad_id, published_ads_by_id):
+                new_count += 1
+            else:
+                skipped_count += 1
     LOG.info("%s were downloaded from your profile.", pluralize("new ad", new_count))
+    if skipped_count:
+        LOG.warning("%d ad(s) were skipped because they could not be read.", skipped_count)
 
 
 async def _download_ads_by_ids(
@@ -189,8 +229,13 @@ async def _download_ads_by_ids(
                 # Foreign ad - expected for numeric IDs (can download any public ad)
                 LOG.warning("Ad id %d is not in your published profile ads. Saving downloaded ad as inactive.", ad_id)
 
-            await ad_extractor.download_ad(ad_id, active = resolved.active)
-            LOG.info("Downloaded ad with id %d", ad_id)
+            try:
+                await ad_extractor.download_ad(ad_id, active = resolved.active)
+                LOG.info("Downloaded ad with id %d", ad_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as ex:  # noqa: BLE001 - siehe _download_tolerant
+                LOG.error("Ad %d could not be downloaded and was skipped: %s", ad_id, ex)
         else:
             LOG.error("The page with the id %d does not exist!", ad_id)
 

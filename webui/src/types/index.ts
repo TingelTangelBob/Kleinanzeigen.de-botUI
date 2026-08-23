@@ -47,6 +47,9 @@ export interface Job {
   aufmerksamkeit: string[];
   eingriff: string | null;
   meldung: string | null;
+  /** Bis wann der Lauf absichtlich wartet (ISO-8601), und warum. */
+  wartet_bis: string | null;
+  wartegrund: string | null;
 }
 
 export interface LogZeile {

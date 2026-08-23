@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Zusatzdatei NUR fuer den Test im Heimnetz.
+#
+# Die Hauptdatei bindet die Oberflaeche absichtlich an 127.0.0.1 - die
+# Anwendung haelt Zugangsdaten fremder Konten, und ein offener Port ist die
+# haeufigste Ursache dafuer, dass so etwas ungewollt erreichbar wird.
+#
+# Diese Datei hebt das fuer den Testbetrieb auf. Ausdruecklich mitzugeben:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker/anzeigen-studio/docker-compose.lan.yml up -d
+#
+# Damit ist die Oberflaeche im ganzen Heimnetz erreichbar. Das ist fuer einen
+# Test mit einem Wegwerf-Konto vertretbar, fuer den Dauerbetrieb NICHT - dort
+# gehoert ein Reverse Proxy mit HTTPS davor oder ein VPN darum
+# (Entscheidung 7 im Projektplan, umzusetzen in AP-7.1).
+
+services:
+  webui:
+    # !override ist noetig: Compose FUEGT Portlisten sonst zusammen, statt sie
+    # zu ersetzen - beide Bindungen auf 8080 kollidieren dann.
+    ports: !override
+      - "0.0.0.0:8080:80"

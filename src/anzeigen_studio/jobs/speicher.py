@@ -42,6 +42,8 @@ def _zu_job(row: sqlite3.Row) -> Job:
         aufmerksamkeit = row["aufmerksamkeit"].split(",") if row["aufmerksamkeit"] else [],
         eingriff = row["eingriff"],
         meldung = row["meldung"],
+        wartet_bis = row["wartet_bis"],
+        wartegrund = row["wartegrund"],
     )
 
 
@@ -108,6 +110,17 @@ def naechster_wartender(conn: sqlite3.Connection, profil_id: int) -> Job | None:
     return _zu_job(row) if row else None
 
 
+def warten_setzen(conn: sqlite3.Connection, job_id: int, *, bis: str | None, grund: str | None) -> None:
+    """Haelt fest, dass und warum ein Job absichtlich wartet.
+
+    `bis = None` loescht den Vermerk - der Job laeuft dann los.
+    """
+    conn.execute(
+        "UPDATE job SET wartet_bis = ?, wartegrund = ? WHERE id = ?",
+        (bis, grund, job_id),
+    )
+
+
 def zustand_setzen(
     conn: sqlite3.Connection,
     job_id: int,
@@ -124,6 +137,9 @@ def zustand_setzen(
     if zustand is JobZustand.LAEUFT:
         felder.append("gestartet_am = ?")
         werte.append(_jetzt())
+        # Der Wartevermerk gilt nicht mehr, sobald der Lauf beginnt.
+        felder.append("wartet_bis = NULL")
+        felder.append("wartegrund = NULL")
     if zustand in {JobZustand.FERTIG, JobZustand.PRUEFEN, JobZustand.GESCHEITERT, JobZustand.ABGEBROCHEN}:
         felder.append("beendet_am = ?")
         werte.append(_jetzt())

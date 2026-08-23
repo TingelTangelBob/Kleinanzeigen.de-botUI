@@ -4,7 +4,7 @@
 // Läufe starten und live mitlesen (AP-2.8, AP-1.7).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Ban, Hand, Play } from 'lucide-react';
+import { AlertTriangle, Ban, Hand, Hourglass, Play } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { Job, JobZustand, LogZeile, Profil } from '../types';
 
@@ -60,14 +60,21 @@ export function JobSeite() {
     return () => window.clearInterval(timer);
   }, [jobs, jobsLaden]);
 
+  const [startet, setStartet] = useState<string | null>(null);
+
   const starten = async (befehl: string) => {
     setFehler(null);
+    // Sofortige Rückmeldung: Ohne sie wirkt der Klick folgenlos, bis die Liste
+    // das nächste Mal geladen wird.
+    setStartet(befehl);
     try {
       const job = await api.jobs.starten(gewaehlt, befehl);
       setOffenerJob(job.id);
       await jobsLaden();
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setStartet(null);
     }
   };
 
@@ -93,13 +100,21 @@ export function JobSeite() {
             </select>
           </label>
 
+          <p className="mb-3 text-xs text-gray-600">
+            Läufe desselben Profils werden nacheinander abgearbeitet, mit einem
+            Mindestabstand dazwischen. Ein Lauf kann deshalb ein bis zwei Minuten
+            warten, bevor er startet – das ist Absicht und wird unten angezeigt.
+          </p>
+
           <div className="grid gap-2 sm:grid-cols-2">
             {BEFEHLE.map(b => (
               <button
                 key={b.id}
                 type="button"
+                disabled={startet !== null}
                 onClick={() => void starten(b.id)}
                 className={`flex items-start gap-3 rounded border p-3 text-left transition-colors
+                            disabled:cursor-not-allowed disabled:opacity-60
                             ${b.schreibend
                               ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
                               : 'border-gray-300 bg-white hover:bg-gray-50'}`}
@@ -107,7 +122,7 @@ export function JobSeite() {
                 <Play className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-custom" />
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-gray-900">
-                    {b.label}
+                    {startet === b.id ? 'Wird eingereiht …' : b.label}
                     {b.schreibend && (
                       <span className="ml-2 text-xs font-normal text-amber-800">
                         verändert etwas auf der Plattform
@@ -194,6 +209,8 @@ function JobKarte({
         </div>
       </div>
 
+      {job.wartet_bis && <Wartehinweis bis={job.wartet_bis} grund={job.wartegrund} />}
+
       {job.zustand === 'braucht_eingabe' && (
         <div className="border-t border-amber-200 bg-amber-50 p-4">
           <p className="mb-3 flex items-start gap-2 text-sm text-amber-900">
@@ -223,6 +240,46 @@ function JobKarte({
       )}
 
       {offen && <JobLog jobId={job.id} laeuftNoch={laeuftNoch} />}
+    </div>
+  );
+}
+
+/**
+ * Zeigt an, dass ein Lauf ABSICHTLICH wartet, und wie lange noch.
+ *
+ * Ohne das steht ein Job minutenlang auf "wartet", ohne Grund - im ersten Test
+ * mit einem echten Konto wurde das für ein Hängen gehalten. Eine Funktion, die
+ * bremst, muss sagen dass und warum sie bremst.
+ */
+function Wartehinweis({ bis, grund }: { bis: string; grund: string | null }) {
+  const [rest, setRest] = useState(() => Math.max(0, (Date.parse(bis) - Date.now()) / 1000));
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setRest(Math.max(0, (Date.parse(bis) - Date.now()) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [bis]);
+
+  const sekunden = Math.ceil(rest);
+  const minuten = Math.ceil(rest / 60);
+  const text = rest >= 90
+    ? `noch ${minuten} Minuten`
+    : `noch ${sekunden} ${sekunden === 1 ? 'Sekunde' : 'Sekunden'}`;
+
+  return (
+    <div className="border-t border-blue-200 bg-blue-50 p-4">
+      <p className="flex items-start gap-2 text-sm text-blue-900">
+        <Hourglass className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <span>
+          <strong>Wartet absichtlich – {text}.</strong>
+          {grund && <span className="mt-1 block">{grund}</span>}
+          <span className="mt-1 block text-blue-800">
+            Kein Fehler. Der Abstand lässt sich in den Einstellungen ändern.
+          </span>
+        </span>
+      </p>
     </div>
   );
 }

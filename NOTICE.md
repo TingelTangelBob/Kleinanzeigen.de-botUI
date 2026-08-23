@@ -70,7 +70,8 @@ Diese Liste wird bei jeder Änderung fortgeschrieben.
 |---|---|---|
 | `.gitignore` | 2026-08-22 | Additiver Abschnitt am Dateiende für die neuen Verzeichnisse `src/anzeigen_studio/` und `webui/` sowie für Laufzeitdaten. Bestehende Regeln unverändert. |
 | `README.md` | 2026-08-22 | Fork-Hinweis am Dateianfang vorangestellt. Übriger Inhalt unverändert. |
-| `pyproject.toml` | 2026-08-22 | Ein abgegrenzter, kommentierter Block: `[tool.pdm.build] includes = ["src/kleinanzeigen_bot"]`, damit das Backend nicht ins Wheel des Bots gerät. `[project].dependencies`, `[dependency-groups]` und `pdm.lock` bleiben unverändert – die Backend-Abhängigkeiten stehen bewusst in `docker/anzeigen-studio/requirements.txt`. |
+| `.github/workflows/build.yml` | 2026-08-23 | Eine `repository_owner`-Bedingung am Job `publish-release` ergänzt. Ohne sie läuft die Freigabeautomatik in jedem Fork mit und scheitert. Der Job `publish-docker-manifest` hat dieselbe Bedingung bereits. |
+| `pyproject.toml` | 2026-08-22 | Ein abgegrenzter, kommentierter Block: `[tool.pdm.build] includes = ["src/kleinanzeigen_bot"]`, damit das Backend nicht ins Wheel des Bots gerät. `[project].dependencies`, `[dependency-groups]` und `pdm.lock` bleiben unverändert – die Backend-Abhängigkeiten stehen bewusst in `docker/anzeigen-studio/requirements.txt`. Am 2026-08-23 ergänzt: `exclude` bei `[tool.mypy]` und `[tool.basedpyright]` für `src/anzeigen_studio/`, damit die Upstream-CI ohne unsere Abhängigkeiten nicht rot wird. |
 
 **Neue Dateien** dieses Forks stehen nicht in dieser Liste – sie sind keine Änderungen an fremdem
 Werk. Sie tragen die SPDX-Kennung und sind an ihrer Lage erkennbar: `src/anzeigen_studio/`,

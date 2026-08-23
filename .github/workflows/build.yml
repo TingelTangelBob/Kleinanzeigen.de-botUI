@@ -483,8 +483,14 @@ jobs:
     # run on 'main' and 'release' branch when:
     #   – build succeeded, AND
     #   – publish-coverage succeeded OR was skipped
+    #
+    # Anzeigen-Studio-Fork, 2026-08-23: repository_owner-Bedingung ergaenzt.
+    # Ohne sie laeuft die Freigabeautomatik in jedem Fork mit und scheitert an
+    # der Freigabehistorie des Originals. publish-docker-manifest weiter oben
+    # hat dieselbe Bedingung bereits - hier fehlte sie.
     if: >
         always()
+          && github.repository_owner == 'Second-Hand-Friends'
           && needs.build.result == 'success'
           && (needs.publish-coverage.result == 'success' || needs.publish-coverage.result == 'skipped')
         && (github.ref_name == 'main' || github.ref_name == 'release')

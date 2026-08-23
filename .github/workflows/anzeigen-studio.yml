@@ -78,8 +78,11 @@ jobs:
       - name: ruff
         run: ruff check src/anzeigen_studio tests_studio scripts/check_spdx.py
 
+      # Eigene Konfiguration: Die des Upstreams nimmt src/anzeigen_studio/ aus,
+      # damit dessen CI ohne unsere Abhängigkeiten nicht rot wird. Begründung
+      # steht in docker/anzeigen-studio/mypy.ini.
       - name: mypy
-        run: mypy src/anzeigen_studio scripts/check_spdx.py
+        run: mypy --config-file docker/anzeigen-studio/mypy.ini
 
       # tests_studio/ liegt bewusst NEBEN tests/: dessen conftest.py importiert
       # den kompletten Bot, den unsere Tests nicht brauchen. --no-cov schaltet

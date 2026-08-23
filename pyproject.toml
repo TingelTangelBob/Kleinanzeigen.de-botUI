@@ -324,6 +324,20 @@ max-complexity = 30
 # https://github.com/python/mypy
 #####################
 [tool.mypy]
+# --- Anzeigen-Studio-Fork, hinzugefuegt 2026-08-23 ---------------------------
+# src/anzeigen_studio/ aus der Verzeichnissuche ausnehmen.
+#
+# Grund: Die Upstream-CI installiert nur die Abhaengigkeiten des Bots. Ohne
+# fastapi und cryptography haelt mypy deren Dekoratoren fuer untypisiert und
+# meldet 27 Fehler, die es in Wahrheit nicht gibt - die Upstream-CI wuerde
+# dadurch auf jedem Push rot.
+#
+# `exclude` wirkt nur bei der Verzeichnissuche, nicht bei ausdruecklich
+# uebergebenen Pfaden. Die Fork-CI ruft `mypy src/anzeigen_studio` explizit auf
+# und prueft es damit weiterhin vollstaendig - mit installierten Paketen.
+exclude = ["^src/anzeigen_studio/"]
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
+
 # https://mypy.readthedocs.io/en/stable/config_file.html
 #mypy_path = "$MYPY_CONFIG_FILE_DIR/tests/stubs"
 cache_dir = ".temp/cache_mypy"

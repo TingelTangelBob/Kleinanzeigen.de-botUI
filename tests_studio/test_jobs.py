@@ -243,7 +243,11 @@ class TestWarteschlange:
                     await asyncio.sleep(0.05)
                     gleichzeitig -= 1
                     self.ergebnis.rueckgabecode = 0
-                    for ereignis in ():  # pragma: no cover
+                    # Erzeugt keine Ereignisse - der Test misst nur, wie viele
+                    # Laeufe gleichzeitig in dieser Methode stehen. Das
+                    # unerreichbare yield macht die Methode zum Generator.
+                    leer:list[Ereignis] = []
+                    for ereignis in leer:  # pragma: no cover
                         yield ereignis
             return Zaehlend(auftrag)
 

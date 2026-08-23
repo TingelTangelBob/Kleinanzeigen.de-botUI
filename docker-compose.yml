@@ -16,6 +16,10 @@ services:
       context: .
       dockerfile: docker/anzeigen-studio/backend.Dockerfile
     restart: unless-stopped
+    # Chromium hinterlässt beim Beenden verwaiste Kindprozesse. Ohne einen
+    # init-Prozess als PID 1 werden sie nie eingesammelt und häufen sich als
+    # Zombies an - über viele Läufe bis zum Erreichen der Prozessgrenze.
+    init: true
     environment:
       # Ohne Schluessel startet das Backend, meldet den Mangel aber und
       # verweigert spaeter das Speichern von Zugangsdaten (AP-1.4).

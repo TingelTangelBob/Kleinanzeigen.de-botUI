@@ -131,7 +131,7 @@ jobs:
         run: |
           docker compose up -d
           # Auf den Healthcheck des Backends warten, statt blind zu schlafen.
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             status=$(docker inspect --format '{{.State.Health.Status}}' anzeigen-studio-backend-1 2>/dev/null || echo starting)
             [ "$status" = "healthy" ] && break
             sleep 2
@@ -145,7 +145,7 @@ jobs:
           # nachdem das Backend healthy ist, und braucht dann selbst noch einen
           # Moment. Ohne diese Schleife ist der Schritt ein Wettlauf - genau
           # daran ist der erste Lauf gescheitert.
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
             sleep 2
           done

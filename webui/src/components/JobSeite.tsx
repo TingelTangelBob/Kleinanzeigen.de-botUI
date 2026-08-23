@@ -1,0 +1,278 @@
+// SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Läufe starten und live mitlesen (AP-2.8, AP-1.7).
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Ban, Hand, Play } from 'lucide-react';
+import { api, ApiFehler } from '../services/api';
+import type { Job, JobZustand, LogZeile, Profil } from '../types';
+
+/** Nur Befehle, die ohne weitere Eingaben sinnvoll sind. */
+const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean }[] = [
+  { id: 'verify', label: 'Prüfen', hinweis: 'Prüft nur die Konfiguration. Kein Zugriff aufs Konto.', schreibend: false },
+  { id: 'diagnose', label: 'Diagnose', hinweis: 'Prüft die Browserverbindung.', schreibend: false },
+  { id: 'download', label: 'Herunterladen', hinweis: 'Lädt die eigenen Anzeigen. Meldet sich an.', schreibend: false },
+  { id: 'publish', label: 'Veröffentlichen', hinweis: 'Stellt Anzeigen auf kleinanzeigen.de ein.', schreibend: true },
+  { id: 'extend', label: 'Verlängern', hinweis: 'Verlängert Anzeigen im Acht-Tage-Fenster.', schreibend: true },
+];
+
+const ZUSTAND_TEXT: Record<JobZustand, { text: string; klasse: string }> = {
+  wartet: { text: 'wartet', klasse: 'bg-gray-100 text-gray-700' },
+  laeuft: { text: 'läuft', klasse: 'bg-blue-100 text-blue-800' },
+  braucht_eingabe: { text: 'braucht dich', klasse: 'bg-amber-100 text-amber-900' },
+  fertig: { text: 'fertig', klasse: 'bg-green-100 text-green-800' },
+  pruefen: { text: 'prüfen', klasse: 'bg-orange-100 text-orange-900' },
+  gescheitert: { text: 'gescheitert', klasse: 'bg-red-100 text-red-800' },
+  abgebrochen: { text: 'abgebrochen', klasse: 'bg-gray-200 text-gray-700' },
+};
+
+export function JobSeite() {
+  const [profile, setProfile] = useState<Profil[]>([]);
+  const [gewaehlt, setGewaehlt] = useState('');
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [offenerJob, setOffenerJob] = useState<number | null>(null);
+  const [fehler, setFehler] = useState<string | null>(null);
+
+  const jobsLaden = useCallback(async () => {
+    try {
+      setJobs(await api.jobs.liste());
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const liste = await api.profile.liste();
+      setProfile(liste);
+      if (liste.length > 0) setGewaehlt(liste[0].slug);
+      await jobsLaden();
+    })();
+  }, [jobsLaden]);
+
+  // Solange etwas läuft, regelmäßig nachsehen. Der Log-Strom hängt am
+  // einzelnen Job; die Liste braucht ihren eigenen Takt.
+  useEffect(() => {
+    const aktiv = jobs.some(j => ['wartet', 'laeuft', 'braucht_eingabe'].includes(j.zustand));
+    if (!aktiv) return undefined;
+    const timer = window.setInterval(() => void jobsLaden(), 2000);
+    return () => window.clearInterval(timer);
+  }, [jobs, jobsLaden]);
+
+  const starten = async (befehl: string) => {
+    setFehler(null);
+    try {
+      const job = await api.jobs.starten(gewaehlt, befehl);
+      setOffenerJob(job.id);
+      await jobsLaden();
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <h1 className="mb-6 text-2xl font-bold text-gray-900">Läufe</h1>
+
+      {profile.length === 0 ? (
+        <p className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Zuerst ein Profil anlegen und Zugangsdaten hinterlegen.
+        </p>
+      ) : (
+        <div className="mb-6 rounded border border-gray-200 bg-white p-4">
+          <label className="mb-4 block max-w-xs">
+            <span className="text-sm font-medium text-gray-700">Profil</span>
+            <select
+              value={gewaehlt}
+              onChange={e => setGewaehlt(e.target.value)}
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2
+                         focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            >
+              {profile.map(p => <option key={p.slug} value={p.slug}>{p.anzeigename}</option>)}
+            </select>
+          </label>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {BEFEHLE.map(b => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => void starten(b.id)}
+                className={`flex items-start gap-3 rounded border p-3 text-left transition-colors
+                            ${b.schreibend
+                              ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
+                              : 'border-gray-300 bg-white hover:bg-gray-50'}`}
+              >
+                <Play className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-custom" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">
+                    {b.label}
+                    {b.schreibend && (
+                      <span className="ml-2 text-xs font-normal text-amber-800">
+                        verändert etwas auf der Plattform
+                      </span>
+                    )}
+                  </span>
+                  <span className="block text-xs text-gray-600">{b.hinweis}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {fehler && (
+        <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {fehler}
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {jobs.map(job => (
+          <JobKarte
+            key={job.id}
+            job={job}
+            offen={offenerJob === job.id}
+            aufUmschalten={() => setOffenerJob(offenerJob === job.id ? null : job.id)}
+            aufAenderung={jobsLaden}
+          />
+        ))}
+        {jobs.length === 0 && (
+          <p className="rounded border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+            Noch keine Läufe.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JobKarte({
+  job, offen, aufUmschalten, aufAenderung,
+}: { job: Job; offen: boolean; aufUmschalten: () => void; aufAenderung: () => void }) {
+  const zustand = ZUSTAND_TEXT[job.zustand];
+  const laeuftNoch = ['wartet', 'laeuft', 'braucht_eingabe'].includes(job.zustand);
+
+  return (
+    <div className="rounded border border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <button type="button" onClick={aufUmschalten} className="min-w-0 flex-1 text-left">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${zustand.klasse}`}>
+              {zustand.text}
+            </span>
+            <span className="font-medium text-gray-900">{job.befehl}</span>
+            <span className="text-sm text-gray-500">{job.profil_slug}</span>
+          </span>
+          {job.meldung && (
+            <span className="mt-1 block text-sm text-gray-700">{job.meldung}</span>
+          )}
+        </button>
+
+        <div className="flex flex-wrap gap-2">
+          {job.zustand === 'braucht_eingabe' && (
+            <button
+              type="button"
+              onClick={() => void api.jobs.eingabe(job.id).then(aufAenderung)}
+              className="flex items-center gap-2 rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white"
+            >
+              <Hand className="h-4 w-4" />
+              Erledigt, weiter
+            </button>
+          )}
+          {laeuftNoch && (
+            <button
+              type="button"
+              onClick={() => void api.jobs.abbrechen(job.id).then(aufAenderung)}
+              className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+            >
+              <Ban className="h-4 w-4" />
+              Abbrechen
+            </button>
+          )}
+        </div>
+      </div>
+
+      {job.zustand === 'braucht_eingabe' && (
+        <div className="border-t border-amber-200 bg-amber-50 p-4">
+          <p className="mb-3 flex items-start gap-2 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span>
+              Der Lauf wartet auf dich – vermutlich ein Captcha oder eine Bestätigung.
+              Löse es in der Browsersicht und klicke dann „Erledigt, weiter".
+            </span>
+          </p>
+          <a
+            href="/browsersicht/vnc.html?autoconnect=1&resize=scale"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block rounded bg-primary-custom px-4 py-2 text-sm font-medium"
+          >
+            Browsersicht öffnen
+          </a>
+        </div>
+      )}
+
+      {job.zustand === 'pruefen' && (
+        <div className="border-t border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+          <strong>Dieser Lauf braucht eine Prüfung von Hand.</strong> Bitte auf
+          kleinanzeigen.de nachsehen, was tatsächlich passiert ist – lokaler und
+          entfernter Zustand können auseinanderlaufen.
+        </div>
+      )}
+
+      {offen && <JobLog jobId={job.id} laeuftNoch={laeuftNoch} />}
+    </div>
+  );
+}
+
+function JobLog({ jobId, laeuftNoch }: { jobId: number; laeuftNoch: boolean }) {
+  const [zeilen, setZeilen] = useState<LogZeile[]>([]);
+  const ende = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let abgebrochen = false;
+
+    void api.jobs.log(jobId).then(anfang => {
+      if (!abgebrochen) setZeilen(anfang);
+    });
+
+    if (!laeuftNoch) return () => { abgebrochen = true; };
+
+    // Server-Sent-Events statt Abfragen im Takt: Die Ausgabe kommt so
+    // unmittelbar an, und der Browser verbindet bei Abbruch selbst neu.
+    const quelle = new EventSource(api.jobs.stromUrl(jobId));
+    quelle.addEventListener('log', (e: MessageEvent<string>) => {
+      const zeile = JSON.parse(e.data) as LogZeile;
+      setZeilen(alt => (alt.some(z => z.id === zeile.id) ? alt : [...alt, zeile]));
+    });
+    quelle.addEventListener('ende', () => quelle.close());
+
+    return () => { abgebrochen = true; quelle.close(); };
+  }, [jobId, laeuftNoch]);
+
+  useEffect(() => {
+    ende.current?.scrollIntoView({ block: 'end' });
+  }, [zeilen]);
+
+  const farbe = (stufe: LogZeile['stufe']) =>
+    stufe === 'fehler' ? 'text-red-400'
+      : stufe === 'warnung' ? 'text-amber-300'
+        : stufe === 'debug' ? 'text-gray-500' : 'text-gray-200';
+
+  return (
+    <div className="border-t border-gray-200">
+      {/* Eigener Scrollbereich: Ein Lauf erzeugt hunderte Zeilen, die die
+          Seite sonst endlos lang machen. overflow-x-auto statt Umbruch, damit
+          die Ausrichtung der Bot-Ausgabe erhalten bleibt. */}
+      <div className="max-h-80 overflow-auto bg-gray-900 p-3 font-mono text-xs">
+        {zeilen.length === 0 && <p className="text-gray-500">Noch keine Ausgabe.</p>}
+        {zeilen.map(z => (
+          <div key={z.id} className={`whitespace-pre ${farbe(z.stufe)}`}>{z.text}</div>
+        ))}
+        <div ref={ende} />
+      </div>
+    </div>
+  );
+}

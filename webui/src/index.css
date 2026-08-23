@@ -1,8 +1,9 @@
+/* SPDX-FileCopyrightText: © Anzeigen-Studio contributors */
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /*
- * Designsystem. Das vollstaendige Stylesheet wird in AP-2.1 aus SoloOffice
- * uebernommen (AGPL-3.0-or-later, Herkunftsvermerk beim Uebernehmen ergaenzen).
- * Hier steht bisher nur, was das Geruest zum Bauen braucht.
+ * Designsystem. Struktur und Ansatz aus SoloOffice (AGPL-3.0-or-later)
+ * übernommen: Farben über CSS-Variablen, Dunkelmodus über ein Attribut an der
+ * App-Schale, Touch-Ziele von mindestens 44 px.
  */
 
 @tailwind base;
@@ -10,14 +11,78 @@
 @tailwind utilities;
 
 :root {
-  /* Primaerfarbe. In AP-2.2 auf den Kleinanzeigen-Gruenton umgestellt und auf
-     Kontrast geprueft; bis dahin ein neutraler Platzhalter. Die abgeleiteten
-     Varianten setzt spaeter DynamicColors.tsx aus SoloOffice. */
-  --primary-color: #64748b;
+  /* Primärfarbe: Grün in Anlehnung an kleinanzeigen.de.
+   *
+   * NICHT der helle Markenton. Gemessen: #00A046 erreicht gegen weiße Schrift
+   * nur 3,43:1 und #23A24D nur 3,31:1 - beide fallen unter WCAG AA (4,5:1)
+   * durch. #15803D erreicht 5,02:1 und trägt Text sicher.
+   *
+   * Der helle Ton bleibt als reiner Akzent ohne Schrift erhalten. */
+  --primary-color: #15803d;
+  --primary-hover: #166534;
   --primary-text-color: #ffffff;
+  --primary-light: #f0fdf4;
+  --primary-medium: #dcfce7;
+  --primary-akzent: #22c55e;
+
+  --status-erfolg: #15803d;
+  --status-warnung: #a16207;
+  --status-fehler: #b91c1c;
+  --status-neutral: #4b5563;
 }
 
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+#app-shell[data-theme='dark'] {
+  --primary-color: #4ade80;
+  --primary-hover: #86efac;
+  /* Auf hellem Grün braucht es dunkle Schrift, nicht weiße. */
+  --primary-text-color: #052e16;
+  --primary-light: #14532d;
+  --primary-medium: #166534;
+
+  --status-erfolg: #4ade80;
+  --status-warnung: #fbbf24;
+  --status-fehler: #f87171;
+  --status-neutral: #9ca3af;
+}
+
+@layer components {
+  .text-primary-custom { color: var(--primary-color); }
+  .bg-primary-custom {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+  }
+  .border-primary-custom { border-color: var(--primary-color); }
+
+  .focus\:border-primary-custom:focus { border-color: var(--primary-color); }
+  .focus\:ring-primary-custom:focus {
+    --tw-ring-color: var(--primary-color);
+  }
+}
+
+@layer base {
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: #f9fafb;
+    color: #111827;
+  }
+
+  /* Mindestgröße für Touch-Ziele. Vorbereitung für AP-2.12; billiger jetzt
+     als später an dreißig Stellen nachzuziehen. */
+  button,
+  [role='button'],
+  input[type='submit'],
+  input[type='button'] {
+    min-height: 44px;
+  }
+
+  /* Sichtbarer Fokus. Ohne ihn ist die Anwendung mit Tastatur unbedienbar. */
+  :focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  /* Feste Bereiche dürfen nicht unter Notch oder Gestenleiste rutschen. */
+  .safe-oben { padding-top: env(safe-area-inset-top, 0); }
+  .safe-unten { padding-bottom: env(safe-area-inset-bottom, 0); }
 }

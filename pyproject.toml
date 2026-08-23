@@ -360,6 +360,13 @@ verbosity = 0
 [tool.basedpyright]
 # https://docs.basedpyright.com/latest/configuration/config-files/
 include = ["scripts", "src", "tests"]
+# --- Anzeigen-Studio-Fork, hinzugefuegt 2026-08-23 ---------------------------
+# Gleiche Begruendung wie beim mypy-exclude weiter oben: Die Upstream-CI
+# installiert unsere Abhaengigkeiten nicht, weshalb hier Scheinfehler
+# entstuenden. Die Fork-CI prueft src/anzeigen_studio mit eigener
+# Konfiguration und installierten Paketen.
+exclude = ["src/anzeigen_studio"]
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
 defineConstant = { DEBUG = false }
 pythonVersion = "3.12"
 typeCheckingMode = "standard"

@@ -1,0 +1,105 @@
+# SPDX-FileCopyrightText: © Anzeigen-Studio contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Meldet neue Commits im Upstream (AP-0.8).
+#
+# Der Fork zieht Änderungen vom Upstream - das ist die wichtige Richtung, weil
+# der Bot gegen eine Website läuft, die sich ändert. Ein Vorsatz "monatlich
+# nachsehen" hält erfahrungsgemäß nicht; deshalb erledigt das hier die CI.
+#
+# Erzeugt bzw. aktualisiert genau EIN Ticket, statt jede Woche ein neues
+# anzulegen.
+
+name: Upstream beobachten
+
+on:
+  schedule:
+    # Montags früh. Ein fester Termin, damit es nicht untergeht.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  nachsehen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Upstream holen und vergleichen
+        id: vergleich
+        run: |
+          git remote add upstream https://github.com/Second-Hand-Friends/kleinanzeigen-bot.git
+          git fetch --quiet upstream main
+
+          ANZAHL=$(git rev-list --count HEAD..upstream/main)
+          echo "anzahl=$ANZAHL" >> "$GITHUB_OUTPUT"
+          echo "Neue Commits im Upstream: $ANZAHL"
+
+          if [ "$ANZAHL" -gt 0 ]; then
+            {
+              echo 'liste<<ENDE'
+              git log --oneline --no-merges HEAD..upstream/main | head -40
+              echo 'ENDE'
+              echo 'dateien<<ENDE'
+              # Nur die Bereiche, die uns betreffen - die Checkliste aus
+              # docs/UPSTREAM-SYNC.md nennt genau diese.
+              git diff --stat HEAD..upstream/main -- \
+                src/kleinanzeigen_bot/ schemas/ pyproject.toml pdm.lock \
+                docker/ | tail -25
+              echo 'ENDE'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ticket anlegen oder aktualisieren
+        if: steps.vergleich.outputs.anzahl != '0'
+        uses: actions/github-script@v7
+        env:
+          ANZAHL: ${{ steps.vergleich.outputs.anzahl }}
+          LISTE: ${{ steps.vergleich.outputs.liste }}
+          DATEIEN: ${{ steps.vergleich.outputs.dateien }}
+        with:
+          script: |
+            const titel = 'Upstream-Änderungen übernehmen';
+            const koerper = [
+              `Der Upstream hat **${process.env.ANZAHL} neue Commits**, die hier noch fehlen.`,
+              '',
+              'Ablauf und Nachzieh-Checkliste: [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md)',
+              '',
+              '<details><summary>Commits</summary>',
+              '',
+              '```', process.env.LISTE || '(keine)', '```',
+              '</details>',
+              '',
+              '<details><summary>Betroffene Dateien in den für uns relevanten Bereichen</summary>',
+              '',
+              '```', process.env.DATEIEN || '(keine)', '```',
+              '</details>',
+              '',
+              '---',
+              '*Automatisch erzeugt. Wird bei jedem Lauf aktualisiert, solange etwas offen ist.*',
+            ].join('\n');
+
+            const offen = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'upstream',
+            });
+            const vorhanden = offen.data.find(i => i.title === titel);
+
+            if (vorhanden) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: vorhanden.number, body: koerper,
+              });
+              core.info(`Ticket #${vorhanden.number} aktualisiert.`);
+            } else {
+              const neu = await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title: titel, body: koerper, labels: ['upstream'],
+              });
+              core.info(`Ticket #${neu.data.number} angelegt.`);
+            }

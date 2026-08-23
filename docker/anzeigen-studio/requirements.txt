@@ -15,6 +15,10 @@
 
 cryptography>=44.0,<50.0
 fastapi>=0.115,<1.0
+# Aufraeumen verwaister Browserprozesse (AP-1.9). Der Bot bringt psutil
+# ohnehin mit; hier steht es, weil das Backend es selbst importiert und die
+# Abhaengigkeit nicht stillschweigend vom Bot geborgt werden soll.
+psutil>=6.0
 # Erzeugt die config.yaml des Bots. Gleiche Bibliothek wie der Bot selbst,
 # damit Formatierung und Sonderfaelle uebereinstimmen.
 ruamel.yaml>=0.18,<1.0

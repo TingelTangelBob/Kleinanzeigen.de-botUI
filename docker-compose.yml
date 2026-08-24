@@ -27,6 +27,13 @@ services:
       ANZEIGEN_STUDIO_DATA_DIR: /data
       ANZEIGEN_STUDIO_DEV: ${ANZEIGEN_STUDIO_DEV:-false}
       TZ: Europe/Berlin
+      # Der Bot waehlt seine Sprache aus LANG (utils/i18n.py). Ohne diese Zeile
+      # steht dort C.UTF-8, und das gesamte Protokoll erscheint auf Englisch -
+      # entgegen der Regel, dass alle sichtbaren Texte Deutsch sind.
+      #
+      # Das Image hat keine erzeugten Locale-Daten, und es braucht auch keine:
+      # Gelesen wird nur die Zeichenkette, `setlocale` ruft niemand auf.
+      LANG: de_DE.UTF-8
     volumes:
       - studio-data:/data
     # Chromium stuerzt bei knappem /dev/shm reproduzierbar ab. Die Vorgabe von

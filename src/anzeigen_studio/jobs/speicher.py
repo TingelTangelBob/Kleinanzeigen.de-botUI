@@ -54,6 +54,18 @@ def _zu_job(row: sqlite3.Row) -> Job:
 _AKTIV_A = JobZustand.LAEUFT
 _AKTIV_B = JobZustand.BRAUCHT_EINGABE
 
+#: Zustaende, die einen Neustart des Dienstes nicht ueberdauern koennen.
+#:
+#: WARTET gehoert dazu, auch wenn kein Prozess dranhaengt: Ein eingereihter Job
+#: wird von `asyncio.create_task` getragen und lebt nur im Speicher des
+#: Backends. Nach einem Neustart nimmt ihn niemand wieder auf - er stuende
+#: sonst fuer immer auf "wartet". Beobachtet am 2026-08-23 an einem `verify`,
+#: das einen Neubau des Containers scheinbar unbeschadet ueberstand.
+#:
+#: Bewusst getrennt von _AKTIV_A/_AKTIV_B: Fuer die Frage, ob fuer ein Profil
+#: gerade ein Lauf laeuft, zaehlt ein wartender Job nicht mit.
+_VERWAIST_BEIM_START = (JobZustand.WARTET, JobZustand.LAEUFT, JobZustand.BRAUCHT_EINGABE)
+
 
 def einreihen(conn: sqlite3.Connection, profil_id: int, befehl: str, argumente: list[str]) -> int:
     cursor = conn.execute(
@@ -185,16 +197,20 @@ def log_lesen(conn: sqlite3.Connection, job_id: int, *, ab_id: int = 0) -> list[
 
 
 def verwaiste_aufraeumen(conn: sqlite3.Connection) -> int:
-    """Markiert Jobs, die beim letzten Beenden noch liefen, als abgebrochen.
+    """Markiert Jobs, die den Neustart nicht ueberdauern koennen, als abgebrochen.
 
-    Sie koennen es nicht mehr sein - der Prozess ist mit dem Backend gestorben.
-    Ehrlich zu melden ist besser, als einen Zustand anzuzeigen, den es nicht
-    mehr gibt.
+    Betrifft laufende, auf Eingabe wartende und eingereihte Jobs (siehe
+    `_VERWAIST_BEIM_START`). Keiner von ihnen laeuft nach einem Neustart weiter
+    - ehrlich zu melden ist besser, als einen Zustand anzuzeigen, den es nicht
+    mehr gibt. Ein Lauf, der Anzeigen veraendern kann, soll ausserdem nicht von
+    selbst anspringen, nur weil der Dienst neu gestartet ist.
     """
+    platzhalter = ", ".join("?" for _ in _VERWAIST_BEIM_START)
     cursor = conn.execute(
         "UPDATE job SET zustand = ?, beendet_am = ?, eingriff = NULL, "
+        "wartet_bis = NULL, wartegrund = NULL, "
         "meldung = 'Beim Neustart des Dienstes abgebrochen.' "
-        "WHERE zustand IN (?, ?)",
-        (JobZustand.ABGEBROCHEN, _jetzt(), _AKTIV_A, _AKTIV_B),
+        f"WHERE zustand IN ({platzhalter})",
+        (JobZustand.ABGEBROCHEN, _jetzt(), *_VERWAIST_BEIM_START),
     )
     return cursor.rowcount or 0

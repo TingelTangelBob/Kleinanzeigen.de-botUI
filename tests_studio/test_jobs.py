@@ -143,6 +143,42 @@ class TestSpeicher:
             assert job is not None
             assert job.zustand is JobZustand.ABGEBROCHEN
 
+    def test_eingereihte_werden_ebenfalls_abgebrochen(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        """Regression vom 2026-08-23.
+
+        Ein eingereihter Job wird von `asyncio.create_task` getragen und lebt
+        nur im Speicher des Backends. Nach einem Neustart nimmt ihn niemand
+        wieder auf - er blieb bis dahin fuer immer auf "wartet" stehen.
+        """
+        _, conn, profil_id, _ = umgebung
+        with db.transaction(conn):
+            job_id = speicher.einreihen(conn, profil_id, "verify", [])
+        vorher = speicher.holen(conn, job_id)
+        assert vorher is not None
+        assert vorher.zustand is JobZustand.WARTET
+
+        with db.transaction(conn):
+            anzahl = speicher.verwaiste_aufraeumen(conn)
+
+        assert anzahl == 1
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.ABGEBROCHEN
+        assert job.meldung == "Beim Neustart des Dienstes abgebrochen."
+
+    def test_abgeschlossene_bleiben_unberuehrt(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        _, conn, profil_id, _ = umgebung
+        with db.transaction(conn):
+            fertig = speicher.einreihen(conn, profil_id, "verify", [])
+            speicher.zustand_setzen(conn, fertig, JobZustand.FERTIG, rueckgabecode = 0)
+        with db.transaction(conn):
+            assert speicher.verwaiste_aufraeumen(conn) == 0
+        job = speicher.holen(conn, fertig)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
+
 
 class TestWarteschlange:
 

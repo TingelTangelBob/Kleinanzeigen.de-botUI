@@ -48,6 +48,44 @@ class TestSperrenEntfernen:
         assert aufraeumen.sperren_entfernen(profil) == []
 
 
+class TestNachLauf:
+    """Regression vom 2026-08-23.
+
+    Das Entfernen der Sperrdateien hing daran, dass zuvor ein verwaister
+    Prozess beendet wurde. Der haeufigste Fall hat aber keinen: Beim Neustart
+    des Containers stirbt Chromium mit, die Sperren bleiben im Datenverzeichnis
+    liegen. Danach scheiterte jeder Lauf mit "Failed to start browser".
+    """
+
+    def _profil_mit_sperren(self, tmp_path:Path) -> Path:
+        profil = tmp_path / "browser-profile"
+        profil.mkdir()
+        (profil / "SingletonCookie").write_text("x", encoding = "utf-8")
+        (profil / "SingletonSocket").write_text("x", encoding = "utf-8")
+        (profil / "SingletonLock").symlink_to("alter-container-42")
+        return profil
+
+    def test_sperren_gehen_auch_ohne_verwaisten_prozess(self, tmp_path:Path) -> None:
+        profil = self._profil_mit_sperren(tmp_path)
+
+        aufraeumen.nach_lauf(profil)
+
+        assert not (profil / "SingletonLock").is_symlink()
+        assert not (profil / "SingletonCookie").exists()
+        assert not (profil / "SingletonSocket").exists()
+
+    def test_vor_lauf_raeumt_ebenfalls(self, tmp_path:Path) -> None:
+        profil = self._profil_mit_sperren(tmp_path)
+
+        aufraeumen.vor_lauf(profil)
+
+        assert not (profil / "SingletonLock").is_symlink()
+
+    def test_ohne_profilverzeichnis_kein_fehler(self, tmp_path:Path) -> None:
+        aufraeumen.vor_lauf(tmp_path / "gibtesnicht")
+        aufraeumen.nach_lauf(tmp_path / "gibtesnicht")
+
+
 class TestVerwaisteBrowser:
 
     def test_ohne_treffer_passiert_nichts(self, tmp_path:Path) -> None:

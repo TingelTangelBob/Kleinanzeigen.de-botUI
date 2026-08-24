@@ -248,6 +248,12 @@ class Warteschlange:
         with db.transaction(conn):
             speicher.zustand_setzen(conn, job_id, JobZustand.LAEUFT)
 
+        # Erste Verteidigungslinie (AP-1.9), ergaenzt am 2026-08-23: Nach einem
+        # Neustart des Containers liegen Sperrdateien im Profilverzeichnis, ohne
+        # dass ein Prozess sie haelt. Das Aufraeumen nach dem Lauf kann sie nicht
+        # erwischen - es lief zuletzt in einem Container, den es nicht mehr gibt.
+        aufraeumen.vor_lauf(profil_verzeichnis / ".temp" / "browser-profile")
+
         await lauf.starten()
         async for ereignis in lauf.ereignisse():
             with db.transaction(conn):

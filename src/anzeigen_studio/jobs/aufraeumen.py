@@ -104,10 +104,41 @@ def sperren_entfernen(browser_profil: Path) -> list[str]:
     return entfernt
 
 
+def _aufraeumen(browser_profil: Path) -> None:
+    """Beendet verwaiste Prozesse und entfernt danach die Sperrdateien.
+
+    Die Reihenfolge ist die Bedingung dafuer, dass das Entfernen sicher ist:
+    Erst wird alles beendet, was noch auf dem Profil sitzt, dann sind die
+    Sperren nachweislich herrenlos.
+
+    Die Sperren werden auch dann entfernt, wenn kein Prozess zu beenden war.
+    Genau das ist der haeufige Fall - und er war bis zum 2026-08-23 nicht
+    abgedeckt: Beim Beenden des Containers stirbt Chromium mit ihm, ein
+    verwaister Prozess bleibt also gar nicht uebrig. Die Sperrdateien liegen
+    aber im Datenverzeichnis und ueberleben den Neustart. Jeder folgende Lauf
+    scheiterte daraufhin mit "Failed to start browser" - einer Meldung, die auf
+    Rechte oder das Browser-Binary zeigt und nicht auf die wahre Ursache.
+    """
+    beendet = verwaiste_browser_beenden(browser_profil)
+    entfernt = sperren_entfernen(browser_profil)
+    if beendet or entfernt:
+        LOG.info(
+            "Aufgeraeumt: %d verwaiste Prozess(e), Sperrdateien: %s",
+            beendet, ", ".join(entfernt) if entfernt else "keine",
+        )
+
+
+def vor_lauf(browser_profil: Path) -> None:
+    """Aufraeumen vor dem Start eines Laufs.
+
+    Notwendig, weil `nach_lauf` nur laeuft, wenn es ein Ende gab. Ein
+    Container-Neustart oder ein harter Absturz lassen Sperren zurueck, die
+    sonst niemand mehr anfasst - und blockieren damit dauerhaft jeden weiteren
+    Lauf des Profils.
+    """
+    _aufraeumen(browser_profil)
+
+
 def nach_lauf(browser_profil: Path) -> None:
     """Vollstaendiges Aufraeumen nach einem Lauf."""
-    beendet = verwaiste_browser_beenden(browser_profil)
-    if beendet:
-        entfernt = sperren_entfernen(browser_profil)
-        if entfernt:
-            LOG.info("Sperrdateien entfernt: %s", ", ".join(entfernt))
+    _aufraeumen(browser_profil)

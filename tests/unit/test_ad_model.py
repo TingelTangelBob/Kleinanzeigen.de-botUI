@@ -358,31 +358,44 @@ def test_sell_directly_accepted_with_valid_options(base_ad_cfg:dict[str, object]
     assert ad.shipping_options == ["DHL_2"]
 
 
+# --- Anzeigen-Studio-Fork, 2026-08-23 ---------------------------------------
+# Die beiden folgenden Tests forderten urspruenglich eine Ablehnung. Sie pruefen
+# jetzt das Gegenteil, weil die Plattform diesen Zustand zulaesst: "Direkt
+# kaufen" ist auch mit frei gesetzten Versandkosten moeglich (belegt an einer
+# echten Anzeige mit 3,00 EUR ohne Paketauswahl). Das Modell darf eine gueltige
+# Anzeige nicht unlesbar machen.
+#
+# Die Einschraenkung des Bots bleibt geprueft, nur an der richtigen Stelle:
+# test_publishing_form.py verlangt weiterhin ein Paket beim Veroeffentlichen.
 @pytest.mark.unit
-def test_sell_directly_rejected_without_options(base_ad_cfg:dict[str, object]) -> None:
-    """OFFER ad with sell_directly: true but no shipping_options fails."""
+def test_sell_directly_accepted_without_options(base_ad_cfg:dict[str, object]) -> None:
+    """OFFER ad with sell_directly: true and no shipping_options is readable."""
     cfg = base_ad_cfg.copy() | {
         "price_type": "FIXED",
         "shipping_type": "SHIPPING",
         "sell_directly": True,
         "price": 50,
     }
-    with pytest.raises(ContextualValidationError, match = "shipping_option"):
-        AdPartial.model_validate(cfg).to_ad(AdDefaults())
+    ad = AdPartial.model_validate(cfg).to_ad(AdDefaults())
+    assert ad.sell_directly is True
+    assert not ad.shipping_options
 
 
 @pytest.mark.unit
-def test_sell_directly_rejected_with_shipping_costs_only(base_ad_cfg:dict[str, object]) -> None:
-    """OFFER ad with sell_directly: true + shipping_costs but no shipping_options fails."""
+def test_sell_directly_accepted_with_shipping_costs_only(base_ad_cfg:dict[str, object]) -> None:
+    """OFFER ad with sell_directly: true + free shipping_costs keeps both values."""
     cfg = base_ad_cfg.copy() | {
         "price_type": "FIXED",
         "shipping_type": "SHIPPING",
-        "shipping_costs": 4.95,
+        "shipping_costs": 3.00,
         "sell_directly": True,
         "price": 50,
     }
-    with pytest.raises(ContextualValidationError, match = "shipping_option"):
-        AdPartial.model_validate(cfg).to_ad(AdDefaults())
+    ad = AdPartial.model_validate(cfg).to_ad(AdDefaults())
+    assert ad.sell_directly is True
+    assert ad.shipping_costs == 3.00
+    assert not ad.shipping_options
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
 
 
 @pytest.mark.unit

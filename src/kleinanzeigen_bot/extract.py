@@ -176,6 +176,22 @@ def _render_name_with_budget(template:str, ad_id:int, title:str, max_length:int)
     return result, id_truncated, title_truncated
 
 
+# --- Anzeigen-Studio-Fork, 2026-08-23 ---------------------------------------
+# Der Versandpreis einer Anzeige wird ueber Preisgleichheit einem Paket des
+# Plattformkatalogs zugeordnet. Passt kein Paket, bleibt `shipping_options`
+# leer - bisher stillschweigend. Die Anzeige ist dann zwar vollstaendig
+# gespeichert, laesst sich aber nicht wieder veroeffentlichen
+# (publishing_form.py setzt individuelle Versandkosten nicht mehr).
+# Dieser Verlust gehoert sichtbar gemacht, nicht verschwiegen.
+def _warn_unmappable_shipping(ship_costs:float | None) -> None:
+    LOG.warning(
+        "Shipping price %s EUR matches no predefined shipping package. "
+        "The ad is saved, but its shipping cannot be restored when re-publishing.",
+        ship_costs,
+    )
+# --- Ende Anzeigen-Studio-Fork ----------------------------------------------
+
+
 class AdExtractor(WebScrapingMixin):
     """
     Wrapper class for ad extraction that uses an active bot´s browser session to extract specific elements from an ad page.
@@ -971,6 +987,7 @@ class AdExtractor(WebScrapingMixin):
                     # Find all options with the same price to determine the package size
                     matching_options = [opt for opt in shipping_costs if opt["priceInEuroCent"] == price_in_cent]
                     if not matching_options:
+                        _warn_unmappable_shipping(ship_costs)
                         return "SHIPPING", ship_costs, None
 
                     # Use the package size of the first matching option
@@ -988,6 +1005,7 @@ class AdExtractor(WebScrapingMixin):
                     # Only use the matching option if it's not excluded
                     matching_option = next((x for x in shipping_costs if x["priceInEuroCent"] == price_in_cent), None)
                     if not matching_option:
+                        _warn_unmappable_shipping(ship_costs)
                         return "SHIPPING", ship_costs, None
 
                     shipping_option = shipping_option_mapping.get(matching_option["id"])

@@ -452,10 +452,14 @@ kleinanzeigen_bot/download_flow.py:
     "Loaded metadata for %s published ads.": "Metadaten für %s veröffentlichte Anzeigen geladen."
     "Skipping ad with non-numeric id: %s": "Überspringe Anzeige mit nicht-numerischer ID: %s"
 
+  _download_tolerant:
+    "Ad %d could not be downloaded and was skipped: %s": "Anzeige %d konnte nicht heruntergeladen werden und wurde übersprungen: %s"
+
   _download_all_ads:
     "Starting download of all ads...": "Starte den Download aller Anzeigen..."
     "Downloading %d/%d ads...": "Lade Anzeige %d/%d herunter..."
     "%d of %d ads were downloaded from your profile.": "%d von %d Anzeigen wurden aus Ihrem Profil heruntergeladen."
+    "%d ad(s) were skipped because they could not be read.": "%d Anzeige(n) wurden übersprungen, weil sie nicht gelesen werden konnten."
 
   _download_new_ads:
     "Starting download of not yet downloaded ads...": "Starte den Download noch nicht heruntergeladener Anzeigen..."
@@ -463,6 +467,7 @@ kleinanzeigen_bot/download_flow.py:
     "Skipping saved ad without id (likely unpublished or manually created): %s": "Überspringe gespeicherte Anzeige ohne ID (vermutlich nicht veröffentlicht oder manuell erstellt): %s"
     "The ad with id %d has already been saved.": "Die Anzeige mit der ID %d wurde bereits gespeichert."
     "%s were downloaded from your profile.": "%s wurden aus Ihrem Profil heruntergeladen."
+    "%d ad(s) were skipped because they could not be read.": "%d Anzeige(n) wurden übersprungen, weil sie nicht gelesen werden konnten."
     "new ad": "neue Anzeige"
 
   _download_ads_by_ids:
@@ -471,6 +476,7 @@ kleinanzeigen_bot/download_flow.py:
     "Ad id %d is not in your published profile ads. Saving downloaded ad as inactive.": "Anzeigen-ID %d ist nicht in Ihren veröffentlichten Profilanzeigen. Speichere die heruntergeladene Anzeige als inaktiv."
     "Downloaded ad with id %d": "Anzeige mit der ID %d heruntergeladen"
     "The page with the id %d does not exist!": "Die Seite mit der ID %d existiert nicht!"
+    "Ad %d could not be downloaded and was skipped: %s": "Anzeige %d konnte nicht heruntergeladen werden und wurde übersprungen: %s"
 
   _download_ad_with_resolved_state:
     "Ad %d found in overview but not in published profile. Saving as inactive.": "Anzeige %d wurde in der Übersicht gefunden, aber nicht im veröffentlichten Profil. Speichere als inaktiv."
@@ -598,6 +604,9 @@ kleinanzeigen_bot/price_reduction.py:
 #################################################
 kleinanzeigen_bot/extract.py:
 #################################################
+  _warn_unmappable_shipping:
+    "Shipping price %s EUR matches no predefined shipping package. The ad is saved, but its shipping cannot be restored when re-publishing.": "Versandpreis %s € passt zu keinem vordefinierten Versandpaket. Die Anzeige wird gespeichert, ihr Versand lässt sich beim erneuten Veröffentlichen aber nicht wiederherstellen."
+
   _resolve_download_title:
     "Removed owned-ad status decoration from downloaded ad %s title.": "Statuspräfix aus dem Titel der eigenen heruntergeladenen Anzeige %s entfernt."
 
@@ -1071,7 +1080,6 @@ kleinanzeigen_bot/model/ad_model.py:
     "min_price must be specified when auto_price_reduction is enabled": "min_price muss angegeben werden, wenn auto_price_reduction aktiviert ist"
   _validate_sell_directly:
     "sell_directly requires shipping_type to be SHIPPING": "sell_directly erfordert shipping_type: SHIPPING"
-    "sell_directly requires at least one predefined shipping_options entry (shipping_costs alone is not sufficient)": "sell_directly erfordert mindestens einen vordefinierten shipping_options Eintrag (shipping_costs allein reicht nicht aus)"
     "sell_directly requires price_type to be FIXED or NEGOTIABLE": "sell_directly erfordert price_type: FIXED oder NEGOTIABLE"
 
 #################################################

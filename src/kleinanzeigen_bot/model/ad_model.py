@@ -463,10 +463,22 @@ class Ad(AdPartial):
             raise ValueError(
                 _("sell_directly requires shipping_type to be SHIPPING")
             )
-        if not self.shipping_options:
-            raise ValueError(
-                _("sell_directly requires at least one predefined shipping_options entry (shipping_costs alone is not sufficient)")
-            )
+        # --- Anzeigen-Studio-Fork, 2026-08-23 -------------------------------
+        # Hier stand die Forderung nach mindestens einem vordefinierten
+        # `shipping_options`-Eintrag. Sie ist entfallen, weil sie der Plattform
+        # widerspricht: Belegt an Anzeige 3310837392 erlaubt Kleinanzeigen
+        # "Direkt kaufen" auch mit frei gesetzten Versandkosten (dort 3,00 EUR -
+        # ein Betrag, den der Paketkatalog der Plattform nicht kennt).
+        #
+        # Der Validator lehnte diesen gueltigen Zustand beim Herunterladen ab.
+        # Damit war die gesamte Anzeige unlesbar, obwohl nur die Versandangabe
+        # betroffen ist. Das Modell beschreibt jetzt, was es vorfindet.
+        #
+        # Streng bleibt das Veroeffentlichen: publishing_form.py verlangt
+        # weiterhin ein Paket, weil der Upstream individuelle Versandkosten im
+        # Formular nicht mehr setzen kann. Die Pruefung steht damit dort, wo die
+        # Einschraenkung tatsaechlich gilt - und nicht beim blossen Lesen.
+        # --- Ende Anzeigen-Studio-Fork --------------------------------------
         if self.price_type not in {"FIXED", "NEGOTIABLE"}:
             raise ValueError(
                 _("sell_directly requires price_type to be FIXED or NEGOTIABLE")

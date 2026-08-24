@@ -23,6 +23,18 @@ ENV TZ=Europe/Berlin \
     DISPLAY_NUM=99 \
     DISPLAY=:99
 
+# Mesa-Grafiktreiber und die dazugehoerige LLVM-Bibliothek werden am Ende
+# wieder entfernt: 137 MB fuer Hardwarebeschleunigung, die es in diesem Abbild
+# nicht gibt. Der Bot startet Chromium mit --disable-gpu unter Xvfb; gerendert
+# wird ohnehin in Software durch das in Chromium eingebaute SwiftShader.
+#
+# Geprueft am 2026-08-24 im Abbild selbst: Nach dem Entfernen startet Chromium
+# mit denselben Schaltern und antwortet auf der CDP-Schnittstelle
+# (`/json/version` meldet Chrome/151). Genau daran haengt nodriver.
+#
+# Das Entfernen gehoert in denselben RUN wie die Installation - sonst bleiben
+# die Dateien in der darunterliegenden Schicht liegen und das Abbild wird kein
+# Byte kleiner.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates tzdata \
@@ -31,7 +43,10 @@ RUN apt-get update \
       x11vnc novnc websockify \
       fonts-liberation fonts-dejavu-core \
       procps \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/lib/x86_64-linux-gnu/dri \
+           /usr/lib/x86_64-linux-gnu/libLLVM-15.so.1 \
+           /usr/share/doc/* /usr/share/man/*
 
 # Nicht als root. Feste UID/GID, damit die Rechte im Volume vorhersehbar sind.
 # Chromium verweigert den Dienst als root - der Bot hat dafuer sogar eigene

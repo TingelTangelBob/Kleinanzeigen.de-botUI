@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import os
 import sqlite3
 from typing import TYPE_CHECKING
@@ -186,6 +187,17 @@ class TestKeinKlartext:
                       passwort = GEHEIMES_PASSWORT, schluessel = SCHLUESSEL)
         st = zugang.status(conn, profil_id)
         assert st is not None
+
+        # Der Zeitstempel bleibt aussen vor. Er enthaelt zwangslaeufig Ziffern,
+        # die zufaellig der Passwortlaenge entsprechen koennen - am 2026-08-24
+        # ist genau das passiert: "24" im Datum, 24 Zeichen im Passwort. Der
+        # Test schlug damit taggenau fehl, ohne dass sich etwas geaendert
+        # hatte. Geprueft wird stattdessen Feld fuer Feld.
+        felder = {f.name: getattr(st, f.name)
+                  for f in dataclasses.fields(st) if f.name != "geaendert_am"}
+        assert set(felder) == {"benutzername", "passwort_hinterlegt"}, \
+            "Neues Feld in ZugangStatus - gehoert es wirklich nach aussen?"
+
         # Auch nicht mittelbar, etwa ueber eine Laengenangabe.
-        assert GEHEIMES_PASSWORT not in repr(st)
-        assert str(len(GEHEIMES_PASSWORT)) not in repr(st)
+        assert GEHEIMES_PASSWORT not in repr(felder)
+        assert str(len(GEHEIMES_PASSWORT)) not in repr(felder)

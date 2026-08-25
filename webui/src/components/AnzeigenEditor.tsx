@@ -17,6 +17,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Info, Save } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
+import { KategorieWahl } from './KategorieWahl';
+import { VersandpaketWahl } from './VersandpaketWahl';
 
 const TITEL_MIN = 10;
 const TITEL_MAX = 65;
@@ -225,18 +227,12 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
             </select>
           </label>
 
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Kategorie</span>
-            <input
-              type="text"
-              value={text(felder.category)}
-              onChange={e => setzen('category', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+          <div className="sm:col-span-2">
+            <KategorieWahl
+              wert={text(felder.category)}
+              aufAenderung={wert => setzen('category', wert)}
             />
-            <span className="mt-1 block text-xs text-gray-500">
-              Nummernpfad wie 161/278/laptop. Ein Suchfeld dafür kommt mit AP-2.7.
-            </span>
-          </label>
+          </div>
 
           <label className="block">
             <span className="text-sm font-medium text-gray-700">Preis (€)</span>
@@ -297,15 +293,12 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
           </label>
         </div>
 
-        <fieldset className="rounded border border-gray-200 p-3">
-          <legend className="px-1 text-sm font-medium text-gray-700">Versandpakete</legend>
-          <p className="text-sm text-gray-700">
-            {((felder.shipping_options as string[] | null) ?? []).join(', ') || 'keins ausgewählt'}
-          </p>
-          <p className="mt-1 text-xs text-gray-500">
-            Auswählbar erst mit AP-2.7. Ohne Paket lässt sich die Anzeige nicht hochladen.
-          </p>
-        </fieldset>
+        <VersandpaketWahl
+          gewaehlt={(felder.shipping_options as string[] | null) ?? []}
+          versandkosten={typeof felder.shipping_costs === 'number' ? felder.shipping_costs : null}
+          direktKaufen={Boolean(felder.sell_directly)}
+          aufAenderung={pakete => setzen('shipping_options', pakete.length > 0 ? pakete : null)}
+        />
 
         <div className="flex flex-wrap gap-6">
           <label className="flex items-center gap-2">

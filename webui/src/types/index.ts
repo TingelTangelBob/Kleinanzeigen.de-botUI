@@ -105,3 +105,17 @@ export interface SpeichernAusgabe {
   /** Was dem Veröffentlichen im Weg stünde - kein Grund, nicht zu speichern. */
   hinweise: string[];
 }
+
+/** Nachschlagewerke für den Editor (AP-2.7). */
+export interface Kategorie {
+  name: string;
+  wert: string;
+}
+
+export interface Versandpaket {
+  wert: string;
+  anbieter: string;
+  groesse: string;
+  /** Tagespreis der Plattform, oder null wenn sie nicht erreichbar war. */
+  preis: number | null;
+}

@@ -7,8 +7,8 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
-  AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, LogZeile, Profil,
-  SpeichernAusgabe, ZugangStatus,
+  AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, Kategorie, LogZeile,
+  Profil, SpeichernAusgabe, Versandpaket, ZugangStatus,
 } from '../types';
 
 /** Fehler mit der deutschen Meldung des Backends. */
@@ -132,6 +132,11 @@ export const api = {
     bildUrl: (profil: string, datei: string, name: string) =>
       `/api/bestand/bild?profil=${encodeURIComponent(profil)}`
       + `&datei=${encodeURIComponent(datei)}&name=${encodeURIComponent(name)}`,
+  },
+
+  katalog: {
+    kategorien: () => anfrage<Kategorie[]>('/katalog/kategorien'),
+    versandpakete: () => anfrage<Versandpaket[]>('/katalog/versandpakete'),
   },
 
   jobs: {

@@ -39,7 +39,10 @@ async function anfrage<T>(pfad: string, optionen: RequestInit = {}): Promise<T> 
     antwort = await fetch(`/api${pfad}`, {
       ...optionen,
       headers: {
-        ...(optionen.body ? { 'Content-Type': 'application/json' } : {}),
+        // Nur bei JSON selbst setzen. Bei FormData muss der Browser den
+        // Content-Type bestimmen - er hängt das Trennzeichen an, ohne das der
+        // Server den Rumpf nicht zerlegen kann.
+        ...(typeof optionen.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
         ...optionen.headers,
       },
       // Sitzungscookie mitschicken.
@@ -127,6 +130,23 @@ export const api = {
       anfrage<SpeichernAusgabe>(`/bestand/anzeige?profil=${encodeURIComponent(profil)}`, {
         method: 'PUT', ...json({ datei, felder }),
       }),
+
+    bildHochladen: async (profil: string, datei: string, bild: File) => {
+      const formular = new FormData();
+      formular.append('bild', bild);
+      // Kein json()-Rumpf: FormData setzt den Content-Type samt Trennzeichen
+      // selbst. Wer ihn hier von Hand setzt, zerstört genau das.
+      return anfrage<{ name: string; kopf: BestandsAnzeige }>(
+        `/bestand/bild?profil=${encodeURIComponent(profil)}&datei=${encodeURIComponent(datei)}`,
+        { method: 'POST', body: formular },
+      );
+    },
+    bildEntfernen: (profil: string, datei: string, name: string) =>
+      anfrage<BestandsAnzeige>(
+        `/bestand/bild?profil=${encodeURIComponent(profil)}`
+        + `&datei=${encodeURIComponent(datei)}&name=${encodeURIComponent(name)}`,
+        { method: 'DELETE' },
+      ),
 
     /** Kein anfrage(): Das Bild hängt direkt im src-Attribut. */
     bildUrl: (profil: string, datei: string, name: string) =>

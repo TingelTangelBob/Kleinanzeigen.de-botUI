@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING, Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -181,5 +181,48 @@ def anzeige_speichern(
     sie überschreiben würde.
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
-    kopf, hinweise = bestand_dienst.speichern(wurzel, daten.datei, dict(daten.felder))
+    felder = dict(daten.felder)
+
+    # Die Reihenfolge der Bilder darf nur umsortieren, nicht hinzufuegen oder
+    # entfernen - dafuer gibt es eigene Wege, die auch die Dateien anfassen.
+    if "images" in felder:
+        roh = felder["images"] or []
+        if not isinstance(roh, list):
+            raise FachlicherFehler("Bilder müssen eine Liste sein.", status = 400, feld = "images")
+        bestand_dienst.reihenfolge_pruefen(wurzel, daten.datei, [str(b) for b in roh])
+
+    kopf, hinweise = bestand_dienst.speichern(wurzel, daten.datei, felder)
     return SpeichernAusgabe(kopf = _ausgabe(kopf), hinweise = hinweise)
+
+
+class BildAusgabe(BaseModel):
+    name: str
+    kopf: AnzeigeAusgabe
+
+
+@router.post("/bild", response_model = BildAusgabe, status_code = 201)
+async def bild_hochladen(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+    bild: Annotated[UploadFile, File()],
+) -> BildAusgabe:
+    """Legt ein Bild neben die Anzeige und trägt es hinten ein (AP-2.6)."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    inhalt = await bild.read()
+    name, kopf = bestand_dienst.bild_hinzufuegen(wurzel, datei, inhalt)
+    return BildAusgabe(name = name, kopf = _ausgabe(kopf))
+
+
+@router.delete("/bild", response_model = AnzeigeAusgabe)
+def bild_entfernen(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    name: Annotated[str, Query(max_length = 200)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> AnzeigeAusgabe:
+    """Nimmt ein Bild aus der Anzeige und löscht die Datei."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return _ausgabe(bestand_dienst.bild_entfernen(wurzel, datei, name))

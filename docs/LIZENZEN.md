@@ -3,8 +3,12 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Neue Datei des Forks. Nicht im Upstream vorhanden. -->
 
-**Stand:** 2026-08-22 · **Erhoben aus:** `pdm.lock` (vollständige aufgelöste Hülle, Gruppe
+**Stand:** 2026-08-25 · **Erhoben aus:** `pdm.lock` (vollständige aufgelöste Hülle, Gruppe
 `default`) · **Lizenzangaben:** live über die PyPI-JSON-API abgefragt, nicht aus dem Gedächtnis.
+
+> **Nachtrag 2026-08-25.** Ergänzt um `python-multipart` (Apache-2.0), gebraucht für die
+> Bild-Uploads aus AP-2.6. Lizenz am selben Tag über die PyPI-API abgefragt, nicht aus dem
+> Gedächtnis — dieselbe Regel wie beim ersten Durchgang.
 
 ## Warum es diese Liste gibt
 
@@ -50,10 +54,12 @@ hierher.
 | `mdurl` | 0.1.2 | MIT License |
 | `more-itertools` | 11.1.0 | MIT |
 | `mss` | 10.2.0 | MIT License |
-| `nodriver` | 0.50.3 | GNU AFFERO GENERAL PUBLIC LICENSE                          … |
+| `nodriver` | 0.50.3 | GNU AFFERO GENERAL PUBLIC LICENSE
+                          … |
 | `platformdirs` | 4.11.3 | MIT |
 | `psutil` | 7.2.2 | BSD-3-Clause |
 | `pydantic` | 2.13.4 | MIT |
+| `python-multipart` | 0.0.32 | Apache-2.0 |
 | `pydantic-core` | 2.46.4 | MIT |
 | `pygments` | 2.21.0 | BSD-2-Clause |
 | `rich` | 15.0.0 | MIT |

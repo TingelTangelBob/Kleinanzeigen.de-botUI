@@ -42,7 +42,7 @@ LOG = logging.getLogger(__name__)
 AENDERBAR = frozenset({
     "active", "type", "title", "description", "category", "price", "price_type",
     "shipping_type", "shipping_costs", "shipping_options", "sell_directly",
-    "republication_interval", "contact", "special_attributes",
+    "republication_interval", "contact", "special_attributes", "images",
 })
 
 _yaml_rund = YAML()

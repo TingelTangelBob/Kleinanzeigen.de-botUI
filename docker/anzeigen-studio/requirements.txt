@@ -19,6 +19,11 @@ fastapi>=0.115,<1.0
 # ohnehin mit; hier steht es, weil das Backend es selbst importiert und die
 # Abhaengigkeit nicht stillschweigend vom Bot geborgt werden soll.
 psutil>=6.0
+# Fuer Datei-Uploads (AP-2.6). FastAPI braucht es, um multipart/form-data zu
+# lesen; ohne die Zeile scheitert der Endpunkt beim Start mit einer
+# Fehlermeldung, die nach einem Programmfehler aussieht.
+# Lizenz am 2026-08-25 ueber die PyPI-API geprueft: Apache-2.0, vertraeglich.
+python-multipart>=0.0.20,<1.0
 # Erzeugt die config.yaml des Bots. Gleiche Bibliothek wie der Bot selbst,
 # damit Formatierung und Sonderfaelle uebereinstimmen.
 ruamel.yaml>=0.18,<1.0

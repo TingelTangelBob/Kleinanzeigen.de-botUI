@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Info, Save } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
+import { BilderVerwaltung } from './BilderVerwaltung';
 import { KategorieWahl } from './KategorieWahl';
 import { VersandpaketWahl } from './VersandpaketWahl';
 
@@ -88,6 +89,17 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
     setFelder(vorher => ({ ...vorher, [feld]: wert }));
     setSchmutzig(true);
     setGespeichert(false);
+  };
+
+  // Bilder wirken sofort (AP-2.6). Deshalb wandert die neue Liste in beide
+  // Staende: in den bearbeiteten und in den Vergleichsstand. Sonst haelte der
+  // Editor sie fuer eine ungespeicherte Aenderung und boete an, sie noch
+  // einmal zu schreiben.
+  const bilderAktualisiert = (neuBilder: string[]) => {
+    setFelder(vorher => ({ ...vorher, images: neuBilder }));
+    setInhalt(vorher => (vorher
+      ? { ...vorher, felder: { ...vorher.felder, images: neuBilder } }
+      : vorher));
   };
 
   const kontaktSetzen = (feld: string, wert: string) => {
@@ -372,27 +384,12 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
           </fieldset>
         )}
 
-        {bilder.length > 0 && (
-          <fieldset className="rounded border border-gray-200 p-3">
-            <legend className="px-1 text-sm font-medium text-gray-700">
-              Bilder ({bilder.length})
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {bilder.map(bild => (
-                <img
-                  key={bild}
-                  src={api.bestand.bildUrl(profil, datei, bild)}
-                  alt=""
-                  loading="lazy"
-                  className="h-20 w-20 rounded border border-gray-200 object-cover"
-                />
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Hinzufügen und Reihenfolge ändern kommt mit AP-2.6.
-            </p>
-          </fieldset>
-        )}
+        <BilderVerwaltung
+          profil={profil}
+          datei={datei}
+          bilder={bilder}
+          aufAenderung={bilderAktualisiert}
+        />
       </div>
 
       {/* Der Knopf bleibt am unteren Rand stehen. Bei einem Formular dieser

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from anzeigen_studio.bestand import bearbeiten, bestand_lesen, bildpfad, lokal_geaenderte
+from anzeigen_studio.bestand import bearbeiten, bestand_lesen, bilder, bildpfad, lokal_geaenderte
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -313,3 +313,81 @@ class TestBearbeiten:
         (tmp_path / "app.db").write_bytes(b"geheim")
         with pytest.raises(FachlicherFehler):
             bearbeiten.rohdaten_lesen(wurzel, "../app.db")
+
+
+# Ein winziges, gueltiges JPEG - reicht, um die Erkennung am Inhalt zu pruefen.
+JPEG_KOPF = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01" + b"\x00" * 40
+PNG_KOPF = b"\x89PNG\r\n\x1a\n" + b"\x00" * 40
+
+
+class TestBilder:
+    """Tests der Bilderverwaltung (AP-2.6)."""
+
+    def _profil(self, tmp_path:Path) -> tuple[Path, str]:
+        datei = _anzeige_schreiben(tmp_path, "ad_1", "ad_1", VOLLSTAENDIG)
+        (datei.parent / "ad_1__img1.jpg").write_bytes(JPEG_KOPF)
+        return tmp_path, datei.relative_to(tmp_path).as_posix()
+
+    def test_bild_wird_angehaengt(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+
+        name, kopf = bilder.bild_hinzufuegen(wurzel, datei, PNG_KOPF)
+
+        assert name == "ad_1__img2.png"
+        assert kopf.bilder == 2
+        assert (wurzel / "downloaded-ads" / "ad_1" / name).is_file()
+        assert bearbeiten.rohdaten_lesen(wurzel, datei)["images"][-1] == name
+
+    def test_nummer_zaehlt_weiter_nach_dem_loeschen(self, tmp_path:Path) -> None:
+        """Sonst kollidiert der Name mit einer Datei, die noch daliegt."""
+        wurzel, datei = self._profil(tmp_path)
+        (wurzel / "downloaded-ads" / "ad_1" / "ad_1__img7.jpg").write_bytes(JPEG_KOPF)
+
+        name, _ = bilder.bild_hinzufuegen(wurzel, datei, JPEG_KOPF)
+
+        assert name == "ad_1__img8.jpg"
+
+    def test_endung_kommt_vom_inhalt(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        name, _ = bilder.bild_hinzufuegen(wurzel, datei, PNG_KOPF)
+        assert name.endswith(".png")
+
+    def test_keine_bilddatei_wird_abgewiesen(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        with pytest.raises(FachlicherFehler):
+            bilder.bild_hinzufuegen(wurzel, datei, b"das ist ein Text und kein Bild")
+
+    def test_zu_gross_wird_abgewiesen(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        with pytest.raises(FachlicherFehler):
+            bilder.bild_hinzufuegen(wurzel, datei, JPEG_KOPF + b"\x00" * bilder.MAX_BYTES)
+
+    def test_entfernen_loescht_eintrag_und_datei(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+
+        kopf = bilder.bild_entfernen(wurzel, datei, "ad_1__img1.jpg")
+
+        assert kopf.bilder == 0
+        assert not (wurzel / "downloaded-ads" / "ad_1" / "ad_1__img1.jpg").exists()
+
+    def test_fremdes_bild_wird_nicht_geloescht(self, tmp_path:Path) -> None:
+        """Der Name muss in der Anzeige stehen - sonst ist es nicht ihr Bild."""
+        wurzel, datei = self._profil(tmp_path)
+        fremd = wurzel / "downloaded-ads" / "ad_1" / "fremd.jpg"
+        fremd.write_bytes(JPEG_KOPF)
+
+        with pytest.raises(FachlicherFehler):
+            bilder.bild_entfernen(wurzel, datei, "fremd.jpg")
+
+        assert fremd.exists()
+
+    def test_reihenfolge_darf_nur_umsortieren(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        bilder.bild_hinzufuegen(wurzel, datei, PNG_KOPF)
+
+        bilder.reihenfolge_pruefen(wurzel, datei, ["ad_1__img2.png", "ad_1__img1.jpg"])
+
+        with pytest.raises(FachlicherFehler):
+            bilder.reihenfolge_pruefen(wurzel, datei, ["ad_1__img1.jpg"])
+        with pytest.raises(FachlicherFehler):
+            bilder.reihenfolge_pruefen(wurzel, datei, ["ad_1__img1.jpg", "ad_1__img2.png", "gibtsnicht.jpg"])

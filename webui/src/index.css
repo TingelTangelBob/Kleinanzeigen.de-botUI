@@ -43,7 +43,94 @@
   --status-warnung: #fbbf24;
   --status-fehler: #f87171;
   --status-neutral: #9ca3af;
+
+  /* Flächen und Schrift des Dunkelmodus (AP-2.11).
+   *
+   * Gemessen gegen die Kartenfläche #1e293b: kräftige Schrift 13,2:1,
+   * gewöhnliche 9,1:1, gedämpfte 5,3:1 - alle über WCAG AA. */
+  --flaeche: #1e293b;
+  --flaeche-tief: #0f172a;
+  --flaeche-hoch: #334155;
+  --rand: #334155;
+  --rand-stark: #475569;
+  --text-stark: #f1f5f9;
+  --text: #cbd5e1;
+  --text-schwach: #94a3b8;
 }
+
+/* Der Dunkelmodus als Überschreibung der Tailwind-Klassen statt als
+ * Umschreiben jeder Komponente.
+ *
+ * Das ist bewusst der zweitbeste Weg. Sauberer wären eigene Klassen wie
+ * `.karte` in jeder Komponente - das ist ein Umbau aller Seiten und gehört
+ * gemacht, wenn die Oberfläche steht, nicht währenddessen. Bis dahin gilt:
+ * Eine Farbe wird an genau einer Stelle festgelegt, hier.
+ *
+ * Der Preis ist benannt: Wer eine neue Grauabstufung verwendet, muss sie hier
+ * ergänzen, sonst bleibt sie im Dunkelmodus hell. */
+#app-shell[data-theme='dark'] {
+  background-color: var(--flaeche-tief);
+  color: var(--text);
+}
+
+/* Auch hinter der App-Schale, sonst blitzt beim Überscrollen Weiß auf. */
+html:has(#app-shell[data-theme='dark']) body {
+  background: #0f172a;
+  color: #cbd5e1;
+}
+
+#app-shell[data-theme='dark'] .bg-white { background-color: var(--flaeche);  }
+#app-shell[data-theme='dark'] .bg-gray-50 { background-color: var(--flaeche-tief);  }
+#app-shell[data-theme='dark'] .bg-gray-100 { background-color: var(--flaeche-hoch);  }
+#app-shell[data-theme='dark'] .bg-black\/40 { background-color: rgb(0 0 0 / 0.6);  }
+
+#app-shell[data-theme='dark'] .hover\:bg-gray-50:hover { background-color: var(--flaeche-hoch);  }
+#app-shell[data-theme='dark'] .hover\:bg-gray-100:hover { background-color: var(--rand-stark);  }
+
+#app-shell[data-theme='dark'] .text-gray-900, #app-shell[data-theme='dark'] .text-gray-800 { color: var(--text-stark);  }
+#app-shell[data-theme='dark'] .text-gray-700, #app-shell[data-theme='dark'] .text-gray-600 { color: var(--text);  }
+#app-shell[data-theme='dark'] .text-gray-500, #app-shell[data-theme='dark'] .text-gray-400 { color: var(--text-schwach);  }
+
+#app-shell[data-theme='dark'] .border-gray-200 { border-color: var(--rand);  }
+#app-shell[data-theme='dark'] .border-gray-300 { border-color: var(--rand-stark);  }
+#app-shell[data-theme='dark'] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--rand);  }
+
+/* Eingabefelder erben sonst das Weiß des Browsers. */
+#app-shell[data-theme='dark'] input,
+#app-shell[data-theme='dark'] select,
+#app-shell[data-theme='dark'] textarea {
+  background-color: var(--flaeche-tief);
+  color: var(--text-stark);
+}
+#app-shell[data-theme='dark'] ::placeholder { color: var(--text-schwach);  }
+
+/* Getönte Kästen und Merkmale. Fläche dunkel, Schrift hell - das Paar
+* gehört zusammen, sonst steht dunkle Schrift auf dunkler Fläche. */
+/* Getönte Flächen dunkler als getönte Merkmale: Drei Kacheln nebeneinander
+ * in kräftigem Braun übertönen sonst den Inhalt, den sie tragen. */
+#app-shell[data-theme='dark'] .bg-amber-50 { background-color: #451a03; }
+#app-shell[data-theme='dark'] .bg-amber-100 { background-color: #78350f; }
+#app-shell[data-theme='dark'] .text-amber-900, #app-shell[data-theme='dark'] .text-amber-800, #app-shell[data-theme='dark'] .text-amber-700, #app-shell[data-theme='dark'] .text-amber-600 { color: #fde68a;  }
+#app-shell[data-theme='dark'] .border-amber-200, #app-shell[data-theme='dark'] .border-amber-300 { border-color: #92400e;  }
+
+#app-shell[data-theme='dark'] .bg-red-50 { background-color: #450a0a; }
+#app-shell[data-theme='dark'] .bg-red-100 { background-color: #7f1d1d; }
+#app-shell[data-theme='dark'] .text-red-900, #app-shell[data-theme='dark'] .text-red-800, #app-shell[data-theme='dark'] .text-red-700 { color: #fecaca;  }
+#app-shell[data-theme='dark'] .text-red-400 { color: #fca5a5;  }
+#app-shell[data-theme='dark'] .border-red-200 { border-color: #991b1b;  }
+
+#app-shell[data-theme='dark'] .bg-blue-100 { background-color: #1e3a8a;  }
+#app-shell[data-theme='dark'] .text-blue-900, #app-shell[data-theme='dark'] .text-blue-800 { color: #bfdbfe;  }
+#app-shell[data-theme='dark'] .border-blue-200 { border-color: #1d4ed8;  }
+
+#app-shell[data-theme='dark'] .bg-green-100 { background-color: #14532d;  }
+#app-shell[data-theme='dark'] .text-green-800 { color: #bbf7d0;  }
+
+#app-shell[data-theme='dark'] .bg-orange-50 { background-color: #7c2d12;  }
+#app-shell[data-theme='dark'] .text-orange-900 { color: #fed7aa;  }
+#app-shell[data-theme='dark'] .border-orange-200 { border-color: #9a3412;  }
+
+#app-shell[data-theme='dark'] .bg-gray-200 { background-color: var(--rand-stark);  }
 
 @layer components {
   .text-primary-custom { color: var(--primary-color); }

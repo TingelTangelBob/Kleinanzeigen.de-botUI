@@ -131,6 +131,18 @@ export const api = {
         method: 'PUT', ...json({ datei, felder }),
       }),
 
+    /** Liest Anzeigennummern aus eingefügtem Text - ohne etwas zu tun (AP-3.7). */
+    linksLesen: (profil: string, text: string) =>
+      anfrage<{ neu: number[]; schon_vorhanden: number[]; unlesbare_zeilen: string[] }>(
+        `/bestand/links-lesen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json({ text }) },
+      ),
+    nachladen: (profil: string, text: string) =>
+      anfrage<{ job_id: number; nummern: number[] }>(
+        `/bestand/nachladen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json({ text }) },
+      ),
+
     /** Reiht einen Lauf ein, der genau diese Anzeige aktualisiert (AP-3.3). */
     hochladen: (profil: string, datei: string) =>
       anfrage<{ job_id: number; anzeige: BestandsAnzeige }>(

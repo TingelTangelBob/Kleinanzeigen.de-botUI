@@ -325,3 +325,72 @@ async def hochladen(
         raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
 
     return HochladenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige))
+
+
+class LinksEingabe(BaseModel):
+    text: str = Field(min_length = 1, max_length = 20000)
+
+
+class LinksAusgabe(BaseModel):
+    neu: list[int]
+    schon_vorhanden: list[int]
+    unlesbare_zeilen: list[str]
+
+
+class NachladenAusgabe(BaseModel):
+    job_id: int
+    nummern: list[int]
+
+
+def _nummern_ordnen(conn: sqlite3.Connection, cfg: Settings, profil: str, text: str) -> LinksAusgabe:
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    fund = bestand_dienst.nummern_lesen(text)
+    vorhanden = {a.id for a in bestand_dienst.bestand_lesen(wurzel) if a.id is not None}
+    return LinksAusgabe(
+        neu = [n for n in fund.nummern if n not in vorhanden],
+        schon_vorhanden = [n for n in fund.nummern if n in vorhanden],
+        unlesbare_zeilen = fund.unlesbare_zeilen,
+    )
+
+
+@router.post("/links-lesen", response_model = LinksAusgabe)
+def links_lesen(
+    profil: str, daten: LinksEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> LinksAusgabe:
+    """Liest Anzeigennummern aus eingefügtem Text - ohne etwas zu tun (AP-3.7).
+
+    Getrennt vom Holen, damit vor dem Lauf sichtbar ist, was er holen würde.
+    """
+    return _nummern_ordnen(conn, cfg, profil, daten.text)
+
+
+@router.post("/nachladen", response_model = NachladenAusgabe, status_code = 202)
+async def nachladen(
+    profil: str, daten: LinksEingabe, conn: Verbindung, cfg: Konfiguration, ws: Schlange,
+) -> NachladenAusgabe:
+    """Holt Anzeigen zu eingefügten Links in den Bestand (AP-3.7).
+
+    Nur lesend: Der Lauf ist derselbe `download`, den die Oberfläche schon
+    kennt, nur mit einer Liste von Nummern statt „alle". Anzeigen, die es nicht
+    mehr gibt, meldet er einzeln - zurückholen kann sie niemand.
+    """
+    p = profile_dienst.nach_slug(conn, profil)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+
+    geordnet = _nummern_ordnen(conn, cfg, profil, daten.text)
+    zu_holen = geordnet.neu
+    if not zu_holen:
+        raise FachlicherFehler(
+            "In dem Text steckt keine Anzeigennummer, die noch fehlt."
+            if geordnet.schon_vorhanden
+            else "In dem Text steckt keine Anzeigennummer.",
+            status = 400, feld = "text",
+        )
+
+    verzeichnis = profile_dienst.pfade_fuer(cfg.profiles_dir, p.slug).wurzel
+    job_id = await ws.einreihen(
+        conn, p.id, "download", [f"--ads={','.join(str(n) for n in zu_holen)}"],
+        profil_verzeichnis = verzeichnis,
+    )
+    return NachladenAusgabe(job_id = job_id, nummern = zu_holen)

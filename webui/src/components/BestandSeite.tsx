@@ -9,12 +9,13 @@
 // wirkt. Sobald ein Bestand das nicht mehr hergibt, wandert es serverseitig.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { Download, RefreshCw, Search } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
+import { NachladenDialog } from './NachladenDialog';
 
 type Filter = 'alle' | 'faellig' | 'geaendert' | 'auffaellig' | 'inaktiv';
 
@@ -52,6 +53,7 @@ export function BestandSeite() {
   const [suche, setSuche] = useState('');
   const [filter, setFilter] = useState<Filter>('alle');
   const [bearbeitet, setBearbeitet] = useState<string | null>(null);
+  const [holtNach, setHoltNach] = useState(false);
 
   const laden = useCallback(async () => {
     if (!aktiv) {
@@ -113,16 +115,31 @@ export function BestandSeite() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Anzeigen</h1>
-        <button
-          type="button"
-          onClick={() => void laden()}
-          className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm
-                     text-gray-700 hover:bg-gray-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-          Neu einlesen
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setHoltNach(true)}
+            className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm
+                       text-gray-700 hover:bg-gray-50"
+          >
+            <Download className="h-4 w-4" aria-hidden />
+            Ältere holen
+          </button>
+          <button
+            type="button"
+            onClick={() => void laden()}
+            className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm
+                       text-gray-700 hover:bg-gray-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
+            Neu einlesen
+          </button>
+        </div>
       </div>
+
+      {holtNach && (
+        <NachladenDialog profil={aktiv.slug} aufSchliessen={() => { setHoltNach(false); void laden(); }} />
+      )}
 
       {fehler && (
         <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{fehler}</p>

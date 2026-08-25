@@ -16,6 +16,7 @@ from anzeigen_studio.bestand.bilder import (
     bild_hinzufuegen,
     reihenfolge_pruefen,
 )
+from anzeigen_studio.bestand.links import Fund, nummern_lesen
 from anzeigen_studio.bestand.lesen import (
     BestandsAnzeige,
     bestand_lesen,
@@ -27,11 +28,13 @@ __all__ = [
     "AENDERBAR",
     "MAX_BYTES",
     "BestandsAnzeige",
+    "Fund",
     "bestand_lesen",
     "bild_entfernen",
     "bild_hinzufuegen",
     "bildpfad",
     "lokal_geaenderte",
+    "nummern_lesen",
     "pruefen_zum_veroeffentlichen",
     "reihenfolge_pruefen",
     "rohdaten_lesen",

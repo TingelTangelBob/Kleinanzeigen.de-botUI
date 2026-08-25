@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from anzeigen_studio.bestand import bearbeiten, bestand_lesen, bilder, bildpfad, lokal_geaenderte
+from anzeigen_studio.bestand import (
+    bearbeiten,
+    bestand_lesen,
+    bilder,
+    bildpfad,
+    links,
+    lokal_geaenderte,
+)
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -441,3 +448,42 @@ class TestBilder:
             bilder.reihenfolge_pruefen(wurzel, datei, ["ad_1__img1.jpg"])
         with pytest.raises(FachlicherFehler):
             bilder.reihenfolge_pruefen(wurzel, datei, ["ad_1__img1.jpg", "ad_1__img2.png", "gibtsnicht.jpg"])
+
+
+class TestLinksLesen:
+    """Anzeigennummern aus eingefügtem Text (AP-3.7)."""
+
+    def test_volle_adresse(self) -> None:
+        fund = links.nummern_lesen(
+            "https://www.kleinanzeigen.de/s-anzeige/1ch-wi-fi-dimmer-module/3310837392-161-168",
+        )
+        assert fund.nummern == [3310837392]
+
+    def test_kategorie_wird_nicht_mitgelesen(self) -> None:
+        """Hinter der Nummer stehen in der Adresse die Kategorienummern."""
+        fund = links.nummern_lesen("/s-anzeige/dimmer/3310837392-161-168")
+        assert fund.nummern == [3310837392]
+
+    def test_nackte_nummer(self) -> None:
+        assert links.nummern_lesen("3310837392").nummern == [3310837392]
+
+    def test_mehrere_zeilen_mit_beiwerk(self) -> None:
+        text = """
+        Hier die Anzeige: https://www.kleinanzeigen.de/s-anzeige/webcam/1234567890-161-225
+        und noch eine: 2345678901
+        """
+        assert links.nummern_lesen(text).nummern == [1234567890, 2345678901]
+
+    def test_doppelte_fallen_weg(self) -> None:
+        text = "3310837392\nhttps://www.kleinanzeigen.de/s-anzeige/x/3310837392-1-2\n"
+        assert links.nummern_lesen(text).nummern == [3310837392]
+
+    def test_zeilen_ohne_nummer_werden_gemeldet(self) -> None:
+        fund = links.nummern_lesen("Hallo, ist das noch zu haben?\n3310837392")
+        assert fund.nummern == [3310837392]
+        assert fund.unlesbare_zeilen == ["Hallo, ist das noch zu haben?"]
+
+    def test_kurze_zahlen_zaehlen_nicht(self) -> None:
+        """Preise, Postleitzahlen und Jahreszahlen sind keine Anzeigennummern."""
+        fund = links.nummern_lesen("Kostet 45 Euro, PLZ 21337, Baujahr 2019")
+        assert fund.nummern == []

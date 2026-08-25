@@ -14,10 +14,11 @@
 // Veröffentlichen im Weg steht.
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Check, Info, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowUpFromLine, Check, Info, Save } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
 import { BilderVerwaltung } from './BilderVerwaltung';
+import { HochladenDialog } from './HochladenDialog';
 import { KategorieWahl } from './KategorieWahl';
 import { VersandpaketWahl } from './VersandpaketWahl';
 
@@ -69,6 +70,9 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
   const [gespeichert, setGespeichert] = useState(false);
   const [speichert, setSpeichert] = useState(false);
   const [schmutzig, setSchmutzig] = useState(false);
+  const [fragtHochladen, setFragtHochladen] = useState(false);
+  const [laedtHoch, setLaedtHoch] = useState(false);
+  const [eingereiht, setEingereiht] = useState<number | null>(null);
 
   const laden = useCallback(async () => {
     setFehler(null);
@@ -140,6 +144,23 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
     }
   };
 
+  // Hochladen ist der erste Vorgang, der etwas auf der Plattform veraendert -
+  // deshalb erst die Rueckfrage, dann der Lauf.
+  const hochladen = async () => {
+    setLaedtHoch(true);
+    setFehler(null);
+    try {
+      const ergebnis = await api.bestand.hochladen(profil, datei);
+      setEingereiht(ergebnis.job_id);
+      setFragtHochladen(false);
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+      setFragtHochladen(false);
+    } finally {
+      setLaedtHoch(false);
+    }
+  };
+
   if (fehler && !inhalt) {
     return (
       <div className="mx-auto max-w-3xl">
@@ -195,6 +216,22 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
         <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {fehler}
         </p>
+      )}
+
+      {eingereiht !== null && (
+        <p className="mb-4 rounded border border-green-200 bg-green-100 p-3 text-sm text-green-800">
+          Lauf {eingereiht} ist eingereiht. Unter „Läufe" lässt er sich mitlesen –
+          und abbrechen, solange er nicht fertig ist.
+        </p>
+      )}
+
+      {fragtHochladen && inhalt && (
+        <HochladenDialog
+          anzeige={inhalt.kopf}
+          laeuft={laedtHoch}
+          aufAbbrechen={() => setFragtHochladen(false)}
+          aufBestaetigen={() => void hochladen()}
+        />
       )}
 
       {hinweise.length > 0 && (
@@ -410,6 +447,20 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
               <Check className="h-4 w-4" aria-hidden /> Gespeichert
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setFragtHochladen(true)}
+            disabled={speichert || schmutzig || inhalt.kopf.id === null}
+            title={schmutzig
+              ? 'Erst speichern - hochgeladen wird der gespeicherte Stand.'
+              : undefined}
+            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
+                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <ArrowUpFromLine className="h-4 w-4" aria-hidden />
+            Hochladen
+          </button>
+
           <button
             type="button"
             onClick={() => void speichern()}

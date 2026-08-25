@@ -6,6 +6,14 @@
 // Mehrfachauswahl, weil die Anzeigendatei eine Liste führt: Kleinanzeigen
 // lässt mehrere Pakete derselben Größe zu, und der Käufer wählt eines davon.
 //
+// „Derselben Größe" ist dabei keine Beschreibung, sondern eine Grenze. Der
+// Upstream wirft beim Veröffentlichen `You can only specify shipping options
+// for one package size!` (publishing_form.py) - und zwar erst im geöffneten
+// Versanddialog, mit halb ausgefülltem Formular. Weder `AdPartial` noch `Ad`
+// prüfen die Regel vorher. Sie wird deshalb hier durchgesetzt, wo die Liste
+// entsteht: Ein Paket aus einer anderen Größe ersetzt die bisherige Auswahl,
+// statt sich dazuzulegen.
+//
 // Die Preise stehen dabei, weil sie hier die eigentliche Entscheidungshilfe
 // sind. Genau an ihnen hängt auch der Fehler, den die Verlustanalyse gefunden
 // hat: Wer eigene Versandkosten gesetzt hat, findet hier keinen passenden
@@ -46,11 +54,33 @@ export function VersandpaketWahl({ gewaehlt, versandkosten, direktKaufen, aufAen
     })();
   }, []);
 
+  /** Die Größengruppe eines Pakets, oder null wenn die Liste es nicht kennt. */
+  const gruppeVon = (wert: string): string | null =>
+    pakete.find(p => p.wert === wert)?.groesse ?? null;
+
   const umschalten = (wert: string) => {
-    aufAenderung(gewaehlt.includes(wert)
-      ? gewaehlt.filter(p => p !== wert)
-      : [...gewaehlt, wert]);
+    if (gewaehlt.includes(wert)) {
+      aufAenderung(gewaehlt.filter(p => p !== wert));
+      return;
+    }
+    // Unbekannte Namen bleiben stehen: Über sie lässt sich nichts sagen, und
+    // heruntergeladene Anzeigen tragen mitunter welche. Sie stillschweigend zu
+    // löschen wäre der schlechtere von beiden Fehlern.
+    const gruppe = gruppeVon(wert);
+    const behalten = gewaehlt.filter(p => {
+      const andere = gruppeVon(p);
+      return andere === null || andere === gruppe;
+    });
+    aufAenderung([...behalten, wert]);
   };
+
+  // Aus der Datei kann sehr wohl eine gemischte Auswahl kommen - von einem
+  // Download oder aus einer von Hand bearbeiteten YAML. Verhindern lässt sich
+  // das hier nicht mehr, benennen schon.
+  const gewaehlteGruppen = new Set(
+    gewaehlt.map(gruppeVon).filter((g): g is string => g !== null),
+  );
+  const gemischt = gewaehlteGruppen.size > 1;
 
   const ohnePreise = geladen && pakete.length > 0 && pakete.every(p => p.preis === null);
 
@@ -91,6 +121,17 @@ export function VersandpaketWahl({ gewaehlt, versandkosten, direktKaufen, aufAen
       {ohnePreise && (
         <p className="mt-2 text-xs text-gray-500">
           Preise gerade nicht abrufbar – die Auswahl funktioniert trotzdem.
+        </p>
+      )}
+
+      {gemischt && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>
+            Die Auswahl nennt Pakete aus mehreren Größen ({[...gewaehlteGruppen].join(', ')}).
+            Kleinanzeigen lässt nur eine Größe zu – beim Veröffentlichen bricht der Lauf im
+            Versanddialog ab. Ein Klick auf ein Paket räumt die übrigen Größen weg.
+          </span>
         </p>
       )}
 

@@ -44,6 +44,7 @@ def _zu_job(row: sqlite3.Row) -> Job:
         meldung = row["meldung"],
         wartet_bis = row["wartet_bis"],
         wartegrund = row["wartegrund"],
+        anzeigen_glob = row["anzeigen_glob"],
     )
 
 
@@ -67,10 +68,18 @@ _AKTIV_B = JobZustand.BRAUCHT_EINGABE
 _VERWAIST_BEIM_START = (JobZustand.WARTET, JobZustand.LAEUFT, JobZustand.BRAUCHT_EINGABE)
 
 
-def einreihen(conn: sqlite3.Connection, profil_id: int, befehl: str, argumente: list[str]) -> int:
+def einreihen(
+    conn: sqlite3.Connection,
+    profil_id: int,
+    befehl: str,
+    argumente: list[str],
+    *,
+    anzeigen_glob: str | None = None,
+) -> int:
     cursor = conn.execute(
-        "INSERT INTO job (profil_id, befehl, argumente, zustand, eingereicht_am) VALUES (?, ?, ?, ?, ?)",
-        (profil_id, befehl, json.dumps(argumente), JobZustand.WARTET, _jetzt()),
+        "INSERT INTO job (profil_id, befehl, argumente, zustand, eingereicht_am, anzeigen_glob) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (profil_id, befehl, json.dumps(argumente), JobZustand.WARTET, _jetzt(), anzeigen_glob),
     )
     return int(cursor.lastrowid or 0)
 

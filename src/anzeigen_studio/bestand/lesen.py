@@ -21,6 +21,7 @@ from typing import Any
 from ruamel.yaml import YAML
 
 from anzeigen_studio.core.errors import FachlicherFehler
+from anzeigen_studio.katalog.daten import gemischte_versandgroessen
 
 LOG = logging.getLogger(__name__)
 
@@ -102,6 +103,8 @@ def _hinweise_sammeln(daten: dict[str, Any]) -> list[str]:
         hinweise.append("versand_ohne_paket")
     if daten.get("sell_directly") and not pakete and daten.get("type") != "WANTED":
         hinweise.append("direktkauf_ohne_paket")
+    if isinstance(pakete, list) and gemischte_versandgroessen(pakete):
+        hinweise.append("versand_gemischte_groessen")
     if not (daten.get("images") or []):
         hinweise.append("ohne_bild")
     return hinweise

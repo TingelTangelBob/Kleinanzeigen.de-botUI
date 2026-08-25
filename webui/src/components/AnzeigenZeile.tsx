@@ -15,6 +15,7 @@ import { api } from '../services/api';
 const HINWEIS_TEXT: Record<string, string> = {
   versand_ohne_paket: 'Versand ohne Paket',
   direktkauf_ohne_paket: 'Direkt kaufen ohne Paket',
+  versand_gemischte_groessen: 'Pakete mehrerer Größen',
   ohne_bild: 'Ohne Bild',
 };
 
@@ -23,6 +24,8 @@ const HINWEIS_ERKLAERUNG: Record<string, string> = {
     'Der Versandpreis gehört zu keinem Kleinanzeigen-Paket. Beim Hochladen fehlt die Versandangabe.',
   direktkauf_ohne_paket:
     'Direkt kaufen ist gesetzt, aber kein Versandpaket ausgewählt. Der Bot kann die Anzeige so nicht einstellen.',
+  versand_gemischte_groessen:
+    'Die Versandpakete gehören zu mehreren Größen. Kleinanzeigen lässt nur eine Größe zu - beim Veröffentlichen bricht der Lauf im Versanddialog ab.',
   ohne_bild: 'Zu dieser Anzeige liegt kein Bild vor.',
 };
 

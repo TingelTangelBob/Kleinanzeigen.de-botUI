@@ -18,10 +18,13 @@ from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.core.settings import Settings
+from anzeigen_studio.jobs import speicher
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+    from anzeigen_studio.jobs.warteschlange import Warteschlange
 
 router = APIRouter(prefix = "/api/bestand", tags = ["Bestand"])
 
@@ -40,8 +43,14 @@ def _einstellungen(request: Request) -> Settings:
     return cfg
 
 
+def _warteschlange(request: Request) -> Warteschlange:
+    ws: Warteschlange = request.app.state.warteschlange
+    return ws
+
+
 Verbindung = Annotated[sqlite3.Connection, Depends(_verbindung)]
 Konfiguration = Annotated[Settings, Depends(_einstellungen)]
+Schlange = Annotated["Warteschlange", Depends(_warteschlange)]
 
 
 class AnzeigeAusgabe(BaseModel):
@@ -226,3 +235,93 @@ def bild_entfernen(
     """Nimmt ein Bild aus der Anzeige und löscht die Datei."""
     wurzel = _profil_wurzel(conn, cfg, profil)
     return _ausgabe(bestand_dienst.bild_entfernen(wurzel, datei, name))
+
+
+class HochladenEingabe(BaseModel):
+    datei: str = Field(min_length = 1, max_length = 400)
+
+
+class HochladenAusgabe(BaseModel):
+    job_id: int
+    anzeige: AnzeigeAusgabe
+
+
+def _hochladbar(anzeige: bestand_dienst.BestandsAnzeige, felder: dict[str, object]) -> None:
+    """Weist ab, was der Bot ohnehin nicht einstellen könnte.
+
+    Lieber hier mit einem Satz erklären als mitten im Formular scheitern. Die
+    Fälle stammen aus der Verlustanalyse (`docs/RUNDLAUF.md`) und aus der
+    Prüfung, die `publishing_form.py` beim Ausfüllen selbst vornimmt.
+    """
+    if anzeige.unlesbar:
+        raise FachlicherFehler("Diese Anzeige ist nicht lesbar.", status = 422)
+
+    if anzeige.id is None:
+        raise FachlicherFehler(
+            "Diese Anzeige hat keine Anzeigennummer – sie war nie veröffentlicht. "
+            "Bestehende Anzeigen lassen sich aktualisieren, neue einzustellen kommt später.",
+            status = 422,
+        )
+
+    if "direktkauf_ohne_paket" in anzeige.hinweise:
+        raise FachlicherFehler(
+            "\u201eDirekt kaufen\u201c ist gesetzt, aber kein Versandpaket ausgewählt. Der Bot kann "
+            "im Formular nur vordefinierte Pakete wählen – der Lauf würde mittendrin abbrechen. "
+            "Wähle ein Paket oder schalte \u201eDirekt kaufen\u201c aus.",
+            status = 422, feld = "shipping_options",
+        )
+
+    if "versand_ohne_paket" in anzeige.hinweise:
+        raise FachlicherFehler(
+            "Es sind eigene Versandkosten ohne Versandpaket gesetzt. Der Bot kann das im Formular "
+            "nicht abbilden. Wähle ein Paket, das zum Preis passt.",
+            status = 422, feld = "shipping_options",
+        )
+
+    fehler = bestand_dienst.pruefen_zum_veroeffentlichen(felder)
+    if fehler:
+        raise FachlicherFehler(" · ".join(fehler), status = 422)
+
+
+@router.post("/hochladen", response_model = HochladenAusgabe, status_code = 202)
+async def hochladen(
+    profil: str,
+    daten: HochladenEingabe,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    ws: Schlange,
+) -> HochladenAusgabe:
+    """Reiht einen Lauf ein, der genau diese eine Anzeige aktualisiert (AP-3.3).
+
+    Bewusst `update` und nicht `publish`: `update` bearbeitet die bestehende
+    Anzeige. `publish` löscht sie und stellt sie neu ein - Anzeigennummer,
+    Aufrufe, Merker und Alter wären weg (siehe `docs/RUNDLAUF.md`).
+
+    Der Lauf sieht ausschließlich diese eine Datei: Die Anzeigennummer steht im
+    Auswahlschalter, und der Dateiausschnitt der erzeugten Konfiguration nennt
+    nur sie. Zwei Grenzen für einen Vorgang, der etwas auf der Plattform
+    verändert.
+    """
+    p = profile_dienst.nach_slug(conn, profil)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+    wurzel = profile_dienst.pfade_fuer(cfg.profiles_dir, p.slug).wurzel
+
+    felder = bestand_dienst.rohdaten_lesen(wurzel, daten.datei)
+    anzeige = next(
+        (a for a in bestand_dienst.bestand_lesen(wurzel) if a.datei == daten.datei), None,
+    )
+    if anzeige is None:
+        raise FachlicherFehler("Anzeige nicht gefunden.", status = 404)
+
+    _hochladbar(anzeige, dict(felder))
+
+    job_id = await ws.einreihen(
+        conn, p.id, "update", [f"--ads={anzeige.id}"],
+        profil_verzeichnis = wurzel,
+        anzeigen_glob = f"./{daten.datei}",
+    )
+    if speicher.holen(conn, job_id) is None:  # pragma: no cover - Schutz gegen stille Fehlschlaege
+        raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
+
+    return HochladenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige))

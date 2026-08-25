@@ -134,6 +134,20 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE job ADD COLUMN wartegrund TEXT;
         """,
     ),
+    (
+        5,
+        "anzeigen-glob-je-job",
+        """
+        -- Auf welche Anzeigendateien ein Lauf schauen darf (AP-3.3).
+        --
+        -- Ohne das gilt fuer jeden Lauf derselbe weite Ausschnitt. Fuer einen
+        -- Lauf, der genau eine Anzeige hochladen soll, ist das zu viel: Ein
+        -- falscher Schalter traefe dann den ganzen Bestand. Steht hier ein
+        -- Wert, sieht der Bot ausschliesslich diese eine Datei - die Grenze
+        -- liegt damit in der Konfiguration und nicht nur in einem Argument.
+        ALTER TABLE job ADD COLUMN anzeigen_glob TEXT;
+        """,
+    ),
 ]
 
 

@@ -12,6 +12,11 @@
 // mitunter Werte, die die Liste nicht kennt (beobachtet an `161/278/laptop`,
 // während die Liste nur `161/278` führt). So einer wird angezeigt und
 // stehengelassen - ersetzt wird er nur, wenn jemand etwas auswählt.
+//
+// Und ein zweiter: Ist die Liste gar nicht abrufbar, wird das Feld zum
+// Textfeld. Das ist der einzige Weg, der dann noch bleibt - ein Suchfeld ohne
+// Liste zu deaktivieren hieße, die Kategorie überhaupt nicht mehr setzen zu
+// können, auch bei einer Anzeige, die noch keine hat.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, Search } from 'lucide-react';
@@ -29,6 +34,7 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
   const [alle, setAlle] = useState<Kategorie[]>([]);
   const [suche, setSuche] = useState('');
   const [offen, setOffen] = useState(false);
+  const [geladen, setGeladen] = useState(false);
   const huelle = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +44,8 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
       } catch {
         // Ohne Liste bleibt das Feld ein Textfeld - unschön, aber bedienbar.
         setAlle([]);
+      } finally {
+        setGeladen(true);
       }
     })();
   }, []);
@@ -61,6 +69,36 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
       .filter(k => k.name.toLowerCase().includes(begriff) || k.wert.includes(begriff))
       .slice(0, MAX_TREFFER);
   }, [alle, suche]);
+
+  // Leer heißt hier auch "nicht abrufbar": `kategorien()` gibt eine leere Liste
+  // zurück, wenn `categories.yaml` nicht lesbar war. Für die Bedienung ist das
+  // derselbe Fall wie ein gescheiterter Aufruf.
+  const ohneListe = geladen && alle.length === 0;
+
+  if (ohneListe) {
+    return (
+      <div>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Kategorie</span>
+          <input
+            type="text"
+            value={wert}
+            onChange={e => aufAenderung(e.target.value)}
+            placeholder="Nummernpfad, z. B. 161/278"
+            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm
+                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+          />
+        </label>
+        <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>
+            Die Kategorieliste ist gerade nicht verfügbar. Der Wert geht so in die Anzeige,
+            wie er hier steht – der Bot erwartet den Nummernpfad.
+          </span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div ref={huelle} className="relative">
@@ -94,8 +132,7 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
           onFocus={() => setOffen(true)}
           onChange={e => { setSuche(e.target.value); setOffen(true); }}
           onKeyDown={e => { if (e.key === 'Escape') setOffen(false); }}
-          placeholder={alle.length > 0 ? 'Kategorie suchen …' : 'Liste nicht verfügbar'}
-          disabled={alle.length === 0}
+          placeholder="Kategorie suchen …"
           className="w-full rounded border border-gray-300 py-2 pl-9 pr-3 text-sm
                      focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
         />

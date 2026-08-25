@@ -358,3 +358,51 @@ class TestWarteschlange:
         job = speicher.holen(conn, job_id)
         assert job is not None
         assert job.zustand is JobZustand.GESCHEITERT
+
+
+class TestAnzeigenGlob:
+    """Ein Lauf darf nur die Anzeige sehen, um die es geht (AP-3.3)."""
+
+    def test_glob_wird_gespeichert_und_gelesen(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        _, conn, profil_id, _ = umgebung
+        with db.transaction(conn):
+            job_id = speicher.einreihen(
+                conn, profil_id, "update", ["--ads=4711"],
+                anzeigen_glob = "./downloaded-ads/ad_4711/ad_4711.yaml",
+            )
+
+        job = speicher.holen(conn, job_id)
+
+        assert job is not None
+        assert job.anzeigen_glob == "./downloaded-ads/ad_4711/ad_4711.yaml"
+
+    def test_ohne_glob_bleibt_none(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        _, conn, profil_id, _ = umgebung
+        with db.transaction(conn):
+            job_id = speicher.einreihen(conn, profil_id, "download", [])
+
+        job = speicher.holen(conn, job_id)
+
+        assert job is not None
+        assert job.anzeigen_glob is None
+
+    @pytest.mark.asyncio
+    async def test_lauf_schreibt_den_engen_ausschnitt_in_die_konfiguration(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        """Der Schutz liegt in der Konfiguration, nicht nur im Argument."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis("INFO fertig")]))
+
+        await ws.einreihen(
+            conn, profil_id, "update", ["--ads=4711"],
+            profil_verzeichnis = verzeichnis,
+            anzeigen_glob = "./downloaded-ads/ad_4711/ad_4711.yaml",
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        geschrieben = (verzeichnis / "config.yaml").read_text(encoding = "utf-8")
+        assert "./downloaded-ads/ad_4711/ad_4711.yaml" in geschrieben
+        assert "./ads/**" not in geschrieben

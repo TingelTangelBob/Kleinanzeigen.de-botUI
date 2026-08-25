@@ -4,7 +4,12 @@
 #
 # Der lokale Anzeigenbestand (AP-3.2).
 
-from anzeigen_studio.bestand.bearbeiten import AENDERBAR, rohdaten_lesen, speichern
+from anzeigen_studio.bestand.bearbeiten import (
+    AENDERBAR,
+    pruefen_zum_veroeffentlichen,
+    rohdaten_lesen,
+    speichern,
+)
 from anzeigen_studio.bestand.bilder import (
     MAX_BYTES,
     bild_entfernen,
@@ -27,6 +32,7 @@ __all__ = [
     "bild_hinzufuegen",
     "bildpfad",
     "lokal_geaenderte",
+    "pruefen_zum_veroeffentlichen",
     "reihenfolge_pruefen",
     "rohdaten_lesen",
     "speichern",

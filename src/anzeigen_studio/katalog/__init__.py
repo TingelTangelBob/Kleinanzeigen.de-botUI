@@ -7,9 +7,19 @@
 from anzeigen_studio.katalog.daten import (
     Kategorie,
     Versandpaket,
+    gemischte_versandgroessen,
+    groesse_je_paket,
     kategorie_name,
     kategorien,
     versandpakete,
 )
 
-__all__ = ["Kategorie", "Versandpaket", "kategorie_name", "kategorien", "versandpakete"]
+__all__ = [
+    "Kategorie",
+    "Versandpaket",
+    "gemischte_versandgroessen",
+    "groesse_je_paket",
+    "kategorie_name",
+    "kategorien",
+    "versandpakete",
+]

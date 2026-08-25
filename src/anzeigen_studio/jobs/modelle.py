@@ -68,6 +68,11 @@ class Job:
     wartet_bis: str | None = None
     wartegrund: str | None = None
 
+    #: Auf welche Anzeigendateien dieser Lauf schauen darf (AP-3.3). None
+    #: heisst: der uebliche, weite Ausschnitt. Ein Wert engt den Lauf auf genau
+    #: diese Dateien ein - gedacht fuer das Hochladen einer einzelnen Anzeige.
+    anzeigen_glob: str | None = None
+
     @property
     def laeuft_noch(self) -> bool:
         return self.zustand not in ENDZUSTAENDE

@@ -131,6 +131,13 @@ export const api = {
         method: 'PUT', ...json({ datei, felder }),
       }),
 
+    /** Reiht einen Lauf ein, der genau diese Anzeige aktualisiert (AP-3.3). */
+    hochladen: (profil: string, datei: string) =>
+      anfrage<{ job_id: number; anzeige: BestandsAnzeige }>(
+        `/bestand/hochladen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json({ datei }) },
+      ),
+
     bildHochladen: async (profil: string, datei: string, bild: File) => {
       const formular = new FormData();
       formular.append('bild', bild);

@@ -78,13 +78,14 @@ class Warteschlange:
     # -- oeffentlich ---------------------------------------------------------
 
     async def einreihen(self, conn: sqlite3.Connection, profil_id: int, befehl: str,
-                        argumente: list[str], *, profil_verzeichnis: Path) -> int:
+                        argumente: list[str], *, profil_verzeichnis: Path,
+                        anzeigen_glob: str | None = None) -> int:
         # Bewusst async: asyncio.create_task braucht eine laufende
         # Ereignisschleife. Ein synchroner FastAPI-Endpunkt laeuft im
         # Threadpool, dort gibt es keine - genau daran ist der erste Lauf
         # gescheitert.
         with db.transaction(conn):
-            job_id = speicher.einreihen(conn, profil_id, befehl, argumente)
+            job_id = speicher.einreihen(conn, profil_id, befehl, argumente, anzeigen_glob = anzeigen_glob)
         aufgabe = asyncio.create_task(self._abarbeiten(job_id, profil_id, profil_verzeichnis))
         # Referenz halten, sonst kann der Garbage Collector die Aufgabe
         # einsammeln, bevor sie fertig ist.
@@ -228,10 +229,14 @@ class Warteschlange:
         # config.yaml vor jedem Lauf neu schreiben. So koennen Aenderungen von
         # Hand an der Datei nichts umgehen, was die Oberflaeche verbietet - die
         # gesperrten Felder aus AP-1.11 werden dabei erneut gesetzt.
+        # Ein Lauf, der genau eine Anzeige hochladen soll, bekommt genau diese
+        # Datei zu sehen (AP-3.3). Der Schutz liegt damit in der Konfiguration
+        # und nicht allein im Argument: Selbst ein falscher Auswahlschalter
+        # koennte dann nichts anderes treffen.
         verworfen = konfiguration.schreiben(
             profil_verzeichnis / "config.yaml",
             self._nutzer_konfiguration(profil_id),
-            anzeigen_glob = "./ads/**/ad_*.{yaml,yml,json}",
+            anzeigen_glob = job.anzeigen_glob or "./ads/**/ad_*.{yaml,yml,json}",
             chromium = self._settings.chromium,
         )
         if verworfen:

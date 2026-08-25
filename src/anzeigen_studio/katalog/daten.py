@@ -36,6 +36,11 @@ _PREIS_URL = "https://gateway.kleinanzeigen.de/postad/api/v1/shipping-options?po
 _PREIS_FRIST_S = 4.0
 _PREIS_HALTBARKEIT_S = 6 * 60 * 60
 
+#: Auch ein Fehlschlag wird gemerkt, nur kuerzer. Sonst zahlt jede einzelne
+#: Anfrage die volle Frist oben, solange die Plattform nicht erreichbar ist -
+#: und der Versandblock fuehlt sich bei jedem Oeffnen tot an.
+_PREIS_FEHLER_HALTBARKEIT_S = 5 * 60
+
 _preise_zwischenspeicher: tuple[float, dict[str, float]] | None = None
 
 
@@ -86,20 +91,30 @@ def _preise() -> dict[str, float]:
     global _preise_zwischenspeicher  # noqa: PLW0603 - ein Prozess, ein Zwischenspeicher
 
     jetzt = time.monotonic()
-    if _preise_zwischenspeicher and jetzt - _preise_zwischenspeicher[0] < _PREIS_HALTBARKEIT_S:
-        return _preise_zwischenspeicher[1]
+    if _preise_zwischenspeicher:
+        gemerkt, alter_stand = _preise_zwischenspeicher
+        frist = _PREIS_HALTBARKEIT_S if alter_stand else _PREIS_FEHLER_HALTBARKEIT_S
+        if jetzt - gemerkt < frist:
+            return alter_stand
 
     try:
         with urllib.request.urlopen(_PREIS_URL, timeout = _PREIS_FRIST_S) as antwort:  # noqa: S310 - feste https-Adresse
             daten = json.loads(antwort.read().decode("utf-8"))
         optionen = daten["data"]["shippingOptionsResponse"]["options"]
+        # Jeder Eintrag wird einzeln geprueft, statt der Antwort ihre Form zu
+        # glauben: Ein einzelner missratener Eintrag darf nicht die ganze
+        # Preisliste kosten - und erst recht keine Ausnahme werden, die als
+        # 500 bis in die Oberflaeche durchschlaegt. Dort kaeme sie als leere
+        # Paketliste an, also als das Gegenteil dessen, was der Modulkopf
+        # zusichert.
         preise = {
             str(o["id"]): int(o["priceInEuroCent"]) / 100
             for o in optionen
-            if isinstance(o.get("priceInEuroCent"), int)
+            if isinstance(o, dict) and "id" in o and isinstance(o.get("priceInEuroCent"), int)
         }
-    except (urllib.error.URLError, OSError, KeyError, ValueError, TypeError) as fehler:
+    except (urllib.error.URLError, OSError, AttributeError, KeyError, ValueError, TypeError) as fehler:
         LOG.info("Versandpreise nicht abrufbar, Liste bleibt ohne Preise: %s", fehler)
+        _preise_zwischenspeicher = (jetzt, {})
         return {}
 
     _preise_zwischenspeicher = (jetzt, preise)
@@ -130,3 +145,44 @@ def versandpakete(*, mit_preisen: bool = True) -> list[Versandpaket]:
         for name, code in CARRIER_CODE_BY_OPTION.items()
     ]
     return sorted(pakete, key = lambda p: (reihenfolge.get(p.groesse, 9), p.preis if p.preis is not None else 999, p.wert))
+
+
+@lru_cache(maxsize = 1)
+def groesse_je_paket() -> dict[str, str]:
+    """Paketname aus der Anzeigendatei -> Größengruppe ("Klein", "Mittel", "Groß").
+
+    Zwei Tabellen des Bots hintereinandergeschaltet, keine dritte daneben:
+    `CARRIER_CODE_BY_OPTION` uebersetzt den Namen aus der YAML in den
+    Traegercode, `SIZE_INFO_BY_CARRIER_CODE` den Code in die Gruppe.
+    """
+    try:
+        from kleinanzeigen_bot.model.ad_model import (  # noqa: PLC0415 - Bot-Import bewusst lokal
+            CARRIER_CODE_BY_OPTION,
+            SIZE_INFO_BY_CARRIER_CODE,
+        )
+    except ImportError as fehler:  # pragma: no cover - im Betrieb liegt der Bot daneben
+        LOG.warning("Paketgrößen nicht verfügbar: %s", fehler)
+        return {}
+
+    return {
+        name: SIZE_INFO_BY_CARRIER_CODE[code][0]
+        for name, code in CARRIER_CODE_BY_OPTION.items()
+        if code in SIZE_INFO_BY_CARRIER_CODE
+    }
+
+
+def gemischte_versandgroessen(pakete: list[Any]) -> bool:
+    """Ob eine Paketliste mehr als eine Größengruppe nennt.
+
+    Kleinanzeigen laesst nur Pakete einer Groesse zu. Der Upstream bricht
+    deshalb beim Veroeffentlichen ab (`publishing_form.py`: "You can only
+    specify shipping options for one package size!") - und zwar erst im
+    bereits geoeffneten Versanddialog, mit halb ausgefuelltem Formular. Weder
+    `AdPartial` noch `Ad` pruefen die Regel, sie gilt also bis dahin nirgends.
+
+    Unbekannte Namen zaehlen nicht mit: Ueber sie laesst sich nichts sagen,
+    und ein falscher Alarm waere schlimmer als ein fehlender.
+    """
+    tabelle = groesse_je_paket()
+    gruppen = {tabelle[str(p)] for p in pakete if str(p) in tabelle}
+    return len(gruppen) > 1

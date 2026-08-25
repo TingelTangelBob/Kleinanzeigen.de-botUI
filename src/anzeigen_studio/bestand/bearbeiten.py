@@ -26,6 +26,7 @@ from ruamel.yaml import YAML
 
 from anzeigen_studio.bestand.lesen import BestandsAnzeige, _anzeige_lesen  # noqa: PLC2701 - dieselbe Schicht
 from anzeigen_studio.core.errors import FachlicherFehler
+from anzeigen_studio.katalog.daten import gemischte_versandgroessen
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -69,8 +70,14 @@ def rohdaten_lesen(profil_wurzel: Path, datei: str) -> dict[str, Any]:
     try:
         daten = _yaml_rund.load(pfad.read_text(encoding = "utf-8"))
     except Exception as fehler:  # noqa: BLE001 - der Grund gehoert dem Nutzer gesagt
+        # Nur die erste Zeile: Der Parser haengt Zeilennummern, Spaltenmarken
+        # und einen Ausschnitt der Datei an. Das hilft beim Debuggen, nicht
+        # aber jemandem, der wissen will, was mit seiner Anzeige ist.
+        grund = str(fehler).splitlines()[0].strip()
         raise FachlicherFehler(
-            f"Die Anzeigendatei ist nicht lesbar: {fehler}", status = 422,
+            f"Die Anzeigendatei ist nicht lesbar ({grund}). "
+            "Am ehesten hilft, sie neu herunterzuladen.",
+            status = 422,
         ) from fehler
     if not isinstance(daten, dict):
         raise FachlicherFehler("Die Datei enthält keine Anzeige.", status = 422)
@@ -107,7 +114,7 @@ def _lesbar(fehler: Exception) -> list[str]:
     return saetze
 
 
-def pruefen(daten: dict[str, Any]) -> list[str]:
+def pruefen_zum_veroeffentlichen(daten: dict[str, Any]) -> list[str]:
     """Prueft die Anzeige gegen die Modelle des Bots.
 
     Zwei Stufen, und der Unterschied ist Absicht:
@@ -137,6 +144,23 @@ def pruefen(daten: dict[str, Any]) -> list[str]:
     return []
 
 
+def _studio_hinweise(daten: dict[str, Any]) -> list[str]:
+    """Regeln, zu denen die Bot-Modelle schweigen.
+
+    `pruefen_zum_veroeffentlichen` oben faellt auf `AdPartial` und `Ad` zurueck. Zu Versandgroessen
+    sagt keines von beiden etwas - die Regel steht allein im
+    Veroeffentlichen-Formular. Ohne diese Stelle liesse sich ueber die API eine
+    Anzeige speichern, die spaeter mitten im Lauf abbricht.
+    """
+    pakete = daten.get("shipping_options") or []
+    if isinstance(pakete, list) and gemischte_versandgroessen(pakete):
+        return [
+            "Die Versandpakete gehören zu mehreren Größen. Kleinanzeigen lässt nur eine "
+            "Größe zu - beim Veröffentlichen bricht der Lauf sonst im Versanddialog ab.",
+        ]
+    return []
+
+
 def speichern(
     profil_wurzel: Path,
     datei: str,
@@ -161,7 +185,7 @@ def speichern(
     for feld, wert in aenderungen.items():
         daten[feld] = wert
 
-    hinweise = pruefen(daten)
+    hinweise = pruefen_zum_veroeffentlichen(daten) + _studio_hinweise(daten)
 
     # Erst in den Speicher schreiben, dann in einem Zug auf die Platte. Ein
     # Fehler beim Serialisieren darf keine halbe Datei hinterlassen.

@@ -132,6 +132,27 @@ class TestHinweise:
         assert "versand_ohne_paket" in anzeige.hinweise
         assert "direktkauf_ohne_paket" in anzeige.hinweise
 
+    def test_pakete_aus_zwei_groessen(self, tmp_path:Path) -> None:
+        """Der Upstream bricht damit erst im offenen Versanddialog ab.
+
+        `publishing_form.set_shipping_options` verlangt eine einzige
+        Groessengruppe. Bis dahin faellt es nirgends auf - die Bot-Modelle
+        pruefen die Regel nicht.
+        """
+        pytest.importorskip("kleinanzeigen_bot")
+        _anzeige_schreiben(tmp_path, "ad_1", "ad_1", """
+            title: Test
+            shipping_type: SHIPPING
+            shipping_costs: 5.49
+            shipping_options:
+              - Hermes_Päckchen
+              - Hermes_L
+            images:
+              - a.jpg
+            """)
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+        assert "versand_gemischte_groessen" in anzeige.hinweise
+
     def test_paket_vorhanden_gibt_keinen_hinweis(self, tmp_path:Path) -> None:
         _anzeige_schreiben(tmp_path, "ad_1", "ad_1", """
             title: Test
@@ -298,6 +319,35 @@ class TestBearbeiten:
 
         assert hinweise, "Direkt kaufen mit Abholung gehört gemeldet"
         assert bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_type"] == "PICKUP"
+
+    def test_gemischte_versandgroessen_sind_ein_hinweis(self, tmp_path:Path) -> None:
+        """Speichern darf gehen, stillschweigend darf es nicht gehen.
+
+        Ueber die API laesst sich die Liste sonst so setzen, dass der Lauf
+        spaeter mitten im Formular abbricht - ohne dass vorher irgendetwas
+        darauf hingewiesen haette.
+        """
+        pytest.importorskip("kleinanzeigen_bot")
+        wurzel, datei = self._profil(tmp_path)
+
+        _, hinweise = bearbeiten.speichern(
+            wurzel, datei, {"shipping_options": ["Hermes_Päckchen", "DHL_20"]},
+        )
+
+        assert any("Größen" in h for h in hinweise), hinweise
+        assert bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_options"] == [
+            "Hermes_Päckchen", "DHL_20",
+        ]
+
+    def test_eine_versandgroesse_erzeugt_keinen_hinweis(self, tmp_path:Path) -> None:
+        pytest.importorskip("kleinanzeigen_bot")
+        wurzel, datei = self._profil(tmp_path)
+
+        _, hinweise = bearbeiten.speichern(
+            wurzel, datei, {"shipping_options": ["Hermes_Päckchen", "Hermes_S"]},
+        )
+
+        assert not any("Größen" in h for h in hinweise), hinweise
 
     def test_saubere_aenderung_erzeugt_keinen_hinweis(self, tmp_path:Path) -> None:
         """Sonst waere der Hinweiskanal dauerhaft laut und damit wertlos."""

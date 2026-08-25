@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Ban, Hand, Hourglass, Play } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
-import type { Job, JobZustand, LogZeile, Profil } from '../types';
+import { useProfil } from '../context/useProfil';
+import type { BestandsAnzeige, Job, JobZustand, LogZeile } from '../types';
 
 /** Nur Befehle, die ohne weitere Eingaben sinnvoll sind. */
 const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean }[] = [
@@ -28,11 +29,14 @@ const ZUSTAND_TEXT: Record<JobZustand, { text: string; klasse: string }> = {
 };
 
 export function JobSeite() {
-  const [profile, setProfile] = useState<Profil[]>([]);
-  const [gewaehlt, setGewaehlt] = useState('');
+  // Das Profil kommt jetzt aus der Schale (AP-2.10) - eine Auswahl je Seite
+  // hätte spätestens mit Übersicht und Bestand auseinanderlaufen können.
+  const { profile, aktiv } = useProfil();
+  const gewaehlt = aktiv?.slug ?? '';
   const [jobs, setJobs] = useState<Job[]>([]);
   const [offenerJob, setOffenerJob] = useState<number | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [warnung, setWarnung] = useState<BestandsAnzeige[] | null>(null);
 
   const jobsLaden = useCallback(async () => {
     try {
@@ -43,12 +47,7 @@ export function JobSeite() {
   }, []);
 
   useEffect(() => {
-    void (async () => {
-      const liste = await api.profile.liste();
-      setProfile(liste);
-      if (liste.length > 0) setGewaehlt(liste[0].slug);
-      await jobsLaden();
-    })();
+    void jobsLaden();
   }, [jobsLaden]);
 
   // Solange etwas läuft, regelmäßig nachsehen. Der Log-Strom hängt am
@@ -62,7 +61,7 @@ export function JobSeite() {
 
   const [startet, setStartet] = useState<string | null>(null);
 
-  const starten = async (befehl: string) => {
+  const einreihen = async (befehl: string) => {
     setFehler(null);
     // Sofortige Rückmeldung: Ohne sie wirkt der Klick folgenlos, bis die Liste
     // das nächste Mal geladen wird.
@@ -78,6 +77,32 @@ export function JobSeite() {
     }
   };
 
+  // Vor dem Herunterladen nachsehen, ob lokale Änderungen überschrieben würden
+  // (AP-3.1). Der Bot übernimmt beim Download den Stand der Plattform und
+  // erhält nur vier Automatikfelder - siehe docs/RUNDLAUF.md. Wer etwas
+  // geändert hat, soll das vorher erfahren, nicht hinterher.
+  const starten = async (befehl: string) => {
+    if (befehl !== 'download' || !gewaehlt) {
+      await einreihen(befehl);
+      return;
+    }
+    setFehler(null);
+    setStartet(befehl);
+    try {
+      const betroffen = await api.bestand.lokaleAenderungen(gewaehlt);
+      if (betroffen.length > 0) {
+        setWarnung(betroffen);
+        return;
+      }
+    } catch {
+      // Die Prüfung ist eine Vorsichtsmaßnahme, keine Voraussetzung. Wenn sie
+      // scheitert, darf sie den Download nicht verhindern.
+    } finally {
+      setStartet(null);
+    }
+    await einreihen(befehl);
+  };
+
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Läufe</h1>
@@ -88,17 +113,10 @@ export function JobSeite() {
         </p>
       ) : (
         <div className="mb-6 rounded border border-gray-200 bg-white p-4">
-          <label className="mb-4 block max-w-xs">
-            <span className="text-sm font-medium text-gray-700">Profil</span>
-            <select
-              value={gewaehlt}
-              onChange={e => setGewaehlt(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                         focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
-            >
-              {profile.map(p => <option key={p.slug} value={p.slug}>{p.anzeigename}</option>)}
-            </select>
-          </label>
+          <p className="mb-3 text-sm text-gray-700">
+            Läuft für <span className="font-medium text-gray-900">{aktiv?.anzeigename}</span>.
+            Umschalten geht links in der Seitenleiste.
+          </p>
 
           <p className="mb-3 text-xs text-gray-600">
             Läufe desselben Profils werden nacheinander abgearbeitet, mit einem
@@ -137,6 +155,17 @@ export function JobSeite() {
         </div>
       )}
 
+      {warnung && (
+        <UeberschreibWarnung
+          anzeigen={warnung}
+          aufAbbrechen={() => setWarnung(null)}
+          aufWeiter={() => {
+            setWarnung(null);
+            void einreihen('download');
+          }}
+        />
+      )}
+
       {fehler && (
         <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {fehler}
@@ -158,6 +187,66 @@ export function JobSeite() {
             Noch keine Läufe.
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Warnt vor einem Download, der lokale Änderungen überschreiben würde (AP-3.1). */
+function UeberschreibWarnung({
+  anzeigen, aufAbbrechen, aufWeiter,
+}: { anzeigen: BestandsAnzeige[]; aufAbbrechen: () => void; aufWeiter: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="warnung-titel"
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+      >
+        <div className="mb-3 flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" aria-hidden />
+          <div className="min-w-0">
+            <h2 id="warnung-titel" className="font-semibold text-gray-900">
+              Lokale Änderungen gehen verloren
+            </h2>
+            <p className="mt-1 text-sm text-gray-700">
+              Beim Herunterladen wird der Stand der Plattform übernommen.
+              {' '}
+              {anzeigen.length === 1
+                ? 'Eine Anzeige wurde hier geändert und wird überschrieben:'
+                : `${anzeigen.length} Anzeigen wurden hier geändert und werden überschrieben:`}
+            </p>
+          </div>
+        </div>
+
+        <ul className="mb-4 max-h-48 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2 text-sm">
+          {anzeigen.map(a => (
+            <li key={a.datei} className="truncate py-0.5 text-gray-800">{a.titel}</li>
+          ))}
+        </ul>
+
+        <p className="mb-4 text-xs text-gray-600">
+          Erhalten bleiben nur die Automatikfelder: Preisautomatik, Abstand zur
+          Neueinstellung und die beiden Zähler.
+        </p>
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={aufAbbrechen}
+            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={aufWeiter}
+            className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Trotzdem herunterladen
+          </button>
+        </div>
       </div>
     </div>
   );

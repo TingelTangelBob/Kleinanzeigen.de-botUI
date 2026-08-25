@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from anzeigen_studio import bestand as bestand_dienst
 from anzeigen_studio.core import db
@@ -124,3 +124,62 @@ def bild(
     # Stunde Zwischenspeicher spart in einer Liste mit Vorschaubildern viele
     # Anfragen, ohne dass ein Bild lange falsch waere.
     return FileResponse(pfad, headers = {"Cache-Control": "private, max-age=3600"})
+
+
+class AnzeigeInhalt(BaseModel):
+    """Die Anzeige mit allen Feldern - Grundlage des Editors (AP-2.5)."""
+
+    kopf: AnzeigeAusgabe
+    felder: dict[str, object]
+    aenderbar: list[str]
+
+
+class SpeichernEingabe(BaseModel):
+    datei: str = Field(min_length = 1, max_length = 400)
+    felder: dict[str, object]
+
+
+class SpeichernAusgabe(BaseModel):
+    kopf: AnzeigeAusgabe
+    hinweise: list[str]
+
+
+@router.get("/anzeige", response_model = AnzeigeInhalt)
+def anzeige_lesen(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> AnzeigeInhalt:
+    """Eine einzelne Anzeige mit allen Feldern."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    felder = bestand_dienst.rohdaten_lesen(wurzel, datei)
+    kopf = next(
+        (a for a in bestand_dienst.bestand_lesen(wurzel) if a.datei == datei),
+        None,
+    )
+    if kopf is None:
+        raise FachlicherFehler("Anzeige nicht gefunden.", status = 404)
+    return AnzeigeInhalt(
+        kopf = _ausgabe(kopf),
+        felder = dict(felder),
+        aenderbar = sorted(bestand_dienst.AENDERBAR),
+    )
+
+
+@router.put("/anzeige", response_model = SpeichernAusgabe)
+def anzeige_speichern(
+    profil: str,
+    daten: SpeichernEingabe,
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> SpeichernAusgabe:
+    """Speichert geänderte Felder einer Anzeige.
+
+    Der Inhaltsstempel bleibt stehen: Nur so bleibt sichtbar, dass die Anzeige
+    von der zuletzt veröffentlichten Fassung abweicht - und dass ein Download
+    sie überschreiben würde.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    kopf, hinweise = bestand_dienst.speichern(wurzel, daten.datei, dict(daten.felder))
+    return SpeichernAusgabe(kopf = _ausgabe(kopf), hinweise = hinweise)

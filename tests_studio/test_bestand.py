@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from anzeigen_studio.bestand import bestand_lesen, bildpfad, lokal_geaenderte
+from anzeigen_studio.bestand import bearbeiten, bestand_lesen, bildpfad, lokal_geaenderte
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -218,3 +218,98 @@ class TestBildpfad:
 
         with pytest.raises(FachlicherFehler):
             bildpfad(tmp_path, datei.relative_to(tmp_path).as_posix(), "notiz.txt")
+
+
+class TestBearbeiten:
+    """Tests des Editors (AP-2.5)."""
+
+    def _profil(self, tmp_path:Path) -> tuple[Path, str]:
+        datei = _anzeige_schreiben(tmp_path, "ad_1", "ad_1", VOLLSTAENDIG)
+        return tmp_path, datei.relative_to(tmp_path).as_posix()
+
+    def test_rohdaten_lesen(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        daten = bearbeiten.rohdaten_lesen(wurzel, datei)
+        assert daten["title"] == "1CH Wi-Fi Dimmer Module"
+        assert daten["price"] == 10
+
+    def test_speichern_aendert_nur_gegebene_felder(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+
+        kopf, _ = bearbeiten.speichern(wurzel, datei, {"price": 12, "title": "Neuer Titel für alles"})
+
+        assert kopf.preis == 12
+        assert kopf.titel == "Neuer Titel für alles"
+        danach = bearbeiten.rohdaten_lesen(wurzel, datei)
+        assert danach["category"] == "161/168"
+        assert danach["id"] == 3310837392
+
+    def test_inhaltsstempel_bleibt_stehen(self, tmp_path:Path) -> None:
+        """Sonst wäre die Änderung sofort unsichtbar - und die Warnung vor dem
+        Download (AP-3.1) hätte nichts mehr zu melden."""
+        pytest.importorskip("kleinanzeigen_bot.model.ad_model")
+        _anzeige_schreiben(tmp_path, "ad_2", "ad_2", """
+            active: true
+            type: OFFER
+            title: Testanzeige mit gueltiger Laenge
+            description: Text
+            category: 161/168
+            price: 10
+            price_type: FIXED
+            shipping_type: PICKUP
+            republication_interval: 30
+            id: 4711
+            content_hash: 'alter-stempel'
+            """)
+        datei = "downloaded-ads/ad_2/ad_2.yaml"
+
+        bearbeiten.speichern(tmp_path, datei, {"price": 15})
+
+        danach = bearbeiten.rohdaten_lesen(tmp_path, datei)
+        assert danach["content_hash"] == "alter-stempel"
+        assert len(lokal_geaenderte(tmp_path)) == 1
+
+    def test_gesperrte_felder_werden_abgewiesen(self, tmp_path:Path) -> None:
+        wurzel, datei = self._profil(tmp_path)
+        with pytest.raises(FachlicherFehler):
+            bearbeiten.speichern(wurzel, datei, {"id": 1, "content_hash": "x"})
+
+    def test_strukturfehler_wird_abgewiesen(self, tmp_path:Path) -> None:
+        pytest.importorskip("kleinanzeigen_bot.model.ad_model")
+        wurzel, datei = self._profil(tmp_path)
+
+        with pytest.raises(FachlicherFehler):
+            bearbeiten.speichern(wurzel, datei, {"title": "zu kurz"})
+
+        # Die Datei darf dabei unberührt bleiben.
+        assert bearbeiten.rohdaten_lesen(wurzel, datei)["title"] == "1CH Wi-Fi Dimmer Module"
+
+    def test_veroeffentlichungsfehler_ist_nur_ein_hinweis(self, tmp_path:Path) -> None:
+        """Ein halbfertiger Entwurf muss sich speichern lassen.
+
+        Direkt kaufen mit Abholung ist eine Kombination, die das Modell erst
+        beim vollstaendigen Zusammenbau ablehnt - also beim Veroeffentlichen,
+        nicht beim Tippen.
+        """
+        pytest.importorskip("kleinanzeigen_bot.model.ad_model")
+        wurzel, datei = self._profil(tmp_path)
+
+        _, hinweise = bearbeiten.speichern(wurzel, datei, {"shipping_type": "PICKUP"})
+
+        assert hinweise, "Direkt kaufen mit Abholung gehört gemeldet"
+        assert bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_type"] == "PICKUP"
+
+    def test_saubere_aenderung_erzeugt_keinen_hinweis(self, tmp_path:Path) -> None:
+        """Sonst waere der Hinweiskanal dauerhaft laut und damit wertlos."""
+        pytest.importorskip("kleinanzeigen_bot.model.ad_model")
+        wurzel, datei = self._profil(tmp_path)
+
+        _, hinweise = bearbeiten.speichern(wurzel, datei, {"price": 12})
+
+        assert hinweise == []
+
+    def test_ausbruch_wird_abgewiesen(self, tmp_path:Path) -> None:
+        wurzel, _ = self._profil(tmp_path)
+        (tmp_path / "app.db").write_bytes(b"geheim")
+        with pytest.raises(FachlicherFehler):
+            bearbeiten.rohdaten_lesen(wurzel, "../app.db")

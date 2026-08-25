@@ -7,7 +7,8 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
-  AuthStatus, BestandsAnzeige, Gesundheit, Job, LogZeile, Profil, ZugangStatus,
+  AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, LogZeile, Profil,
+  SpeichernAusgabe, ZugangStatus,
 } from '../types';
 
 /** Fehler mit der deutschen Meldung des Backends. */
@@ -118,6 +119,15 @@ export const api = {
       anfrage<BestandsAnzeige[]>(`/bestand?profil=${encodeURIComponent(profil)}`),
     lokaleAenderungen: (profil: string) =>
       anfrage<BestandsAnzeige[]>(`/bestand/lokale-aenderungen?profil=${encodeURIComponent(profil)}`),
+    anzeige: (profil: string, datei: string) =>
+      anfrage<AnzeigeInhalt>(
+        `/bestand/anzeige?profil=${encodeURIComponent(profil)}&datei=${encodeURIComponent(datei)}`,
+      ),
+    speichern: (profil: string, datei: string, felder: Record<string, unknown>) =>
+      anfrage<SpeichernAusgabe>(`/bestand/anzeige?profil=${encodeURIComponent(profil)}`, {
+        method: 'PUT', ...json({ datei, felder }),
+      }),
+
     /** Kein anfrage(): Das Bild hängt direkt im src-Attribut. */
     bildUrl: (profil: string, datei: string, name: string) =>
       `/api/bestand/bild?profil=${encodeURIComponent(profil)}`

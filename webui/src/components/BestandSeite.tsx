@@ -13,6 +13,7 @@ import { RefreshCw, Search } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import type { BestandsAnzeige } from '../types';
+import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
 
 type Filter = 'alle' | 'faellig' | 'geaendert' | 'auffaellig' | 'inaktiv';
@@ -50,6 +51,7 @@ export function BestandSeite() {
   const [fehler, setFehler] = useState<string | null>(null);
   const [suche, setSuche] = useState('');
   const [filter, setFilter] = useState<Filter>('alle');
+  const [bearbeitet, setBearbeitet] = useState<string | null>(null);
 
   const laden = useCallback(async () => {
     if (!aktiv) {
@@ -81,6 +83,21 @@ export function BestandSeite() {
     geaendert: anzeigen.filter(a => a.lokal_geaendert).length,
     auffaellig: anzeigen.filter(a => a.hinweise.length > 0 || a.unlesbar).length,
   }), [anzeigen]);
+
+  if (bearbeitet && aktiv) {
+    return (
+      <AnzeigenEditor
+        profil={aktiv.slug}
+        datei={bearbeitet}
+        aufZurueck={geaendert => {
+          setBearbeitet(null);
+          // Nach einer Änderung neu einlesen: Titel, Preis und die Merkmale in
+          // der Liste stammen aus derselben Datei.
+          if (geaendert) void laden();
+        }}
+      />
+    );
+  }
 
   if (profileLaden) return <p className="text-sm text-gray-500">Wird geladen …</p>;
 
@@ -164,7 +181,11 @@ export function BestandSeite() {
           <ul className="divide-y divide-gray-200 overflow-hidden rounded border border-gray-200 bg-white">
             {gefiltert.map(a => (
               <li key={a.datei}>
-                <AnzeigenZeile anzeige={a} profil={aktiv.slug} />
+                <AnzeigenZeile
+                  anzeige={a}
+                  profil={aktiv.slug}
+                  aufKlick={a.unlesbar ? undefined : () => setBearbeitet(a.datei)}
+                />
               </li>
             ))}
           </ul>

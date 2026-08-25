@@ -92,3 +92,16 @@ export interface BestandsAnzeige {
   hinweise: string[];
   unlesbar: string | null;
 }
+
+/** Eine Anzeige mit allen Feldern - Grundlage des Editors (AP-2.5). */
+export interface AnzeigeInhalt {
+  kopf: BestandsAnzeige;
+  felder: Record<string, unknown>;
+  aenderbar: string[];
+}
+
+export interface SpeichernAusgabe {
+  kopf: BestandsAnzeige;
+  /** Was dem Veröffentlichen im Weg stünde - kein Grund, nicht zu speichern. */
+  hinweise: string[];
+}

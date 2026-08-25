@@ -11,12 +11,13 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Briefcase, LogOut, Menu, Monitor, Moon, Sun, Users, X,
+  Briefcase, LayoutDashboard, ListTree, LogOut, Menu, Monitor, Moon, Sun, Users, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
+import { useProfil } from '../context/useProfil';
 
-export type Seite = 'profile' | 'jobs' | 'browsersicht';
+export type Seite = 'uebersicht' | 'bestand' | 'profile' | 'jobs' | 'browsersicht';
 
 interface NavEintrag {
   id: Seite;
@@ -25,8 +26,10 @@ interface NavEintrag {
 }
 
 const NAV: NavEintrag[] = [
-  { id: 'profile', label: 'Profile', icon: Users },
+  { id: 'uebersicht', label: 'Übersicht', icon: LayoutDashboard },
+  { id: 'bestand', label: 'Anzeigen', icon: ListTree },
   { id: 'jobs', label: 'Läufe', icon: Briefcase },
+  { id: 'profile', label: 'Profile', icon: Users },
   { id: 'browsersicht', label: 'Browsersicht', icon: Monitor },
 ];
 
@@ -47,6 +50,7 @@ interface LayoutProps {
 
 export function Layout({ seite, aufSeitenwechsel, children }: LayoutProps) {
   const { status, abmelden } = useAuth();
+  const { profile, aktiv, waehlen } = useProfil();
   const [menuOffen, setMenuOffen] = useState(false);
   const [thema, setThema] = useState<'hell' | 'dunkel'>(themaLesen);
 
@@ -97,6 +101,32 @@ export function Layout({ seite, aufSeitenwechsel, children }: LayoutProps) {
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Globaler Profilumschalter (AP-2.10). Er steht hier oben, weil jede
+            Seite darunter sich auf dieses Profil bezieht - eine Auswahl je
+            Seite hatte den Nutzer raten lassen, welche gerade gilt.
+            Bei genau einem Profil wäre ein Auswahlfeld nur Zierde; dann steht
+            dort der Name. */}
+        {profile.length > 0 && (
+          <div className="border-b border-gray-200 px-4 py-3">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Profil</span>
+            {profile.length === 1 ? (
+              <span className="block truncate text-sm text-gray-900">{aktiv?.anzeigename}</span>
+            ) : (
+              <select
+                value={aktiv?.slug ?? ''}
+                onChange={e => waehlen(e.target.value)}
+                aria-label="Profil wählen"
+                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm
+                           focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+              >
+                {profile.map(p => (
+                  <option key={p.slug} value={p.slug}>{p.anzeigename}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
 
         <nav className="flex-1 overflow-y-auto p-2">
           {NAV.map(({ id, label, icon: Icon }) => (
@@ -152,6 +182,9 @@ export function Layout({ seite, aufSeitenwechsel, children }: LayoutProps) {
             <Menu className="h-6 w-6" />
           </button>
           <span className="font-semibold text-gray-900">Anzeigen-Studio</span>
+          {aktiv && (
+            <span className="ml-auto truncate text-sm text-gray-600">{aktiv.anzeigename}</span>
+          )}
         </header>
 
         {/* min-w-0 verhindert, dass breite Inhalte die ganze Seite aufziehen. */}

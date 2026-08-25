@@ -8,17 +8,20 @@
 
 import { useEffect, useState } from 'react';
 import { AuthProvider } from './context/AuthContext';
+import { ProfilProvider } from './context/ProfilContext';
 import { useAuth } from './context/useAuth';
 import { AuthSeite } from './components/AuthSeite';
+import { BestandSeite } from './components/BestandSeite';
 import { JobSeite } from './components/JobSeite';
 import { Layout, type Seite } from './components/Layout';
 import { ProfilSeite } from './components/ProfilSeite';
+import { UebersichtSeite } from './components/UebersichtSeite';
 
-const SEITEN: Seite[] = ['profile', 'jobs', 'browsersicht'];
+const SEITEN: Seite[] = ['uebersicht', 'bestand', 'profile', 'jobs', 'browsersicht'];
 
 function seiteAusHash(): Seite {
   const roh = window.location.hash.replace(/^#/, '') as Seite;
-  return SEITEN.includes(roh) ? roh : 'profile';
+  return SEITEN.includes(roh) ? roh : 'uebersicht';
 }
 
 function Inhalt() {
@@ -54,8 +57,17 @@ function Inhalt() {
   if (!status.eingerichtet) return <AuthSeite einrichtung />;
   if (!status.angemeldet) return <AuthSeite einrichtung={false} />;
 
+  // Ein Seitenwechsel aus dem Inhalt heraus muss auch den Hash setzen, sonst
+  // zeigt die Adresszeile auf die vorige Seite.
+  const wechseln = (ziel: Seite) => {
+    window.location.hash = ziel;
+    setSeite(ziel);
+  };
+
   return (
     <Layout seite={seite} aufSeitenwechsel={setSeite}>
+      {seite === 'uebersicht' && <UebersichtSeite aufSeite={wechseln} />}
+      {seite === 'bestand' && <BestandSeite />}
       {seite === 'profile' && <ProfilSeite />}
       {seite === 'jobs' && <JobSeite />}
       {seite === 'browsersicht' && <Browsersicht />}
@@ -95,7 +107,9 @@ function Browsersicht() {
 export default function App() {
   return (
     <AuthProvider>
-      <Inhalt />
+      <ProfilProvider>
+        <Inhalt />
+      </ProfilProvider>
     </AuthProvider>
   );
 }

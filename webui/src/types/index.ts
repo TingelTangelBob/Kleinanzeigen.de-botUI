@@ -65,3 +65,30 @@ export interface Gesundheit {
   dev_mode: boolean;
   missing_config: string[];
 }
+
+/** Eine Anzeige, wie sie auf der Platte liegt (AP-3.2). */
+export interface BestandsAnzeige {
+  datei: string;
+  ordner: string;
+  titel: string;
+  id: number | null;
+  art: string;
+  aktiv: boolean;
+  kategorie: string | null;
+  preis: number | null;
+  preistyp: string | null;
+  versandart: string | null;
+  versandkosten: number | null;
+  versandpakete: string[];
+  direkt_kaufen: boolean;
+  bilder: number;
+  vorschaubild: string | null;
+  erstellt_am: string | null;
+  aktualisiert_am: string | null;
+  neueinstellung_am: string | null;
+  faellig: boolean;
+  lokal_geaendert: boolean;
+  /** Kennungen aus der Verlustanalyse, siehe docs/RUNDLAUF.md. */
+  hinweise: string[];
+  unlesbar: string | null;
+}

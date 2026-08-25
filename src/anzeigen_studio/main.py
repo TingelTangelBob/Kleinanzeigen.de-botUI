@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
 from anzeigen_studio.api import auth as auth_api
+from anzeigen_studio.api import bestand as bestand_api
 from anzeigen_studio.api import jobs as jobs_api
 from anzeigen_studio.api import profile as profile_api
 from anzeigen_studio.core import db, errors, schutz
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_api.router)
     app.include_router(profile_api.router)
     app.include_router(jobs_api.router)
+    app.include_router(bestand_api.router)
 
     missing = cfg.missing_for_production()
     if missing:

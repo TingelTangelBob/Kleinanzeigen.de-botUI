@@ -7,7 +7,7 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
-  AuthStatus, Gesundheit, Job, LogZeile, Profil, ZugangStatus,
+  AuthStatus, BestandsAnzeige, Gesundheit, Job, LogZeile, Profil, ZugangStatus,
 } from '../types';
 
 /** Fehler mit der deutschen Meldung des Backends. */
@@ -111,6 +111,17 @@ export const api = {
       }),
     zugangEntfernen: (slug: string) =>
       anfrage<void>(`/profile/${encodeURIComponent(slug)}/zugang`, { method: 'DELETE' }),
+  },
+
+  bestand: {
+    liste: (profil: string) =>
+      anfrage<BestandsAnzeige[]>(`/bestand?profil=${encodeURIComponent(profil)}`),
+    lokaleAenderungen: (profil: string) =>
+      anfrage<BestandsAnzeige[]>(`/bestand/lokale-aenderungen?profil=${encodeURIComponent(profil)}`),
+    /** Kein anfrage(): Das Bild hängt direkt im src-Attribut. */
+    bildUrl: (profil: string, datei: string, name: string) =>
+      `/api/bestand/bild?profil=${encodeURIComponent(profil)}`
+      + `&datei=${encodeURIComponent(datei)}&name=${encodeURIComponent(name)}`,
   },
 
   jobs: {

@@ -174,12 +174,21 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
         {inhalt.kopf.id !== null ? `Nr. ${inhalt.kopf.id} · ` : ''}{datei}
       </p>
 
-      <div className="mb-6 flex items-start gap-2 rounded border border-blue-200 bg-blue-100 p-3 text-sm text-blue-900">
+      {/* Diese Aussage muss stimmen und auffallen. Ein Nutzer hat eine
+          Preisänderung gespeichert und sie auf kleinanzeigen.de gesucht - der
+          alte Hinweis sprach nur vom Herunterladen und ließ offen, dass
+          Speichern nichts veröffentlicht. */}
+      <div className="mb-6 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-        <p>
-          Änderungen bleiben zunächst hier. Ein späteres Herunterladen übernimmt den
-          Stand der Plattform und überschreibt sie.
-        </p>
+        <div>
+          <p className="font-medium">Speichern ändert nichts auf kleinanzeigen.de.</p>
+          <p className="mt-1">
+            Die Änderung liegt danach nur hier auf dem Rechner. Das Hochladen einer
+            geänderten Anzeige ist noch nicht gebaut – bis dahin geht es nur direkt
+            auf der Website. Und Achtung: Ein späteres Herunterladen übernimmt den
+            Stand der Plattform und überschreibt, was du hier geändert hast.
+          </p>
+        </div>
       </div>
 
       {fehler && (

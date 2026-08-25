@@ -124,6 +124,17 @@ export function JobSeite() {
             warten, bevor er startet – das ist Absicht und wird unten angezeigt.
           </p>
 
+          {/* Ehrlicher Hinweis statt einer Schaltfläche, die nichts tut:
+              Der Bot sucht Anzeigen zum Veröffentlichen im Ordner `ads/`,
+              heruntergeladene liegen aber in `downloaded-ads/`. Beides zu
+              verbinden ist AP-3.3 und braucht eigene Rückfragen. */}
+          <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+            <span className="font-medium">Veröffentlichen und Verlängern finden derzeit keine Anzeigen.</span>{' '}
+            Heruntergeladene Anzeigen sind noch nicht mit dem Veröffentlichen verbunden –
+            ein Lauf würde ohne Wirkung durchlaufen. Bearbeitete Anzeigen lassen sich
+            deshalb noch nicht hochladen.
+          </p>
+
           <div className="grid gap-2 sm:grid-cols-2">
             {BEFEHLE.map(b => (
               <button

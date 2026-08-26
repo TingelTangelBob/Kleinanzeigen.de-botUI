@@ -21,6 +21,24 @@ export DISPLAY=":${DISPLAY_NUM}"
 # sonst jeden weiteren Start.
 rm -f "/tmp/.X${DISPLAY_NUM}-lock"
 
+# Dasselbe Problem eine Ebene tiefer: Chromium legt im Browserprofil eine
+# Sperrdatei an, deren Ziel den Rechnernamen enthaelt (SingletonLock ->
+# <host>-<pid>). Ein neu gebauter Container bekommt einen neuen Rechnernamen;
+# Chromium haelt das Profil dann fuer "auf einem anderen Rechner in Benutzung"
+# und startet gar nicht erst. Nach aussen sieht das aus wie "Failed to connect
+# to browser" - eine Meldung, die in die voellig falsche Richtung zeigt.
+#
+# Beim Start dieses Containers kann kein Chromium laufen (frischer
+# Prozessraum), die Sperre ist also immer verwaist und darf weg.
+DATENVERZEICHNIS="${ANZEIGEN_STUDIO_DATA_DIR:-/data}"
+for sperre in "${DATENVERZEICHNIS}"/profiles/*/.temp/browser-profile/Singleton*; do
+    # Bei leerem Treffer bleibt das Muster stehen - dann gibt es nichts zu tun.
+    if [ -e "${sperre}" ] || [ -L "${sperre}" ]; then
+        echo "Entferne verwaiste Browsersperre: ${sperre}"
+        rm -f "${sperre}"
+    fi
+done
+
 echo "Starte Xvfb auf ${DISPLAY} (${SCREEN})"
 Xvfb "${DISPLAY}" -screen 0 "${SCREEN}" -nolisten tcp -dpi 96 &
 XVFB_PID=$!

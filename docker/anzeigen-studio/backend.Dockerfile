@@ -73,6 +73,27 @@ RUN pip install --no-cache-dir \
       "pydantic>=2.11.0" "ruamel.yaml" psutil wcmatch "sanitize-filename>=1.2.0" \
       requests rich typer
 
+# nodriver nachbessern - ohne diesen Schritt ist der Bot im Abbild unbrauchbar.
+#
+# Der Upstream liefert nodriver 0.50.3 nur zusammen mit `scripts/fix_nodriver.py`
+# aus; `pdm install` ruft es als post_install-Hook auf (pyproject.toml). Ein
+# reines `pip install` kennt diesen Hook nicht. Ungepatcht schickt nodriver in
+# `Tab.xpath` das Kommando `DOM.enable` an das Browser-Ziel statt an die Seite;
+# Chromium 148+ antwortet mit -32601 ("'DOM.enable' wasn't found"), und JEDE
+# XPath-Suche des Bots scheitert. Gesehen am 2026-08-26: `update` bricht auf der
+# Bearbeiten-Seite ab, weil der Knopf "Kategorie aendern" nicht gefunden wird -
+# obwohl er da ist. Alles andere (CSS, Text, IDs) funktioniert weiter, deshalb
+# faellt der Mangel erst spaet auf.
+#
+# Der Bot warnt zur Laufzeit selbst darueber (cli.py, _warn_unpatched_nodriver).
+# Die Pruefung hier danach macht daraus einen Baufehler statt einer Warnung, die
+# im Protokoll untergeht.
+COPY scripts/fix_nodriver.py /tmp/fix_nodriver.py
+RUN python /tmp/fix_nodriver.py \
+ && grep -q KLEINANZEIGEN_BOT_NODEDRIVER_CDP_REATTACH_PATCH_V1 \
+      "$(python -c 'import nodriver.core.connection as c; print(c.__file__)')" \
+ && rm /tmp/fix_nodriver.py
+
 COPY --chown=studio:studio src/ /app/src/
 COPY --chown=studio:studio schemas/ /app/schemas/
 COPY --chown=studio:studio docker/anzeigen-studio/entrypoint.sh /usr/local/bin/entrypoint.sh

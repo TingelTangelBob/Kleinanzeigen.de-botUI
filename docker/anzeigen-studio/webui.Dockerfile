@@ -12,10 +12,11 @@ COPY webui/package.json webui/package-lock.json* ./
 RUN npm ci || npm install
 
 COPY webui/ ./
-# Lint und Typpruefung laufen im Build mit. Der Frontend-Container liefert die
-# gebaute Fassung aus; damit ist der Docker-Build die Stelle, an der beides
-# tatsaechlich geprueft wird (siehe CONTEXT.md).
-RUN npm run lint && npm run typecheck && npm run build
+# Lint, Typpruefung und Tests laufen im Build mit. Der Frontend-Container
+# liefert die gebaute Fassung aus; damit ist der Docker-Build die Stelle, an
+# der alles drei tatsaechlich geprueft wird (siehe CONTEXT.md). Ein Bau, der
+# durchlaeuft, ist damit zugleich der Nachweis, dass die Tests gruen sind.
+RUN npm run lint && npm run typecheck && npm run test && npm run build
 
 FROM nginx:alpine
 COPY --from=build /build/dist /usr/share/nginx/html

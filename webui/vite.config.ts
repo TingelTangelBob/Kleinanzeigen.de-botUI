@@ -5,11 +5,18 @@
 // Entwicklungsbetrieb unter demselben Ursprung liegen - wie spaeter in
 // Produktion hinter dem Reverse Proxy.
 
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // Tests laufen gegen jsdom, weil die geprüften Stellen DOM brauchen: das
+  // Kategorie-Textfeld und die Bildkacheln.
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./src/test-setup.ts'],
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

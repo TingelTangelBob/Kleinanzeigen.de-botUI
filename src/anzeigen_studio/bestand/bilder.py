@@ -37,6 +37,17 @@ MAX_BYTES = 15 * 1024 * 1024
 
 #: Erkannt wird am Inhalt, nicht an der Endung. Eine `.jpg`, die keine ist,
 #: faellt sonst erst beim Hochladen auf - dann aber mitten in einem Lauf.
+#:
+#: WebP fehlt hier bewusst. Der Bot laesst beim Laden einer Anzeige nur
+#: `.gif`, `.jpg`, `.jpeg` und `.png` zu (`ad_loading.resolve_ad_images`) und
+#: wirft sonst einen AssertionError - der nicht abgefangen wird und damit den
+#: *ganzen* Lauf beendet, nicht nur die betroffene Anzeige. Ein angenommenes
+#: WebP waere also kein Schoenheitsfehler, sondern eine Anzeige, die den
+#: naechsten Durchlauf sprengt. Umwandeln kaeme nur mit einer neuen
+#: Bildbibliothek in Frage; das waere fuer ein Format, das die Plattform
+#: ohnehin nicht braucht, zu viel.
+ERLAUBTE_FORMATE = "JPEG, PNG und GIF"
+
 _SIGNATUREN: tuple[tuple[bytes, str], ...] = (
     (b"\xff\xd8\xff", ".jpg"),
     (b"\x89PNG\r\n\x1a\n", ".png"),
@@ -52,9 +63,12 @@ def _endung(inhalt: bytes) -> str:
         if inhalt.startswith(signatur):
             return endung
     if inhalt[:4] == b"RIFF" and inhalt[8:12] == b"WEBP":
-        return ".webp"
+        raise FachlicherFehler(
+            f"WebP kann der Bot beim Hochladen nicht lesen. Erlaubt sind {ERLAUBTE_FORMATE}.",
+            status = 415, feld = "bild",
+        )
     raise FachlicherFehler(
-        "Das ist kein Bild. Erlaubt sind JPEG, PNG, WebP und GIF.",
+        f"Das ist kein Bild. Erlaubt sind {ERLAUBTE_FORMATE}.",
         status = 415, feld = "bild",
     )
 
@@ -128,11 +142,25 @@ def bild_entfernen(profil_wurzel: Path, datei: str, name: str) -> BestandsAnzeig
 
 
 def reihenfolge_pruefen(profil_wurzel: Path, datei: str, bilder: list[str]) -> None:
-    """Stellt sicher, dass eine neue Reihenfolge nur vorhandene Bilder nennt."""
+    """Stellt sicher, dass eine neue Reihenfolge dieselben Bilder nennt wie vorher.
+
+    Verglichen wird als Liste, nicht als Menge. Mit Mengen faellt ein doppelt
+    genannter Name nicht auf: `[a, b, b]` und `{a, b}` sind mengengleich, die
+    gespeicherte Reihenfolge haette danach aber drei Eintraege fuer zwei
+    Dateien. Der Bot laedt dasselbe Bild dann zweimal hoch, und die Zaehlung in
+    der Oberflaeche stimmt nicht mehr.
+    """
     pfad = _pfad(profil_wurzel, datei)
     daten = rohdaten_lesen(profil_wurzel, datei)
     vorher = set(_bilder(daten))
     neu = set(bilder)
+
+    doppelte = sorted({b for b in bilder if bilder.count(b) > 1})
+    if doppelte:
+        raise FachlicherFehler(
+            f"Diese Bilder sind mehrfach genannt: {', '.join(doppelte)}",
+            status = 400, feld = "images",
+        )
 
     if neu - vorher:
         raise FachlicherFehler(

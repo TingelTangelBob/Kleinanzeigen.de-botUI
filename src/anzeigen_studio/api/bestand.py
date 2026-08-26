@@ -209,6 +209,42 @@ class BildAusgabe(BaseModel):
     kopf: AnzeigeAusgabe
 
 
+#: Haeppchengroesse beim Einlesen. Klein genug, um nicht ins Gewicht zu
+#: fallen, gross genug, um nicht in Tausenden Schleifendurchlaeufen zu enden.
+_HAEPPCHEN = 64 * 1024
+
+
+async def _begrenzt_lesen(bild: UploadFile, grenze: int) -> bytes:
+    """Liest hoechstens *grenze* + 1 Bytes und weist alles Groessere ab.
+
+    Das eine Byte darueber ist der ganze Trick: Es beweist, dass die Datei die
+    Grenze reisst, ohne dass der Rest je in den Speicher muss. `await
+    bild.read()` ohne Angabe wuerde die vollstaendige Datei laden - bei einem
+    absichtlich grossen Upload also beliebig viel, und die Groessenpruefung
+    kaeme erst danach.
+
+    Abgewiesen wird hier, vor dem Anlegen der Datei. Damit kann kein halbes
+    Bild im Datenverzeichnis liegenbleiben.
+    """
+    teile: list[bytes] = []
+    gelesen = 0
+    while gelesen <= grenze:
+        # Nie mehr anfordern, als bis zum Beweisbyte fehlt - sonst laege am
+        # Ende doch ein Haeppchen mehr im Speicher als zugesagt.
+        haeppchen = await bild.read(min(_HAEPPCHEN, grenze + 1 - gelesen))
+        if not haeppchen:
+            break
+        teile.append(haeppchen)
+        gelesen += len(haeppchen)
+
+    if gelesen > grenze:
+        raise FachlicherFehler(
+            f"Das Bild ist größer als {grenze // (1024 * 1024)} MB.",
+            status = 413, feld = "bild",
+        )
+    return b"".join(teile)
+
+
 @router.post("/bild", response_model = BildAusgabe, status_code = 201)
 async def bild_hochladen(
     profil: str,
@@ -219,7 +255,7 @@ async def bild_hochladen(
 ) -> BildAusgabe:
     """Legt ein Bild neben die Anzeige und trägt es hinten ein (AP-2.6)."""
     wurzel = _profil_wurzel(conn, cfg, profil)
-    inhalt = await bild.read()
+    inhalt = await _begrenzt_lesen(bild, bestand_dienst.MAX_BYTES)
     name, kopf = bestand_dienst.bild_hinzufuegen(wurzel, datei, inhalt)
     return BildAusgabe(name = name, kopf = _ausgabe(kopf))
 
@@ -277,6 +313,11 @@ def _hochladbar(anzeige: bestand_dienst.BestandsAnzeige, felder: dict[str, objec
             "nicht abbilden. Wähle ein Paket, das zum Preis passt.",
             status = 422, feld = "shipping_options",
         )
+
+    # Dieselbe Pruefung wie beim Speichern. Eine Datei kann gemischte Groessen
+    # tragen, ohne je durch das Speichern gegangen zu sein - heruntergeladen
+    # oder von Hand bearbeitet.
+    bestand_dienst.versandgroessen_pruefen(felder)
 
     fehler = bestand_dienst.pruefen_zum_veroeffentlichen(felder)
     if fehler:

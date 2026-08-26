@@ -32,8 +32,10 @@ LOG = logging.getLogger(__name__)
 #: selbst angelegte Anzeigen, AP-2.5).
 _ANZEIGEN_ORDNER = ("downloaded-ads", "ads")
 
-#: Bildendungen, die der Bot herunterlaedt.
-_BILD_ENDUNGEN = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+#: Bildendungen, die der Bot herunterlaedt - und zugleich die, die er beim
+#: Hochladen wieder lesen kann (`ad_loading.resolve_ad_images`). WebP steht
+#: bewusst nicht dabei, siehe `bilder.ERLAUBTE_FORMATE`.
+_BILD_ENDUNGEN = {".jpg", ".jpeg", ".png", ".gif"}
 
 _yaml = YAML(typ = "safe")
 

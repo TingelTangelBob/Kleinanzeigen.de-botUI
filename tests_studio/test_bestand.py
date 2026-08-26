@@ -327,34 +327,38 @@ class TestBearbeiten:
         assert hinweise, "Direkt kaufen mit Abholung gehört gemeldet"
         assert bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_type"] == "PICKUP"
 
-    def test_gemischte_versandgroessen_sind_ein_hinweis(self, tmp_path:Path) -> None:
-        """Speichern darf gehen, stillschweigend darf es nicht gehen.
+    def test_gemischte_versandgroessen_werden_abgewiesen(self, tmp_path:Path) -> None:
+        """K-2.7-001: Ein Fehler, kein Hinweis.
 
-        Ueber die API laesst sich die Liste sonst so setzen, dass der Lauf
-        spaeter mitten im Formular abbricht - ohne dass vorher irgendetwas
-        darauf hingewiesen haette.
+        Sonst liesse sich ueber die API eine Anzeige speichern, die spaeter
+        mitten im Versanddialog abbricht. Anders als die uebrigen
+        Veroeffentlichungsregeln ist das kein halbfertiger Entwurf, sondern
+        eine Kombination, die die Plattform nicht kennt.
         """
         pytest.importorskip("kleinanzeigen_bot")
         wurzel, datei = self._profil(tmp_path)
+        vorher = (wurzel / datei).read_text(encoding = "utf-8")
 
-        _, hinweise = bearbeiten.speichern(
-            wurzel, datei, {"shipping_options": ["Hermes_Päckchen", "DHL_20"]},
-        )
+        with pytest.raises(FachlicherFehler) as fehler:
+            bearbeiten.speichern(
+                wurzel, datei, {"shipping_options": ["Hermes_Päckchen", "DHL_20"]},
+            )
 
-        assert any("Größen" in h for h in hinweise), hinweise
-        assert bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_options"] == [
-            "Hermes_Päckchen", "DHL_20",
-        ]
+        assert fehler.value.status == 422
+        assert fehler.value.feld == "shipping_options"
+        # Die Datei darf dabei unberuehrt bleiben.
+        assert (wurzel / datei).read_text(encoding = "utf-8") == vorher
 
-    def test_eine_versandgroesse_erzeugt_keinen_hinweis(self, tmp_path:Path) -> None:
+    def test_eine_versandgroesse_wird_gespeichert(self, tmp_path:Path) -> None:
         pytest.importorskip("kleinanzeigen_bot")
         wurzel, datei = self._profil(tmp_path)
 
-        _, hinweise = bearbeiten.speichern(
+        bearbeiten.speichern(
             wurzel, datei, {"shipping_options": ["Hermes_Päckchen", "Hermes_S"]},
         )
 
-        assert not any("Größen" in h for h in hinweise), hinweise
+        gespeichert = bearbeiten.rohdaten_lesen(wurzel, datei)["shipping_options"]
+        assert list(gespeichert) == ["Hermes_Päckchen", "Hermes_S"]
 
     def test_saubere_aenderung_erzeugt_keinen_hinweis(self, tmp_path:Path) -> None:
         """Sonst waere der Hinweiskanal dauerhaft laut und damit wertlos."""

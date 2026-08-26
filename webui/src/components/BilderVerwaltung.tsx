@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Bilder einer Anzeige: hinzufügen, sortieren, entfernen (AP-2.6).
+// Bilder einer Anzeige: hinzufügen, sortieren, ersetzen, entfernen (AP-2.6).
 //
 // Anders als der Rest des Editors wirken diese drei sofort und nicht erst beim
 // Speichern. Grund: Sie fassen Dateien an. Ein „Speichern", nach dem eine
@@ -10,8 +10,15 @@
 //
 // Die Reihenfolge zählt: Das erste Bild ist bei Kleinanzeigen das Titelbild.
 // Deshalb ist sie ziehbar und nicht nur eine Liste.
+//
+// Erlaubt sind JPEG, PNG und GIF - dieselben Formate, die das Backend annimmt
+// und die der Bot beim Hochladen wieder lesen kann. WebP steht bewusst nicht
+// dabei; siehe `bilder.ERLAUBTE_FORMATE` im Backend.
+//
+// Große Bilder werden vor dem Hochladen im Browser verkleinert. Ein Handyfoto
+// mit 20 MB käme sonst gar nicht erst durch.
 
-import { useState } from 'react';
+import { useState, type DragEvent } from 'react';
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter,
   useSensor, useSensors, type DragEndEvent,
@@ -21,8 +28,12 @@ import {
   sortableKeyboardCoordinates, useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, ImagePlus, Trash2 } from 'lucide-react';
+import { GripVertical, ImagePlus, RefreshCw, Trash2 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
+import { verkleinern } from '../services/bilder';
+
+/** Dieselben Formate, die das Backend annimmt. */
+export const ERLAUBTE_TYPEN = 'image/jpeg,image/png,image/gif';
 
 interface Props {
   profil: string;
@@ -32,10 +43,11 @@ interface Props {
 }
 
 function Kachel({
-  profil, datei, name, erstes, aufEntfernen,
+  profil, datei, name, erstes, aufEntfernen, aufErsetzen,
 }: {
   profil: string; datei: string; name: string; erstes: boolean;
   aufEntfernen: (name: string) => void;
+  aufErsetzen: (name: string, ersatz: File) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: name });
 
@@ -69,6 +81,24 @@ function Kachel({
         <GripVertical className="h-4 w-4" aria-hidden />
       </button>
 
+      <label
+        title="Durch ein anderes Bild ersetzen"
+        className="absolute bottom-0 right-7 cursor-pointer bg-black/50 p-1 text-white hover:bg-black/70"
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden />
+        <span className="sr-only">{`${name} ersetzen`}</span>
+        <input
+          type="file"
+          accept={ERLAUBTE_TYPEN}
+          onChange={e => {
+            const gewaehlt = e.target.files?.[0];
+            e.target.value = '';
+            if (gewaehlt) aufErsetzen(name, gewaehlt);
+          }}
+          className="sr-only"
+        />
+      </label>
+
       <button
         type="button"
         onClick={() => aufEntfernen(name)}
@@ -84,6 +114,7 @@ function Kachel({
 export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props) {
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
+  const [ueberZone, setUeberZone] = useState(false);
 
   const sensoren = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -112,16 +143,20 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
     }
   };
 
-  const hochladen = async (dateien: FileList | null) => {
-    if (!dateien || dateien.length === 0) return;
+  const hochladen = async (dateien: Iterable<File> | null): Promise<string[]> => {
+    const gewaehlt = dateien ? Array.from(dateien) : [];
+    if (gewaehlt.length === 0) return [];
     setFehler(null);
     setLaeuft(true);
     let liste = bilder;
+    const neue: string[] = [];
     try {
       // Nacheinander statt parallel: Der Name jeder Datei hängt davon ab,
       // welche Nummern schon vergeben sind.
-      for (const datei_ of Array.from(dateien)) {
-        const ergebnis = await api.bestand.bildHochladen(profil, datei, datei_);
+      for (const datei_ of gewaehlt) {
+        const klein = await verkleinern(datei_);
+        const ergebnis = await api.bestand.bildHochladen(profil, datei, klein);
+        neue.push(ergebnis.name);
         liste = [...liste, ergebnis.name];
         aufAenderung(liste);
       }
@@ -129,6 +164,36 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
       melden(ursache);
     } finally {
       setLaeuft(false);
+    }
+    return neue;
+  };
+
+  /**
+   * Ersetzt ein Bild an Ort und Stelle.
+   *
+   * Drei Schritte über die vorhandenen Endpunkte statt eines neuen: hochladen,
+   * altes entfernen, das neue auf dessen Platz sortieren. Die Reihenfolge ist
+   * Absicht - die Sortierprüfung im Backend verlangt, dass vorher und nachher
+   * dieselben Bilder stehen, also darf erst danach umsortiert werden.
+   */
+  const ersetzen = async (name: string, ersatz: File) => {
+    const platz = bilder.indexOf(name);
+    if (platz < 0) return;
+
+    const neue = await hochladen([ersatz]);
+    if (neue.length === 0) return;
+    const neuerName = neue[0];
+
+    try {
+      await api.bestand.bildEntfernen(profil, datei, name);
+
+      const sortiert = bilder.filter(b => b !== name);
+      sortiert.splice(platz, 0, neuerName);
+
+      aufAenderung(sortiert);
+      await api.bestand.speichern(profil, datei, { images: sortiert });
+    } catch (ursache) {
+      melden(ursache);
     }
   };
 
@@ -142,8 +207,23 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
     }
   };
 
+  // Nur Dateien annehmen. Ohne die Prüfung landet auch ein aus der Liste
+  // gezogenes Bild in der Ablegezone, und dnd-kit sortiert dann ins Leere.
+  const enthaeltDateien = (e: DragEvent) => e.dataTransfer.types.includes('Files');
+
   return (
-    <fieldset className="rounded border border-gray-200 p-3">
+    <fieldset
+      onDragOver={e => { if (enthaeltDateien(e)) { e.preventDefault(); setUeberZone(true); } }}
+      onDragLeave={() => setUeberZone(false)}
+      onDrop={e => {
+        if (!enthaeltDateien(e)) return;
+        e.preventDefault();
+        setUeberZone(false);
+        void hochladen(e.dataTransfer.files);
+      }}
+      className={`rounded border p-3 transition-colors
+                  ${ueberZone ? 'border-primary-custom bg-green-50' : 'border-gray-200'}`}
+    >
       <legend className="px-1 text-sm font-medium text-gray-700">
         Bilder ({bilder.length})
       </legend>
@@ -166,6 +246,7 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
                   name={name}
                   erstes={i === 0}
                   aufEntfernen={n => void entfernen(n)}
+                  aufErsetzen={(n, f) => void ersetzen(n, f)}
                 />
               ))}
             </div>
@@ -179,7 +260,7 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
         {laeuft ? 'Wird hochgeladen …' : 'Bilder hinzufügen'}
         <input
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
+          accept={ERLAUBTE_TYPEN}
           multiple
           disabled={laeuft}
           onChange={e => { void hochladen(e.target.files); e.target.value = ''; }}
@@ -188,8 +269,10 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
       </label>
 
       <p className="mt-2 text-xs text-gray-500">
-        Das erste Bild ist das Titelbild. Ziehen ändert die Reihenfolge.
-        Hinzufügen, Sortieren und Entfernen wirken sofort – nicht erst beim Speichern.
+        Das erste Bild ist das Titelbild. Ziehen ändert die Reihenfolge, und Dateien lassen
+        sich direkt auf diesen Bereich ablegen. Erlaubt sind JPEG, PNG und GIF; große Bilder
+        werden vor dem Hochladen verkleinert. Hinzufügen, Ersetzen, Sortieren und Entfernen
+        wirken sofort – nicht erst beim Speichern.
       </p>
     </fieldset>
   );

@@ -144,21 +144,34 @@ def pruefen_zum_veroeffentlichen(daten: dict[str, Any]) -> list[str]:
     return []
 
 
-def _studio_hinweise(daten: dict[str, Any]) -> list[str]:
-    """Regeln, zu denen die Bot-Modelle schweigen.
+#: Fehlertext fuer gemischte Versandgroessen. Steht hier, weil ihn zwei Wege
+#: brauchen: das Speichern und das Hochladen (`api/bestand.py`).
+GEMISCHTE_GROESSEN_MELDUNG = (
+    "Die Versandpakete gehören zu mehreren Größen. Kleinanzeigen lässt nur eine Größe zu – "
+    "beim Veröffentlichen bricht der Lauf im Versanddialog ab. Wähle Pakete einer Größe."
+)
 
-    `pruefen_zum_veroeffentlichen` oben faellt auf `AdPartial` und `Ad` zurueck. Zu Versandgroessen
-    sagt keines von beiden etwas - die Regel steht allein im
-    Veroeffentlichen-Formular. Ohne diese Stelle liesse sich ueber die API eine
-    Anzeige speichern, die spaeter mitten im Lauf abbricht.
+
+def versandgroessen_pruefen(daten: dict[str, Any]) -> None:
+    """Weist gemischte Versandgroessen ab, bevor irgendetwas geschrieben wird.
+
+    Bewusst ein Fehler und kein Hinweis, anders als bei den uebrigen
+    Veroeffentlichungsregeln: Ein halbfertiger Entwurf soll sich speichern
+    lassen, aber diese Kombination ist nicht halbfertig, sondern unmoeglich.
+    `publishing_form.set_shipping_options` bricht damit ab - und zwar erst im
+    bereits geoeffneten Versanddialog, mit halb ausgefuelltem Formular. Weder
+    `AdPartial` noch `Ad` pruefen die Regel, es gibt sonst also keine Stelle,
+    die sie durchsetzt.
+
+    Die Oberflaeche verhindert den Zustand schon beim Anklicken. Das genuegt
+    nicht: Die API ist selbst eine Schnittstelle, und heruntergeladene oder von
+    Hand bearbeitete Dateien kommen an ihr vorbei.
     """
     pakete = daten.get("shipping_options") or []
     if isinstance(pakete, list) and gemischte_versandgroessen(pakete):
-        return [
-            "Die Versandpakete gehören zu mehreren Größen. Kleinanzeigen lässt nur eine "
-            "Größe zu - beim Veröffentlichen bricht der Lauf sonst im Versanddialog ab.",
-        ]
-    return []
+        raise FachlicherFehler(
+            GEMISCHTE_GROESSEN_MELDUNG, status = 422, feld = "shipping_options",
+        )
 
 
 def speichern(
@@ -185,7 +198,11 @@ def speichern(
     for feld, wert in aenderungen.items():
         daten[feld] = wert
 
-    hinweise = pruefen_zum_veroeffentlichen(daten) + _studio_hinweise(daten)
+    # Vor dem Schreiben, nicht danach: Eine abgelehnte Aenderung darf die Datei
+    # nicht angefasst haben.
+    versandgroessen_pruefen(daten)
+
+    hinweise = pruefen_zum_veroeffentlichen(daten)
 
     # Erst in den Speicher schreiben, dann in einem Zug auf die Platte. Ein
     # Fehler beim Serialisieren darf keine halbe Datei hinterlassen.

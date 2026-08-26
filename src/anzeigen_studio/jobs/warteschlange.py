@@ -289,6 +289,19 @@ class Warteschlange:
             # entfernter Zustand koennen auseinanderlaufen.
             zustand = JobZustand.PRUEFEN
             meldung = "Der Lauf braucht eine Prüfung von Hand."
+        elif ergebnis.rueckgabecode == 0 and ergebnis.fehlerzeilen:
+            # Der Bot endet auch dann mit 0, wenn keine einzige Anzeige
+            # durchging. Beobachtet am 2026-08-26 beim ersten Aktualisieren:
+            # "0 Anzeigen aktualisiert (1 nach Wiederholungen fehlgeschlagen)",
+            # Rueckgabecode 0 - und in der Oberflaeche stand "fertig", waehrend
+            # sich auf der Plattform nichts geaendert hatte. Ein gruener Haken
+            # ueber einem Fehlschlag ist schlimmer als eine Fehlermeldung.
+            zustand = JobZustand.PRUEFEN
+            meldung = (
+                f"Der Lauf endete ohne Fehlercode, im Protokoll stehen aber "
+                f"{ergebnis.fehlerzeilen} Fehlerzeilen. Bitte im Protokoll nachsehen, "
+                f"was tatsächlich passiert ist."
+            )
         elif ergebnis.rueckgabecode == 0:
             zustand = JobZustand.FERTIG
             meldung = None

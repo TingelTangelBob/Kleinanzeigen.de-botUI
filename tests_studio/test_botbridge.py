@@ -231,3 +231,22 @@ class TestBotLauf:
         assert lauf.ergebnis.abgebrochen is True
         assert lauf.ergebnis.rueckgabecode is not None
         assert lauf.ergebnis.erfolgreich is False
+
+
+class TestDeutscheStufen:
+    """Regression vom 2026-08-26.
+
+    Seit der Bot auf Deutsch laeuft, heissen seine Stufen "[FEHLER]" und
+    "[WARNUNG]". Die Erkennung hing an den englischen Woertern - eine
+    Fehlerzeile landete damit als "info" im Protokoll.
+    """
+
+    @pytest.mark.parametrize(("zeile", "erwartet"), [
+        ("[FEHLER] Alle 3 Versuche sind fehlgeschlagen", Stufe.FEHLER),
+        ("[WARNUNG] Container ohne CAP_SYS_PTRACE erkannt", Stufe.WARNUNG),
+        ("[ERROR] something failed", Stufe.FEHLER),
+        ("[WARNING] something odd", Stufe.WARNUNG),
+        ("[INFO] Anzeige geladen", Stufe.INFO),
+    ])
+    def test_stufe_wird_erkannt(self, zeile:str, erwartet:Stufe) -> None:
+        assert zeile_auswerten(zeile).stufe is erwartet

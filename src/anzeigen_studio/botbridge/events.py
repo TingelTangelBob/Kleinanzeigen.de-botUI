@@ -86,9 +86,15 @@ _EINGRIFF_MUSTER: Final[list[tuple[re.Pattern[str], Eingriff]]] = [
 #: Stufenerkennung nicht an eingefaerbten Schluesselwoertern scheitert.
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+#: Auch die deutschen Stufennamen, seit der Bot auf Deutsch laeuft.
+#:
+#: Aufgefallen am 2026-08-26 beim ersten echten Aktualisieren: Die Zeile
+#: "[FEHLER] Alle 3 Versuche ... sind fehlgeschlagen" landete als "info" im
+#: Protokoll. Die Sprache umzustellen war richtig - dabei zu vergessen, dass
+#: die Stufenerkennung an englischen Woertern haengt, war der Fehler.
 _STUFE_MUSTER: Final[list[tuple[re.Pattern[str], Stufe]]] = [
-    (re.compile(r"\b(ERROR|CRITICAL|FATAL)\b"), Stufe.FEHLER),
-    (re.compile(r"\b(WARN|WARNING)\b"), Stufe.WARNUNG),
+    (re.compile(r"\b(ERROR|CRITICAL|FATAL|FEHLER|KRITISCH)\b"), Stufe.FEHLER),
+    (re.compile(r"\b(WARN|WARNING|WARNUNG)\b"), Stufe.WARNUNG),
     (re.compile(r"\bDEBUG\b"), Stufe.DEBUG),
 ]
 
@@ -116,6 +122,14 @@ class LaufErgebnis:
     rueckgabecode: int | None
     abgebrochen: bool = False
     aufmerksamkeit: list[Aufmerksamkeit] = field(default_factory = list)
+
+    #: Wie viele Fehlerzeilen im Protokoll standen.
+    #:
+    #: Der Bot endet auch dann mit 0, wenn keine einzige Anzeige durchging -
+    #: beobachtet am 2026-08-26: "FERTIG: 0 Anzeigen aktualisiert (1 nach
+    #: Wiederholungen fehlgeschlagen)", Rueckgabecode 0. Ein Lauf, in dem
+    #: Fehler standen, darf nicht als erledigt in der Oberflaeche stehen.
+    fehlerzeilen: int = 0
 
     @property
     def erfolgreich(self) -> bool:

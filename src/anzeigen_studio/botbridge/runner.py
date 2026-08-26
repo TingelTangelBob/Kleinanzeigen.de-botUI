@@ -25,7 +25,7 @@ import signal
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from anzeigen_studio.botbridge.events import Ereignis, LaufErgebnis, zeile_auswerten
+from anzeigen_studio.botbridge.events import Ereignis, LaufErgebnis, Stufe, zeile_auswerten
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -117,6 +117,8 @@ class BotLauf:
             ereignis = zeile_auswerten(rohzeile.decode("utf-8", errors = "replace"))
             if ereignis.aufmerksamkeit and ereignis.aufmerksamkeit not in self._ergebnis.aufmerksamkeit:
                 self._ergebnis.aufmerksamkeit.append(ereignis.aufmerksamkeit)
+            if ereignis.stufe is Stufe.FEHLER:
+                self._ergebnis.fehlerzeilen += 1
             yield ereignis
 
         self._ergebnis.rueckgabecode = await self._prozess.wait()

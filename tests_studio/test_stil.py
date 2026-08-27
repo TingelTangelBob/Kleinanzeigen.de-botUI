@@ -12,10 +12,19 @@ from pathlib import Path
 from anzeigen_studio.ai import stil
 
 
-def _anzeige_schreiben(wurzel: Path, nummer: int, beschreibung: str) -> None:
+def _anzeige_schreiben(
+    wurzel: Path, nummer: int, beschreibung: str, *, veroeffentlicht: bool = True,
+) -> None:
+    """Legt eine Anzeigendatei an.
+
+    `veroeffentlicht` steuert, ob sie eine Anzeigennummer traegt - das ist das
+    Merkmal, an dem das Stilprofil eigene Texte von eigenen Entwuerfen
+    unterscheidet.
+    """
     ordner = wurzel / "ads" / f"anzeige-{nummer}"
     ordner.mkdir(parents = True)
-    text = "description: |\n" + textwrap.indent(beschreibung, "  ") + "\n"
+    kopf = f"id: {1000 + nummer}\n" if veroeffentlicht else ""
+    text = kopf + "description: |\n" + textwrap.indent(beschreibung, "  ") + "\n"
     (ordner / f"anzeige-{nummer}.yaml").write_text(text, encoding = "utf-8")
 
 
@@ -47,3 +56,29 @@ def test_stilbeispiele_werden_als_stil_und_nicht_als_sachangabe_markiert(tmp_pat
     assert "ausschließlich als Stilreferenz" in anweisungsteil
     assert "niemals Sachangaben" in anweisungsteil
     assert "Schlicht geschrieben" in anweisungsteil
+
+
+def test_eigene_entwuerfe_dienen_nicht_als_stilvorlage(tmp_path: Path) -> None:
+    """Sonst imitiert das Modell nach wenigen Entwuerfen sich selbst.
+
+    Entwuerfe aus dem KI-Modul liegen im selben Bestand, tragen aber keine
+    Anzeigennummer - sie waren nie online. Wuerden sie mitgelesen, waere das
+    Stilprofil nach kurzer Zeit eine Kopie der Modellsprache statt der eigenen.
+    """
+    _anzeige_schreiben(tmp_path, 1, "Selbst geschriebener Text.", veroeffentlicht = True)
+    _anzeige_schreiben(tmp_path, 2, "Vom Modell entworfener Text.", veroeffentlicht = False)
+
+    beispiele = stil.aus_bestand(tmp_path).beispiele
+
+    assert any("Selbst geschriebener" in b for b in beispiele)
+    assert not any("Vom Modell entworfener" in b for b in beispiele)
+
+
+def test_ohne_veroeffentlichte_anzeigen_gibt_es_kein_stilprofil(tmp_path: Path) -> None:
+    """Kein Stil ist besser als ein geliehener - die Anweisung bleibt dann pur."""
+    _anzeige_schreiben(tmp_path, 1, "Nur ein Entwurf.", veroeffentlicht = False)
+
+    profil = stil.aus_bestand(tmp_path)
+
+    assert profil.beispiele == ()
+    assert profil.anweisungsteil() == ""

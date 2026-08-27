@@ -186,9 +186,21 @@ def test_privatverkauf_hinweis_steht_genau_einmal_am_ende() -> None:
 
 
 def test_anweisung_fordert_private_sprache_und_verhindert_vorlagenvariablen() -> None:
-    assert "potentielle Käufer" in entwurf_dienst.ANWEISUNG
-    assert entwurf_dienst.PRIVATVERKAUF_HINWEIS in entwurf_dienst.ANWEISUNG
-    assert "[Länge x Breite x Höhe]" in entwurf_dienst.ANWEISUNG
+    grundlage = entwurf_dienst.anweisung()
+    assert "potentielle Käufer" in grundlage
+    assert entwurf_dienst.PRIVATVERKAUF_HINWEIS in grundlage
+    assert "[Länge x Breite x Höhe]" in grundlage
+
+
+def test_leeres_stilprofil_haengt_keinen_leeren_absatz_an() -> None:
+    assert entwurf_dienst.anweisung("") == entwurf_dienst.anweisung()
+    assert entwurf_dienst.anweisung("   ") == entwurf_dienst.anweisung()
+
+
+def test_stilteil_wird_an_die_grundanweisung_gehaengt() -> None:
+    zusammen = entwurf_dienst.anweisung("Beispiel 1:\nSchlicht geschrieben.")
+    assert zusammen.startswith(entwurf_dienst.anweisung())
+    assert "Schlicht geschrieben." in zusammen
 
 
 def test_frage_ohne_auswahl_und_ohne_freitext_faellt_weg() -> None:

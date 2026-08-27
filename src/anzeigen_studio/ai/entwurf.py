@@ -191,13 +191,14 @@ Wichtige Regeln:
 
 
 def anweisung(stilteil: str | None = None) -> str:
-    """Ergaenzt die Grundanweisung um wenige eigene Beschreibungstexte."""
+    """Ergaenzt die Grundanweisung um wenige eigene Beschreibungstexte.
+
+    Ohne Stilteil bleibt die Anweisung unveraendert - ein leeres Profil darf
+    keinen leeren Absatz an den Anbieter schicken.
+    """
     if not stilteil or not stilteil.strip():
         return _ANWEISUNG_GRUNDLAGE
     return f"{_ANWEISUNG_GRUNDLAGE}\n\n{stilteil.strip()}"
-
-
-ANWEISUNG: Final[str] = _ANWEISUNG_GRUNDLAGE
 
 
 @dataclass(frozen = True, slots = True)

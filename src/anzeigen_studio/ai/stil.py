@@ -7,6 +7,15 @@
 # Einige kurze, lokal gelesene Beispiele reichen als Stilreferenz und sparen
 # Kosten. Es werden nur Beschreibungstexte gelesen - keine Nachrichten,
 # Zugangsdaten oder Kontaktfelder.
+#
+# GELESEN WIRD NUR, WAS EINE ANZEIGENNUMMER HAT. Das ist keine Kleinigkeit,
+# sondern der Punkt, an dem das Stilprofil sonst kippt: Entwuerfe aus diesem
+# Modul liegen ebenfalls im Bestand, tragen aber keine `id`, weil sie nie
+# online waren. Ohne diese Schranke naehme das Modell nach wenigen Entwuerfen
+# seine eigenen Texte als Vorlage fuer den Stil des Nutzers - eine
+# Rueckkopplung, die den Zweck von AP-4.2 in sein Gegenteil verkehrt. Eine
+# Anzeige mit `id` stand dagegen nachweislich auf der Plattform; ihr Text
+# stammt vom Nutzer.
 
 from __future__ import annotations
 
@@ -70,6 +79,11 @@ def _beschreibung_lesen(datei: Path) -> str | None:
     except Exception:  # noqa: BLE001 - eine kaputte Anzeige darf den Entwurf nicht verhindern
         return None
     if not isinstance(daten, dict):
+        return None
+
+    # Ohne Anzeigennummer war der Text nie auf der Plattform - er kann also aus
+    # diesem Modul selbst stammen. Siehe Kopfkommentar.
+    if not isinstance(daten.get("id"), int):
         return None
 
     beschreibung = daten.get("description")

@@ -62,16 +62,12 @@ WORKDIR /app
 COPY docker/anzeigen-studio/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
 
-# Laufzeitabhaengigkeiten des Bots.
-#
-# requests steht bewusst hier: der Upstream importiert es in update_checker.py
-# zur Laufzeit, deklariert aber nur types-requests. Ohne diese Zeile bricht der
-# Import ab. Ein Pull Request dazu ist vorbereitet (AP-0.10); sobald er drin
-# ist, kann die Zeile weg.
-RUN pip install --no-cache-dir \
-      certifi colorama "jaraco.text" "nodriver==0.50.3" "platformdirs>=2.1.0" \
-      "pydantic>=2.11.0" "ruamel.yaml" psutil wcmatch "sanitize-filename>=1.2.0" \
-      requests rich typer
+# Laufzeitabhaengigkeiten des Bots - aus einer Datei, die sich der Bau mit der
+# CI teilt. Stand vorher als Liste hier drin; die CI hatte sie nicht, konnte
+# `kleinanzeigen_bot` deshalb nicht importieren, und vier Tests fielen dort um.
+# Begruendung im Kopf von requirements-bot.txt.
+COPY docker/anzeigen-studio/requirements-bot.txt /tmp/requirements-bot.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-bot.txt && rm /tmp/requirements-bot.txt
 
 # nodriver nachbessern - ohne diesen Schritt ist der Bot im Abbild unbrauchbar.
 #

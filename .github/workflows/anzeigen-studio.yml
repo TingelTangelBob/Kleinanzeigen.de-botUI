@@ -84,6 +84,15 @@ jobs:
           # Backend-Abhängigkeiten, damit mypy die FastAPI-Typen sieht.
           # Ohne sie meldet mypy "Untyped decorator" bei jedem Endpunkt.
           python -m pip install --quiet -r docker/anzeigen-studio/requirements.txt
+          # Und die des Bots, damit `kleinanzeigen_bot` importierbar ist.
+          #
+          # Ohne sie schlägt der Import an `colorama` fehl, der
+          # Versandpaket-Katalog bleibt leer, und vier Tests fallen um - die,
+          # die prüfen, dass gemischte Versandgrößen abgewiesen werden. Genau
+          # diese Regel existiert, weil sie sonst mitten im Versanddialog eines
+          # echten Laufs zuschlägt; sie ungeprüft zu lassen wäre der falsche
+          # Weg, die CI grün zu bekommen.
+          python -m pip install --quiet -r docker/anzeigen-studio/requirements-bot.txt
 
       # Die ruff- und mypy-Konfiguration des Upstreams erfasst src/**/*.py und
       # damit auch src/anzeigen_studio/ - sie wird hier bewusst mitbenutzt,

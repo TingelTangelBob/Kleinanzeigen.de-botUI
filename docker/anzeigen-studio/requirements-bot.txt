@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Laufzeitabhaengigkeiten des Bots. Neue Datei, nicht im Upstream.
+#
+# Warum getrennt von requirements.txt: Das sind nicht unsere Abhaengigkeiten,
+# sondern die des Upstreams. Sie stehen hier statt in pyproject.toml, weil
+# pdm.lock upstream automatisiert neu erzeugt wird und generierte Dateien der
+# teuerste Konflikttyp beim Nachziehen sind.
+#
+# Warum als Datei und nicht als Liste im Dockerfile: Sie wird an ZWEI Stellen
+# gebraucht - beim Bau des Abbilds und in der CI. Am 2026-08-27 stand sie nur
+# im Dockerfile, und die CI konnte `kleinanzeigen_bot` deshalb nicht
+# importieren. Vier Tests, die den Versandpaket-Katalog des Bots pruefen,
+# fielen dort um, ohne dass lokal etwas aufgefallen waere. Eine Liste an zwei
+# Orten laeuft auseinander; diese Datei ist die eine Quelle.
+
+certifi
+colorama
+jaraco.text
+nodriver==0.50.3
+platformdirs>=2.1.0
+pydantic>=2.11.0
+psutil
+requests
+rich
+ruamel.yaml
+sanitize-filename>=1.2.0
+typer
+wcmatch

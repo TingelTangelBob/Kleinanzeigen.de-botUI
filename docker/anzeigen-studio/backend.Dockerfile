@@ -96,6 +96,26 @@ RUN python /tmp/fix_nodriver.py \
 
 COPY --chown=studio:studio src/ /app/src/
 COPY --chown=studio:studio schemas/ /app/schemas/
+
+# Versionsdatei erzeugen - der Bot startet sonst ueberhaupt nicht.
+#
+# `cli.py` und `app.py` machen `from ._version import __version__`. Die Datei
+# erzeugt normalerweise der pdm-Build und steht deshalb in `.gitignore`. Wer
+# das Abbild aus einem frischen Klon baut, hat sie nicht: Das Backend startet
+# trotzdem (es ruft den Bot als Unterprozess), und der ImportError faellt erst
+# beim ersten Job auf. Genau die Sorte spaeter Fehlschlag, die dieses Projekt
+# schon zu oft hatte.
+#
+# Das Format folgt `version.py` im Projektstamm: <Jahr>+<Kennung>. Die Kennung
+# kann der Bau mitgeben (`--build-arg STUDIO_VERSION=$(git rev-parse --short
+# HEAD)`); ohne Angabe steht dort "studio" - eine ungenaue Version ist besser
+# als ein Abbild, das beim ersten Lauf abbricht.
+ARG STUDIO_VERSION=studio
+RUN printf "__version__ = '%s'\n" "$(date -u +%Y)+${STUDIO_VERSION}" \
+      > /app/src/kleinanzeigen_bot/_version.py \
+ && chown studio:studio /app/src/kleinanzeigen_bot/_version.py \
+ && python -c "import sys; sys.path.insert(0, '/app/src'); from kleinanzeigen_bot._version import __version__; print('Version im Abbild:', __version__)"
+
 COPY --chown=studio:studio docker/anzeigen-studio/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

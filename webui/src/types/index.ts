@@ -113,6 +113,24 @@ export interface SpeichernAusgabe {
   hinweise: string[];
 }
 
+export interface Unterschied {
+  feld: string;
+  beschriftung: string;
+  vorher: string;
+  jetzt: string;
+}
+
+/** Was sich seit dem letzten Abgleich mit der Plattform geändert hat (AP-3.5). */
+export interface Vergleich {
+  /**
+   * Wann die Datei zuletzt mit der Plattform übereinstimmte, und wodurch.
+   * `null` heißt: kein Abgleich bekannt — dann wird kein Unterschied behauptet.
+   */
+  stand_von: string | null;
+  quelle: string | null;
+  unterschiede: Unterschied[];
+}
+
 /** Nachschlagewerke für den Editor (AP-2.7). */
 export interface Kategorie {
   name: string;

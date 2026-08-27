@@ -8,7 +8,7 @@
 
 import type {
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, Kategorie, LogZeile,
-  Profil, SpeichernAusgabe, Versandpaket, ZugangStatus,
+  Profil, SpeichernAusgabe, Vergleich, Versandpaket, ZugangStatus,
 } from '../types';
 
 /** Fehler mit der deutschen Meldung des Backends. */
@@ -130,6 +130,11 @@ export const api = {
       anfrage<SpeichernAusgabe>(`/bestand/anzeige?profil=${encodeURIComponent(profil)}`, {
         method: 'PUT', ...json({ datei, felder }),
       }),
+    /** Was sich beim Hochladen gegenüber dem letzten Abgleich ändern würde (AP-3.5). */
+    vergleich: (profil: string, datei: string) =>
+      anfrage<Vergleich>(
+        `/bestand/vergleich?profil=${encodeURIComponent(profil)}&datei=${encodeURIComponent(datei)}`,
+      ),
 
     /** Liest Anzeigennummern aus eingefügtem Text - ohne etwas zu tun (AP-3.7). */
     linksLesen: (profil: string, text: string) =>

@@ -17,6 +17,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
+from anzeigen_studio.bestand import stand
 from anzeigen_studio.botbridge import konfiguration
 from anzeigen_studio.botbridge.runner import BotLauf, LaufAuftrag
 from anzeigen_studio.core import db, zugang
@@ -250,6 +251,13 @@ class Warteschlange:
         ))
         self._laeuft[job_id] = lauf
 
+        # Vor dem Start gemerkt, nicht danach aus dem Job gelesen: `job` ist
+        # der Stand von vor dem Setzen auf LAEUFT und traegt noch kein
+        # `gestartet_am`. Gebraucht wird die Zeit fuer den Abgleich am Ende
+        # (AP-3.5) - jede Anzeigendatei, die danach geschrieben wurde, kommt
+        # vom Bot und stimmt mit der Plattform ueberein.
+        lauf_start = datetime.now(UTC).isoformat(timespec = "milliseconds")
+
         with db.transaction(conn):
             speicher.zustand_setzen(conn, job_id, JobZustand.LAEUFT)
 
@@ -322,3 +330,26 @@ class Warteschlange:
                 eingriff = None,
                 meldung = meldung,
             )
+
+        # Festhalten, welche Anzeigen jetzt mit der Plattform uebereinstimmen
+        # (AP-3.5). Der Bot schreibt die Datei in beiden Richtungen: beim
+        # Herunterladen uebernimmt er den Stand der Plattform, nach dem
+        # Hochladen schreibt er ihn hin. Wer die Datei danach aendert, soll
+        # vor dem naechsten Hochladen sehen, was sich unterscheidet.
+        #
+        # Nur nach FERTIG: Bei PRUEFEN ist gerade ungewiss, ob lokaler und
+        # entfernter Stand uebereinstimmen - dann etwas als abgeglichen zu
+        # merken waere die Behauptung einer Sicherheit, die es nicht gibt.
+        if zustand is JobZustand.FERTIG:
+            try:
+                with db.transaction(conn):
+                    anzahl = stand.abgleich_nach_lauf(
+                        conn, job.profil_id, profil_verzeichnis,
+                        seit = lauf_start,
+                        quelle = job.befehl,
+                    )
+                LOG.debug("Job %d: %d Anzeigen als abgeglichen gemerkt", job_id, anzahl)
+            except Exception:
+                # Der Vergleich ist Zusatzauskunft. Ein Fehler hier darf einen
+                # erfolgreichen Lauf nicht nachtraeglich beschaedigen.
+                LOG.warning("Job %d: Abgleich konnte nicht gemerkt werden", job_id, exc_info = True)

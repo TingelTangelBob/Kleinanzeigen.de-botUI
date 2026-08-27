@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from anzeigen_studio import bestand as bestand_dienst
+from anzeigen_studio.bestand import stand as stand_dienst
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
@@ -173,6 +174,56 @@ def anzeige_lesen(
         kopf = _ausgabe(kopf),
         felder = dict(felder),
         aenderbar = sorted(bestand_dienst.AENDERBAR),
+    )
+
+
+class UnterschiedAusgabe(BaseModel):
+    feld: str
+    beschriftung: str
+    vorher: str
+    jetzt: str
+
+
+class VergleichAusgabe(BaseModel):
+    """Was sich seit dem letzten Abgleich mit der Plattform geändert hat (AP-3.5)."""
+
+    #: Wann die Datei zuletzt mit der Plattform übereinstimmte, und wodurch
+    #: (`download` oder `update`). `null` heißt: kein Abgleich bekannt - dann
+    #: sagt die Oberfläche das, statt einen Unterschied zu behaupten.
+    stand_von: str | None
+    quelle: str | None
+    unterschiede: list[UnterschiedAusgabe]
+
+
+@router.get("/vergleich", response_model = VergleichAusgabe)
+def vergleich_lesen(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> VergleichAusgabe:
+    """Was würde sich beim Hochladen auf der Plattform ändern? (AP-3.5)"""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    p = profile_dienst.nach_slug(conn, profil)
+    if p is None:  # pragma: no cover - _profil_wurzel hat das schon geprueft
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+
+    jetzt = bestand_dienst.rohdaten_lesen(wurzel, datei)
+    gemerkt = stand_dienst.gemerkt(conn, p.id, datei)
+    if gemerkt is None:
+        return VergleichAusgabe(stand_von = None, quelle = None, unterschiede = [])
+
+    vorher, quelle, zeitpunkt = gemerkt
+    return VergleichAusgabe(
+        stand_von = zeitpunkt,
+        quelle = quelle,
+        unterschiede = [
+            UnterschiedAusgabe(
+                feld = u.feld, beschriftung = u.beschriftung,
+                vorher = u.vorher, jetzt = u.jetzt,
+            )
+            for u in stand_dienst.vergleichen(vorher, dict(jetzt))
+        ],
     )
 
 

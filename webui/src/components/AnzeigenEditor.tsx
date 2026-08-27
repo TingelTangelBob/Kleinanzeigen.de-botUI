@@ -228,6 +228,7 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
       {fragtHochladen && inhalt && (
         <HochladenDialog
           anzeige={inhalt.kopf}
+          profil={profil}
           laeuft={laedtHoch}
           aufAbbrechen={() => setFragtHochladen(false)}
           aufBestaetigen={() => void hochladen()}

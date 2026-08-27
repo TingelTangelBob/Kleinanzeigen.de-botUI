@@ -227,6 +227,11 @@ def _dateien(profil_wurzel: Path) -> list[Path]:
     return gefunden
 
 
+def anzeigendateien(profil_wurzel: Path) -> list[Path]:
+    """Alle Anzeigendateien eines Profils. Oeffentlich fuer AP-3.5."""
+    return _dateien(profil_wurzel)
+
+
 def bestand_lesen(profil_wurzel: Path, *, jetzt: datetime | None = None) -> list[BestandsAnzeige]:
     """Liest alle Anzeigen eines Profils von der Platte."""
     if not profil_wurzel.is_dir():

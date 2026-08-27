@@ -167,6 +167,28 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE job ADD COLUMN phase_seit TEXT;
         """,
     ),
+    (
+        7,
+        "anzeigenstand",
+        """
+        -- Die Fassung, die zuletzt mit der Plattform uebereinstimmte (AP-3.5).
+        --
+        -- Festgehalten wird sie, wenn der Bot die Datei geschrieben hat: beim
+        -- Herunterladen und nach dem Hochladen. Danach gilt Datei == Plattform.
+        --
+        -- In der Datenbank und nicht als Datei neben der Anzeige: Der Bot
+        -- sucht seine Anzeigen mit `ad_*.{yaml,yml,json}`, eine Begleitdatei
+        -- waere von diesem Muster erfasst worden.
+        CREATE TABLE anzeige_stand (
+            profil_id  INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            datei      TEXT    NOT NULL,
+            stand      TEXT    NOT NULL,
+            quelle     TEXT    NOT NULL,
+            zeitpunkt  TEXT    NOT NULL,
+            PRIMARY KEY (profil_id, datei)
+        );
+        """,
+    ),
 ]
 
 

@@ -189,6 +189,29 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        8,
+        "geheime-einstellungen",
+        """
+        -- Geheimnisse, die der ganzen Installation gehoeren und nicht einem
+        -- Profil (AP-4.1). Erster Bewohner: der OpenAI-Schluessel.
+        --
+        -- Warum nicht in einer Umgebungsvariable, wie es Roomverse macht: Dort
+        -- gibt es einen Betreiber und keine Oberflaeche. Hier liegen die
+        -- Kleinanzeigen-Zugangsdaten bereits verschluesselt in dieser
+        -- Datenbank (AP-1.4). Ein zweiter Geheimnisweg daneben waere eine
+        -- zweite Stelle, die abgesichert, gesichert und beim Umzug bedacht
+        -- werden muss.
+        --
+        -- Verschluesselt wie alles andere mit AES-256-GCM aus core/crypto.py.
+        -- Der Klartext steht nie in dieser Tabelle.
+        CREATE TABLE einstellung_geheim (
+            schluessel   TEXT PRIMARY KEY,
+            chiffre      BLOB NOT NULL,
+            geaendert_am TEXT NOT NULL
+        );
+        """,
+    ),
 ]
 
 

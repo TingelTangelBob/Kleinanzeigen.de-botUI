@@ -8,6 +8,7 @@
 
 import type {
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, Kategorie, LogZeile,
+  KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
   Profil, SpeichernAusgabe, Vergleich, Versandpaket, ZugangStatus,
 } from '../types';
 
@@ -176,6 +177,61 @@ export const api = {
     bildUrl: (profil: string, datei: string, name: string) =>
       `/api/bestand/bild?profil=${encodeURIComponent(profil)}`
       + `&datei=${encodeURIComponent(datei)}&name=${encodeURIComponent(name)}`,
+  },
+
+  ki: {
+    status: () => anfrage<KiStatus>('/ki/status'),
+    schluesselSetzen: (apiSchluessel: string) =>
+      anfrage<KiStatus>('/ki/schluessel', { method: 'PUT', ...json({ api_schluessel: apiSchluessel }) }),
+    schluesselEntfernen: () => anfrage<KiStatus>('/ki/schluessel', { method: 'DELETE' }),
+
+    /**
+     * Der einzige Aufruf, der Geld kostet. Bewusst über XHR statt fetch: Nur
+     * so lässt sich der Fortschritt des Hochladens melden, und bei mehreren
+     * Handyfotos ist genau das die längste sichtbare Wartezeit.
+     */
+    entwurf: (dateien: File[], aufFortschritt?: (anteil: number) => void) =>
+      new Promise<KiEntwurfAntwort>((erfuellen, ablehnen) => {
+        const daten = new FormData();
+        dateien.forEach(datei => daten.append('bilder', datei));
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/ki/entwurf');
+        xhr.withCredentials = true;
+        xhr.upload.onprogress = ereignis => {
+          if (ereignis.lengthComputable && aufFortschritt) {
+            aufFortschritt(ereignis.loaded / ereignis.total);
+          }
+        };
+        xhr.onload = () => {
+          let inhalt: unknown = null;
+          try {
+            inhalt = JSON.parse(xhr.responseText) as unknown;
+          } catch {
+            inhalt = null;
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            erfuellen(inhalt as KiEntwurfAntwort);
+            return;
+          }
+          const fehler = (inhalt as { fehler?: { meldung?: string; feld?: string } } | null)?.fehler;
+          ablehnen(new ApiFehler(
+            fehler?.meldung ?? 'Der Entwurf ist gescheitert.', xhr.status, fehler?.feld,
+          ));
+        };
+        xhr.onerror = () => ablehnen(new ApiFehler('Das Backend ist nicht erreichbar.', 0));
+        xhr.send(daten);
+      }),
+
+    /** Legt die Anzeige lokal an. Kein Anbieteraufruf, keine Kosten. */
+    anlegen: (profil: string, entwurf: unknown, antworten: Record<string, string>, dateien: File[]) => {
+      const daten = new FormData();
+      daten.append('profil', profil);
+      daten.append('entwurf_json', JSON.stringify(entwurf));
+      daten.append('antworten_json', JSON.stringify(antworten));
+      dateien.forEach(datei => daten.append('bilder', datei));
+      return anfrage<KiAnlegenAntwort>('/ki/anlegen', { method: 'POST', body: daten });
+    },
   },
 
   katalog: {

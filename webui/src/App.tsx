@@ -14,10 +14,11 @@ import { AuthSeite } from './components/AuthSeite';
 import { BestandSeite } from './components/BestandSeite';
 import { JobSeite } from './components/JobSeite';
 import { Layout, type Seite } from './components/Layout';
+import { NeueAnzeigeSeite } from './components/NeueAnzeigeSeite';
 import { ProfilSeite } from './components/ProfilSeite';
 import { UebersichtSeite } from './components/UebersichtSeite';
 
-const SEITEN: Seite[] = ['uebersicht', 'bestand', 'profile', 'jobs', 'browsersicht'];
+const SEITEN: Seite[] = ['uebersicht', 'bestand', 'neu', 'profile', 'jobs', 'browsersicht'];
 
 function seiteAusHash(): Seite {
   const roh = window.location.hash.replace(/^#/, '') as Seite;
@@ -68,6 +69,7 @@ function Inhalt() {
     <Layout seite={seite} aufSeitenwechsel={setSeite}>
       {seite === 'uebersicht' && <UebersichtSeite aufSeite={wechseln} />}
       {seite === 'bestand' && <BestandSeite />}
+      {seite === 'neu' && <NeueAnzeigeSeite />}
       {seite === 'profile' && <ProfilSeite />}
       {seite === 'jobs' && <JobSeite />}
       {seite === 'browsersicht' && <Browsersicht />}

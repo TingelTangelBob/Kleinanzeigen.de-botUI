@@ -14,12 +14,34 @@ from pathlib import Path
 #: Vorgabe des Datenverzeichnisses. Im Container das Volume, lokal ein Unterordner.
 _DEFAULT_DATA_DIR = "/data"
 
+#: Vorgaben des KI-Moduls. Stehen hier und nicht nur in `from_env`, damit
+#: Dataclass-Vorgabe und Umgebungslesung nicht auseinanderlaufen koennen.
+_DEFAULT_KI_MODELL = "gpt-5.6-luna"
+_DEFAULT_KI_BILDKANTE = 768
+
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_zahl(name: str, vorgabe: int, *, mindestens: int, hoechstens: int) -> int:
+    """Ganze Zahl aus der Umgebung, auf einen sinnvollen Bereich begrenzt.
+
+    Ein Tippfehler in einer Umgebungsvariable darf den Start nicht verhindern -
+    aber auch keinen unsinnigen Wert durchreichen. Beides waere schlechter als
+    die Vorgabe zu nehmen.
+    """
+    roh = os.environ.get(name)
+    if roh is None:
+        return vorgabe
+    try:
+        wert = int(roh.strip())
+    except ValueError:
+        return vorgabe
+    return max(mindestens, min(hoechstens, wert))
 
 
 @dataclass(frozen = True, slots = True)
@@ -46,6 +68,21 @@ class Settings:
     #: Oberflaeche - binary_location startet ein beliebiges Programm (AP-1.11).
     chromium: str
 
+    #: Welches Modell das KI-Entwurfsmodul benutzt (AP-4.1).
+    #:
+    #: Serverseitig gesetzt, nicht aus der Oberflaeche: Ein Modellname geht in
+    #: eine Adresse beim Anbieter ein, und was dort landet, soll nicht aus einem
+    #: Formularfeld stammen. Entschieden am 2026-08-27 auf `gpt-5.6-luna` -
+    #: bildfaehig, ~0,13 Cent je Anzeige. Begruendung und Preisvergleich in
+    #: 00_Agentenordner/04_Serververwaltung/KI-API-Zugaenge.md.
+    ki_modell: str = _DEFAULT_KI_MODELL
+
+    #: Obergrenze fuer die Bildkante vor dem Versand an den Anbieter (AP-4.7).
+    #: 768 px ergibt vier Kacheln à 140 Token plus 70 Grundtoken = 630 Token je
+    #: Bild. Groesser kostet mehr, ohne fuer die Erkennung eines
+    #: Verkaufsgegenstands erkennbar mehr zu liefern.
+    ki_bildkante: int = _DEFAULT_KI_BILDKANTE
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / "app.db"
@@ -61,6 +98,11 @@ class Settings:
             secret_key = os.environ.get("ANZEIGEN_STUDIO_SECRET_KEY") or None,
             dev_mode = _env_flag("ANZEIGEN_STUDIO_DEV"),
             chromium = os.environ.get("ANZEIGEN_STUDIO_CHROMIUM", "/usr/bin/chromium"),
+            ki_modell = os.environ.get("ANZEIGEN_STUDIO_KI_MODELL", _DEFAULT_KI_MODELL),
+            ki_bildkante = _env_zahl(
+                "ANZEIGEN_STUDIO_KI_BILDKANTE", _DEFAULT_KI_BILDKANTE,
+                mindestens = 256, hoechstens = 2048,
+            ),
         )
 
     def missing_for_production(self) -> list[str]:

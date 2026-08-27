@@ -15,6 +15,18 @@
 
 cryptography>=44.0,<50.0
 fastapi>=0.115,<1.0
+# HTTP-Client fuer das KI-Modul (AP-4.1). Muss asynchron sein: Ein Aufruf beim
+# Anbieter dauert Sekunden, und ein blockierender Aufruf haelt in einer
+# asyncio-Anwendung nicht nur diese Anfrage auf, sondern alle. urllib aus der
+# Standardbibliothek - wie in katalog/daten.py benutzt - kann das nicht.
+# httpx liegt ohnehin in jeder Testumgebung, weil FastAPIs TestClient darauf
+# aufbaut; neu ist damit nur die Zeile, nicht die Bibliothek.
+httpx>=0.27,<1.0
+# Bilder verkleinern und von Metadaten befreien, bevor sie den Rechner
+# verlassen (AP-4.7). Ohne eine Bildbibliothek liesse sich weder das eine noch
+# das andere machen - und EXIF-Daten eines Handyfotos enthalten regelmaessig
+# die GPS-Koordinaten des Aufnahmeorts, also die Wohnadresse.
+pillow>=11.0,<13.0
 # Aufraeumen verwaister Browserprozesse (AP-1.9). Der Bot bringt psutil
 # ohnehin mit; hier steht es, weil das Backend es selbst importiert und die
 # Abhaengigkeit nicht stillschweigend vom Bot geborgt werden soll.

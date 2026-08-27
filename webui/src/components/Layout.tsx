@@ -10,14 +10,12 @@
 // gibt.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Briefcase, LayoutDashboard, ListTree, LogOut, Menu, Monitor, Moon, Sun, Users, X,
-} from 'lucide-react';
+import { Briefcase, LayoutDashboard, ListTree, LogOut, Menu, Monitor, Moon, Sparkles, Sun, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { useProfil } from '../context/useProfil';
 
-export type Seite = 'uebersicht' | 'bestand' | 'profile' | 'jobs' | 'browsersicht';
+export type Seite = 'uebersicht' | 'bestand' | 'neu' | 'profile' | 'jobs' | 'browsersicht';
 
 interface NavEintrag {
   id: Seite;
@@ -28,6 +26,7 @@ interface NavEintrag {
 const NAV: NavEintrag[] = [
   { id: 'uebersicht', label: 'Übersicht', icon: LayoutDashboard },
   { id: 'bestand', label: 'Anzeigen', icon: ListTree },
+  { id: 'neu', label: 'Neue Anzeige', icon: Sparkles },
   { id: 'jobs', label: 'Läufe', icon: Briefcase },
   { id: 'profile', label: 'Profile', icon: Users },
   { id: 'browsersicht', label: 'Browsersicht', icon: Monitor },

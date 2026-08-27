@@ -144,3 +144,59 @@ export interface Versandpaket {
   /** Tagespreis der Plattform, oder null wenn sie nicht erreichbar war. */
   preis: number | null;
 }
+
+// ------------------------------------------------------------------ KI (Phase 4)
+
+export interface KiStatus {
+  hinterlegt: boolean;
+  endet_auf: string | null;
+  geaendert_am: string | null;
+  modell: string;
+  bildkante: number;
+}
+
+export interface KiOption {
+  text: string;
+  wert: string;
+}
+
+/** Eine Rückfrage des Modells. `feld` sagt, worauf die Antwort wirkt. */
+export interface KiFrage {
+  id: string;
+  frage: string;
+  feld: 'titel' | 'beschreibung' | 'zustand' | 'preis';
+  freitext_erlaubt: boolean;
+  optionen: KiOption[];
+}
+
+export interface KiEntwurf {
+  titel: string;
+  beschreibung: string;
+  zustand: string | null;
+  zustand_text: string | null;
+  kategorie: string | null;
+  preis_euro: number | null;
+  preis_begruendung: string | null;
+  sicherheit: 'hoch' | 'mittel' | 'niedrig';
+  fragen: KiFrage[];
+}
+
+export interface KiKosten {
+  modell: string;
+  token_eingabe: number;
+  token_ausgabe: number;
+  usd: number;
+  bilder_gesendet: number;
+  bytes_gesendet: number;
+}
+
+export interface KiEntwurfAntwort {
+  entwurf: KiEntwurf;
+  kosten: KiKosten;
+}
+
+export interface KiAnlegenAntwort {
+  datei: string;
+  titel: string;
+  bilder: number;
+}

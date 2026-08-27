@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Profile anlegen und Kleinanzeigen-Zugangsdaten hinterlegen (AP-2.1/2.10).
+// Profile anlegen und Zugangsdaten hinterlegen (AP-2.1/2.10, AP-4.1).
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { KeyRound, Plus, Trash2, Users } from 'lucide-react';
+import { KeyRound, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
-import type { Profil, ZugangStatus } from '../types';
+import type { KiStatus, Profil, ZugangStatus } from '../types';
 
 export function ProfilSeite() {
   const [profile, setProfile] = useState<Profil[]>([]);
@@ -83,7 +83,121 @@ export function ProfilSeite() {
           />
         ))}
       </div>
+
+      <KiZugang />
     </div>
+  );
+}
+
+/**
+ * Der Schlüssel zum KI-Anbieter (AP-4.1).
+ *
+ * Steht unter den Profilen und nicht in einem davon: Er gehört dem Betreiber
+ * dieser Installation, nicht einem Kleinanzeigen-Konto. Zwei Profile teilen
+ * sich denselben Schlüssel.
+ */
+function KiZugang() {
+  const [status, setStatus] = useState<KiStatus | null>(null);
+  const [eingabe, setEingabe] = useState('');
+  const [laeuft, setLaeuft] = useState(false);
+  const [fehler, setFehler] = useState<string | null>(null);
+
+  const laden = useCallback(async () => {
+    try {
+      setStatus(await api.ki.status());
+    } catch {
+      setStatus(null);
+    }
+  }, []);
+
+  useEffect(() => { void laden(); }, [laden]);
+
+  const speichern = async (ereignis: FormEvent) => {
+    ereignis.preventDefault();
+    setFehler(null);
+    setLaeuft(true);
+    try {
+      setStatus(await api.ki.schluesselSetzen(eingabe));
+      // Sofort aus dem Speicher der Oberfläche entfernen. Er liegt danach
+      // verschlüsselt im Backend; im Browser hat er nichts mehr zu suchen.
+      setEingabe('');
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setLaeuft(false);
+    }
+  };
+
+  const entfernen = async () => {
+    setFehler(null);
+    try {
+      setStatus(await api.ki.schluesselEntfernen());
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    }
+  };
+
+  return (
+    <section className="mt-8 rounded border border-gray-200 bg-white p-4">
+      <h2 className="flex items-center gap-2 font-medium text-gray-900">
+        <Sparkles className="h-5 w-5 text-primary-custom" />
+        KI-Zugang
+      </h2>
+      <p className="mt-1 text-sm text-gray-600">
+        Gilt für die ganze Installation, nicht für ein einzelnes Profil. Ohne ihn bleibt
+        „Neue Anzeige aus Fotos“ aus.
+      </p>
+
+      {status && (
+        <p className="mt-3 text-sm text-gray-700">
+          Modell: <span className="font-mono text-xs">{status.modell}</span>
+          {status.hinterlegt ? (
+            <>
+              {' · Schlüssel hinterlegt'}
+              {status.endet_auf && <> (endet auf <span className="font-mono text-xs">…{status.endet_auf}</span>)</>}
+            </>
+          ) : ' · kein Schlüssel hinterlegt'}
+        </p>
+      )}
+
+      {fehler && (
+        <p role="alert" className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+          {fehler}
+        </p>
+      )}
+
+      <form onSubmit={ereignis => void speichern(ereignis)} className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          type="password"
+          value={eingabe}
+          onChange={ereignis => setEingabe(ereignis.target.value)}
+          placeholder={status?.hinterlegt ? 'Neuen Schlüssel eintragen' : 'OpenAI-Schlüssel einfügen'}
+          aria-label="OpenAI-Schlüssel"
+          autoComplete="off"
+          className="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 font-mono text-sm"
+        />
+        <button
+          type="submit"
+          disabled={laeuft || !eingabe.trim()}
+          className="rounded bg-primary-custom px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        >
+          {laeuft ? 'Wird gespeichert …' : 'Speichern'}
+        </button>
+        {status?.hinterlegt && (
+          <button
+            type="button"
+            onClick={() => void entfernen()}
+            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700"
+          >
+            Entfernen
+          </button>
+        )}
+      </form>
+      <p className="mt-2 text-xs text-gray-500">
+        Wird verschlüsselt gespeichert, genau wie die Kleinanzeigen-Zugangsdaten, und nie
+        im Protokoll ausgegeben.
+      </p>
+    </section>
   );
 }
 

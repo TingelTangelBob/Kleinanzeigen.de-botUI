@@ -237,7 +237,13 @@ def verwaiste_aufraeumen(conn: sqlite3.Connection) -> int:
     """
     platzhalter = ", ".join("?" for _ in _VERWAIST_BEIM_START)
     cursor = conn.execute(
-        "UPDATE job SET zustand = ?, beendet_am = ?, eingriff = NULL, "
+        # Warum die Ausnahme unten: Zusammengesetzt wird ausschliesslich die
+        # Zahl der Fragezeichen, und zwar aus der Laenge einer festen Konstante
+        # oben. Kein Wert und kein Bezeichner stammt aus einer Eingabe; die
+        # Zustaende selbst gehen als Parameter.
+        # (Dieser Kommentar darf nicht mit "noqa" beginnen - ruff liest das
+        #  sonst als fehlerhafte Direktive und warnt darueber.)
+        "UPDATE job SET zustand = ?, beendet_am = ?, eingriff = NULL, "  # noqa: S608
         "wartet_bis = NULL, wartegrund = NULL, "
         "meldung = 'Beim Neustart des Dienstes abgebrochen.' "
         f"WHERE zustand IN ({platzhalter})",

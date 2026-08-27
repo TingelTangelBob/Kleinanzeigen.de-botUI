@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import base64
 import textwrap
+import urllib.request
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -84,12 +86,15 @@ def anzeige(tmp_path:Path) -> Path:
     return ordner
 
 
-def _hochladen(client:TestClient, inhalt:bytes, name:str = "bild.jpg"):  # noqa: ANN202
-    return client.post(
+def _hochladen(client:TestClient, inhalt:bytes, name:str = "bild.jpg") -> httpx.Response:
+    # Zwischenschritt statt direktem `return`: TestClient ist nicht durchgehend
+    # typisiert, mypy sieht sonst ein Any an einer Stelle mit Typzusage.
+    antwort:httpx.Response = client.post(
         "/api/bestand/bild",
         params = {"profil": PROFIL, "datei": DATEI},
         files = {"bild": (name, inhalt, "application/octet-stream")},
     )
+    return antwort
 
 
 class TestBildformate:
@@ -190,12 +195,13 @@ class TestBildreihenfolge:
         zweites = _hochladen(client, PNG).json()["name"]
         return [erstes, zweites]
 
-    def _sortieren(self, client:TestClient, bilder:list[str]):  # noqa: ANN202
-        return client.put(
+    def _sortieren(self, client:TestClient, bilder:list[str]) -> httpx.Response:
+        antwort:httpx.Response = client.put(
             "/api/bestand/anzeige",
             params = {"profil": PROFIL},
             json = {"datei": DATEI, "felder": {"images": bilder}},
         )
+        return antwort
 
     def _gespeicherte_reihenfolge(self, client:TestClient) -> list[str]:
         """Die Liste aus der Datei - `kopf.bilder` ist nur die Anzahl."""
@@ -242,12 +248,13 @@ class TestBildreihenfolge:
 class TestVersandgroessen:
     """K-2.7-001: Gemischte Groessen werden serverseitig abgelehnt."""
 
-    def _speichern(self, client:TestClient, pakete:list[str]):  # noqa: ANN202
-        return client.put(
+    def _speichern(self, client:TestClient, pakete:list[str]) -> httpx.Response:
+        antwort:httpx.Response = client.put(
             "/api/bestand/anzeige",
             params = {"profil": PROFIL},
             json = {"datei": DATEI, "felder": {"shipping_options": pakete}},
         )
+        return antwort
 
     def test_gleiche_groesse_wird_gespeichert(self, client:TestClient, anzeige:Path) -> None:
         antwort = self._speichern(client, ["Hermes_Päckchen", "Hermes_S"])
@@ -303,11 +310,11 @@ class TestKatalogRoute:
             def __enter__(self) -> Antwort:
                 return self
 
-            def __exit__(self, *_:object) -> bool:
-                return False
+            def __exit__(self, *_:object) -> None:
+                return
 
         monkeypatch.setattr(daten, "_preise_zwischenspeicher", None)
-        monkeypatch.setattr(daten.urllib.request, "urlopen", lambda *a, **k: Antwort())
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Antwort())
 
     def test_versandpakete_bleiben_abrufbar(self, client:TestClient) -> None:
         antwort = client.get("/api/katalog/versandpakete")

@@ -133,7 +133,7 @@ _STUFE_MUSTER: Final[list[tuple[re.Pattern[str], Stufe]]] = [
 #: Deutsche Fassungen aus `resources/translations.de.yaml`, Stand 2026-08-27.
 #: Aendert der Upstream einen Text, verliert die Anzeige ihre Genauigkeit -
 #: mehr nicht. Siehe die Liste in docs/UPSTREAM-SYNC.md.
-_PHASE_MUSTER: Final[list[tuple[re.Pattern[str], "Phase", str]]] = [
+_PHASE_MUSTER: Final[list[tuple[re.Pattern[str], Phase, str]]] = [
     # Bilder zuerst: Ihre Zeilen sind die einzigen mit einem echten Zaehler,
     # und sie sind die laengste Wartezeit im ganzen Lauf.
     (re.compile(r"uploading image (\d+)/(\d+)|Lade Bild (\d+)/(\d+)"),

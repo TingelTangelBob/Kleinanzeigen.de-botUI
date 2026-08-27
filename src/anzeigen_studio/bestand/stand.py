@@ -142,6 +142,16 @@ def vergessen(conn: sqlite3.Connection, profil_id: int, datei: str) -> None:
     conn.execute("DELETE FROM anzeige_stand WHERE profil_id = ? AND datei = ?", (profil_id, datei))
 
 
+def _liste_als_text(feld: str, wert: list[Any]) -> str:
+    """Listen kurz fassen. Eigene Funktion, damit `_als_text` lesbar bleibt."""
+    if not wert:
+        return "keine"
+    if feld == "images":
+        return "1 Bild" if len(wert) == 1 else f"{len(wert)} Bilder"
+    text = ", ".join(str(eintrag) for eintrag in wert)
+    return text if len(text) <= _TEXT_GRENZE else f"{len(wert)} Einträge"
+
+
 def _als_text(feld: str, wert: Any) -> str:
     """Macht einen Feldwert lesbar. Bewusst kurz - der Dialog ist kein Editor."""
     if wert is None or wert == "":
@@ -149,24 +159,17 @@ def _als_text(feld: str, wert: Any) -> str:
     if isinstance(wert, bool):
         return "ja" if wert else "nein"
     if isinstance(wert, list):
-        if not wert:
-            return "keine"
-        if feld == "images":
-            return f"{len(wert)} Bilder" if len(wert) != 1 else "1 Bild"
-        text = ", ".join(str(eintrag) for eintrag in wert)
-        return text if len(text) <= _TEXT_GRENZE else f"{len(wert)} Einträge"
+        return _liste_als_text(feld, wert)
     if isinstance(wert, dict):
         if not wert:
             return "leer"
-        return f"{len(wert)} Angaben" if len(wert) != 1 else "1 Angabe"
-    if isinstance(wert, (int, float)) and feld == "price":
+        return "1 Angabe" if len(wert) == 1 else f"{len(wert)} Angaben"
+    if isinstance(wert, int | float) and feld == "price":
         return f"{wert:.2f} €".replace(".", ",")
     text = str(wert)
-    if len(text) > _TEXT_GRENZE:
-        # Lange Texte nicht ausschreiben, aber die Laenge nennen: Sie ist der
-        # einzige Hinweis, ob viel oder wenig passiert ist.
-        return f"{len(text)} Zeichen"
-    return text
+    # Lange Texte nicht ausschreiben, aber die Laenge nennen: Sie ist der
+    # einzige Hinweis, ob viel oder wenig passiert ist.
+    return f"{len(text)} Zeichen" if len(text) > _TEXT_GRENZE else text
 
 
 def vergleichen(vorher: dict[str, Any] | None, jetzt: dict[str, Any]) -> list[Unterschied]:
@@ -201,7 +204,9 @@ def vergleichen(vorher: dict[str, Any] | None, jetzt: dict[str, Any]) -> list[Un
 
 
 def _leer(wert: Any) -> bool:
-    return wert is None or wert == "" or wert == [] or wert == {}
+    # Kein `set`: Die Vergleichswerte sind Liste und Wörterbuch und damit
+    # nicht hashbar.
+    return wert is None or wert in ("", [], {})
 
 
 def abgleich_nach_lauf(

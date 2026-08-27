@@ -66,8 +66,21 @@ jobs:
       - name: Werkzeuge und Abhängigkeiten installieren
         run: |
           python -m pip install --quiet --upgrade pip
-          # ruff und mypy in den Versionen, die auch der Upstream benutzt.
-          python -m pip install --quiet ruff mypy pytest pytest-cov pytest-asyncio httpx
+          # ruff und mypy FESTGENAGELT auf die Versionen aus pdm.lock, also
+          # genau die, die auch der Upstream benutzt.
+          #
+          # Warum die Nagelung: Ohne sie zieht jeder Lauf die neueste Fassung.
+          # Genau das ist am 2026-08-24 passiert - ruff 0.16.5 brachte eine
+          # Regel mit (S608), die ruff 0.16.4 noch nicht hatte, und ab da war
+          # die CI rot, ohne dass sich eine Zeile Code geaendert hatte. Fuenf
+          # Laeufe hintereinander rot, fuenf Fehlermails, und der Befund stand
+          # in keinem Zusammenhang mit dem jeweiligen Commit.
+          #
+          # Ein Linter, der sich unter der Hand aendert, meldet nicht die
+          # Qualitaet des Codes, sondern das Datum des Laufs. Beim Anheben der
+          # Versionen faellt neue Kritik dann dort auf, wo sie hingehoert: in
+          # dem Commit, der sie anhebt.
+          python -m pip install --quiet ruff==0.16.4 mypy==2.3.1 pytest pytest-cov pytest-asyncio httpx
           # Backend-Abhängigkeiten, damit mypy die FastAPI-Typen sieht.
           # Ohne sie meldet mypy "Untyped decorator" bei jedem Endpunkt.
           python -m pip install --quiet -r docker/anzeigen-studio/requirements.txt

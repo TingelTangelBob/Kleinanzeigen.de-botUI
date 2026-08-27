@@ -127,7 +127,10 @@ def pruefen_zum_veroeffentlichen(daten: dict[str, Any]) -> list[str]:
       halbfertiger Entwurf muss sich speichern lassen.
     """
     try:
-        from kleinanzeigen_bot.model.ad_model import AdDefaults, AdPartial  # noqa: PLC0415 - Bot-Import bewusst lokal
+        # Die Ausnahme unten gilt `AdDefaults`: `ad_model` hat kein __all__,
+        # deshalb wertet mypy den Import nicht als ausdrueckliche Weitergabe.
+        # Eine Eigenheit des Upstream-Moduls, kein Fehler hier.
+        from kleinanzeigen_bot.model.ad_model import AdDefaults, AdPartial  # type: ignore[attr-defined]  # noqa: PLC0415
     except ImportError:  # pragma: no cover - im Betrieb liegt der Bot daneben
         LOG.warning("Bot-Modelle nicht verfügbar, Anzeige wird ungeprüft gespeichert.")
         return []

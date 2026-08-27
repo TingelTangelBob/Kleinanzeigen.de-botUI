@@ -19,13 +19,13 @@ from anzeigen_studio.bestand.bilder import (
     bild_hinzufuegen,
     reihenfolge_pruefen,
 )
-from anzeigen_studio.bestand.links import Fund, nummern_lesen
 from anzeigen_studio.bestand.lesen import (
     BestandsAnzeige,
     bestand_lesen,
     bildpfad,
     lokal_geaenderte,
 )
+from anzeigen_studio.bestand.links import Fund, nummern_lesen
 
 __all__ = [
     "AENDERBAR",

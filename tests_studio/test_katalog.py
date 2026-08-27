@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import urllib.request
 
 import pytest
 
@@ -69,7 +70,11 @@ class TestVersandpakete:
     def test_nach_groesse_sortiert(self) -> None:
         pytest.importorskip("kleinanzeigen_bot")
         groessen = [p.groesse for p in daten.versandpakete()]
-        assert groessen == sorted(groessen, key = {"Klein": 0, "Mittel": 1, "Groß": 2}.get)
+        # Eigene Rangfolge statt `dict.get` als Schluessel: `.get` liefert fuer
+        # eine unbekannte Groesse None, und None laesst sich nicht sortieren -
+        # der Test waere dann nicht falsch, sondern kaputt.
+        rang = {"Klein": 0, "Mittel": 1, "Groß": 2}
+        assert groessen == sorted(groessen, key = lambda g: rang.get(g, 99))
 
     def test_ohne_preisliste_bleibt_die_auswahl(self) -> None:
         """Ist die Plattform nicht erreichbar, gibt es die Liste ohne Preise."""
@@ -91,8 +96,8 @@ class _Antwort:
     def __enter__(self) -> _Antwort:
         return self
 
-    def __exit__(self, *_:object) -> bool:
-        return False
+    def __exit__(self, *_:object) -> None:
+        return
 
 
 class TestPreisAbruf:
@@ -115,7 +120,10 @@ class TestPreisAbruf:
             aufrufe.append(1)
             return _Antwort(rohtext)
 
-        monkeypatch.setattr(daten.urllib.request, "urlopen", _urlopen)
+        # Direkt an urllib.request, nicht ueber `daten.urllib`: dasselbe
+        # Modulobjekt, aber ohne den Umweg ueber ein Attribut, das `daten`
+        # nicht ausdruecklich weiterreicht.
+        monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
         return aufrufe
 
     def test_gesunde_antwort_wird_gelesen(self, monkeypatch:pytest.MonkeyPatch) -> None:

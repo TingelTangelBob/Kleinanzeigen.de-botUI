@@ -148,6 +148,49 @@ def test_fehlender_titel_ist_ein_anbieterfehler() -> None:
     assert fehler.value.status == 502
 
 
+def test_platzhalter_wird_entfernt_und_als_massfrage_ausgegeben() -> None:
+    e = entwurf_dienst.aus_antwort(_antwort(
+        beschreibung = "Heller Esstisch. Der Esstisch hat die Maße [Länge x Breite x Höhe].",
+    ))
+
+    assert "[Länge x Breite x Höhe]" not in e.beschreibung
+    assert e.beschreibung.startswith("Heller Esstisch.")
+    assert e.beschreibung.endswith(entwurf_dienst.PRIVATVERKAUF_HINWEIS)
+    assert len(e.fragen) == 1
+    assert e.fragen[0].feld == "beschreibung"
+    assert e.fragen[0].freitext_erlaubt
+    assert e.fragen[0].optionen == []
+    assert "nachmessen" in e.fragen[0].frage
+
+
+def test_massantwort_wird_als_lesbarer_satz_eingesetzt() -> None:
+    e = entwurf_dienst.aus_antwort(_antwort(fragen = [
+        {"id": "masse", "frage": "Welche Maße hat der Tisch?", "feld": "beschreibung",
+         "freitext_erlaubt": True, "optionen": []},
+    ]))
+
+    fertig = entwurf_dienst.anwenden(e, {"masse": "180 x 90 x 75 cm"})
+
+    assert "Maße (Länge × Breite × Höhe): 180 × 90 × 75 cm." in fertig.beschreibung
+    assert fertig.beschreibung.endswith(entwurf_dienst.PRIVATVERKAUF_HINWEIS)
+
+
+def test_privatverkauf_hinweis_steht_genau_einmal_am_ende() -> None:
+    e = entwurf_dienst.aus_antwort(_antwort(
+        beschreibung = "Text.\n\nPrivatverkauf, daher keine Garantie, Gewährleistung und Rücknahme.",
+    ))
+
+    assert e.beschreibung.count(entwurf_dienst.PRIVATVERKAUF_HINWEIS) == 1
+    assert e.beschreibung.endswith(entwurf_dienst.PRIVATVERKAUF_HINWEIS)
+    assert entwurf_dienst.als_anzeigenfelder(e)["description"] == e.beschreibung
+
+
+def test_anweisung_fordert_private_sprache_und_verhindert_vorlagenvariablen() -> None:
+    assert "potentielle Käufer" in entwurf_dienst.ANWEISUNG
+    assert entwurf_dienst.PRIVATVERKAUF_HINWEIS in entwurf_dienst.ANWEISUNG
+    assert "[Länge x Breite x Höhe]" in entwurf_dienst.ANWEISUNG
+
+
 def test_frage_ohne_auswahl_und_ohne_freitext_faellt_weg() -> None:
     """Sie waere unbeantwortbar - und eine unbeantwortbare Frage blockiert."""
     e = entwurf_dienst.aus_antwort(_antwort(fragen = [

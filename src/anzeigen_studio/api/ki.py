@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from anzeigen_studio.ai import anbieter as anbieter_dienst
 from anzeigen_studio.ai import bilder as ki_bilder
 from anzeigen_studio.ai import entwurf as entwurf_dienst
+from anzeigen_studio.ai import stil as stil_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.core import db, ki_zugang
 from anzeigen_studio.core import profile as profile_dienst
@@ -213,12 +214,14 @@ async def _dateien_lesen(bilder: list[UploadFile]) -> list[bytes]:
 async def entwurf_erzeugen(
     conn: Verbindung,
     cfg: Konfiguration,
+    profil: Annotated[str, Form()],
     bilder: Annotated[list[UploadFile], File()],
 ) -> EntwurfAntwort:
     """Schickt die Bilder an den Anbieter und gibt den Vorschlag zurueck.
 
     Der einzige Weg, der Geld kostet. Er legt nichts an und veraendert nichts.
     """
+    wurzel = _profil_wurzel(conn, cfg, profil)
     api_schluessel = ki_zugang.lesen(conn, schluessel = cfg.secret_key)
     inhalte = await _dateien_lesen(bilder)
 
@@ -231,9 +234,10 @@ async def entwurf_erzeugen(
     )
 
     dienst = anbieter_dienst.OpenAI(api_schluessel = api_schluessel, modell = cfg.ki_modell)
+    stilprofil = stil_dienst.aus_bestand(wurzel)
     antwort = await dienst.erkennen(
         vorbereitet,
-        anweisung = entwurf_dienst.ANWEISUNG,
+        anweisung = entwurf_dienst.anweisung(stilprofil.anweisungsteil()),
         schema = entwurf_dienst.schema(),
         schema_name = "anzeigenentwurf",
     )

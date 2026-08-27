@@ -58,6 +58,12 @@ TITEL_MAX: Final[int] = 65
 #: Und die Beschreibung.
 BESCHREIBUNG_MAX: Final[int] = 4000
 
+# Dieser Satz wird nicht dem Anbieter ueberlassen. So steht er auch dann unter
+# jeder Anzeige, wenn das Modell ihn vergisst oder leicht anders formuliert.
+PRIVATVERKAUF_HINWEIS: Final[str] = (
+    "Privatverkauf, daher keine Garantie, Gewährleistung und Rücknahme."
+)
+
 #: Felder, auf die sich eine Rueckfrage beziehen darf.
 _FELDER: Final[frozenset[str]] = frozenset({"titel", "beschreibung", "zustand", "preis"})
 
@@ -134,7 +140,7 @@ def schema() -> dict[str, Any]:
     }
 
 
-ANWEISUNG: Final[str] = f"""\
+_ANWEISUNG_GRUNDLAGE: Final[str] = f"""\
 Du hilfst beim Erstellen einer privaten Kleinanzeige auf kleinanzeigen.de.
 Du siehst nur die beigefügten Fotos eines Gegenstands.
 
@@ -143,9 +149,13 @@ Erzeuge daraus einen Anzeigenentwurf auf Deutsch:
 - Titel: sachlich, suchbar, höchstens {TITEL_MAX} Zeichen. Marke und Modell
   gehören hinein, wenn sie erkennbar sind. Keine Werbesprache, keine
   Ausrufezeichen, kein "TOP" und kein "RAR".
-- Beschreibung: 3 bis 8 Sätze. Was es ist, woran man den Zustand erkennt,
-  Vollständigkeit (Zubehör, Verpackung, Anleitung), sichtbare Mängel. Schreibe
-  nur, was auf den Fotos zu sehen ist.
+- Beschreibung: Schreibe für potentielle Käufer in der einfachen Sprache einer
+  privaten Anzeige. Beginne direkt mit dem Gegenstand und dem Angebot, nicht mit
+  "Auf dem Foto ..." oder "Anhand des Fotos ...". Schreibe 3 bis 8 kurze,
+  natürliche Sätze: Was wird angeboten, was gehört dazu, wie ist der Zustand und
+  welche sichtbaren Gebrauchsspuren oder Mängel gibt es? Kein Werbetext, keine
+  Bildanalyse und keine Hinweise darauf, was die Fotos nicht zeigen.
+- Beende die Beschreibung mit genau diesem Satz: "{PRIVATVERKAUF_HINWEIS}"
 - Zustand: eine der Stufen neu, wie_neu, gut, in_ordnung, defekt.
 - Kategorie: ein Vorschlag im Klartext.
 - Preis: ein realistischer Gebrauchtpreis in Euro für einen Privatverkauf.
@@ -160,15 +170,34 @@ Wichtige Regeln:
    feld=beschreibung also ein fertiger Satz, nicht ein Stichwort.
    Setze freitext_erlaubt auf true, wenn eine eigene Eingabe sinnvoller ist
    (z. B. bei einer Modellnummer, die man ablesen muss).
-3. Stelle höchstens 5 Fragen und nur solche, die den Verkauf wirklich ändern:
+3. Bei Möbeln und anderen Gegenständen, bei denen die Größe für Käufer wichtig
+   ist, frage nach den Maßen, wenn sie nicht auf dem Foto stehen: feld muss
+   "beschreibung" sein, freitext_erlaubt muss true sein und die Frage muss um
+   Länge × Breite × Höhe in Zentimetern bitten. Dafür keine Platzhalter und
+   keine Antwort wie "[Länge x Breite x Höhe]" in titel oder beschreibung
+   ausgeben.
+4. Stelle höchstens 5 Fragen und nur solche, die den Verkauf wirklich ändern:
    Funktioniert es? Ist Zubehör dabei? Wie alt ist es? Gibt es Mängel, die man
    nicht sieht? Frage nicht nach Dingen, die auf den Fotos stehen.
-4. Wenn du gar nicht erkennst, was der Gegenstand ist, setze sicherheit auf
+5. Verwende niemals Vorlagenvariablen oder Platzhalter wie [...] , {{...}},
+   <...> oder "Länge x Breite x Höhe". Wenn eine Angabe fehlt, wird sie eine
+   Rückfrage oder bleibt weg.
+6. Wenn du gar nicht erkennst, was der Gegenstand ist, setze sicherheit auf
    "niedrig", schreibe einen ehrlichen, allgemeinen Titel und stelle eine
    Frage mit feld=titel, deren Möglichkeiten plausible Deutungen anbieten.
-5. Keine Preisverhandlungsfloskeln, kein "VB" im Titel, keine Angaben zu
+7. Keine Preisverhandlungsfloskeln, kein "VB" im Titel, keine Angaben zu
    Versand oder Zahlungsart - das setzt die Anwendung selbst.
 """
+
+
+def anweisung(stilteil: str | None = None) -> str:
+    """Ergaenzt die Grundanweisung um wenige eigene Beschreibungstexte."""
+    if not stilteil or not stilteil.strip():
+        return _ANWEISUNG_GRUNDLAGE
+    return f"{_ANWEISUNG_GRUNDLAGE}\n\n{stilteil.strip()}"
+
+
+ANWEISUNG: Final[str] = _ANWEISUNG_GRUNDLAGE
 
 
 @dataclass(frozen = True, slots = True)
@@ -232,16 +261,117 @@ def aus_antwort(daten: dict[str, Any]) -> Entwurf:
     if sicherheit not in {"hoch", "mittel", "niedrig"}:
         sicherheit = "niedrig"
 
+    roh_beschreibung = _text(daten, "beschreibung", hoechstens = BESCHREIBUNG_MAX)
+    beschreibung, platzhalter_entfernt = _platzhalter_bereinigen(roh_beschreibung)
+    fragen = _fragen_lesen(daten.get("fragen"))
+    if platzhalter_entfernt:
+        fragen = _massefrage_ergaenzen(fragen)
+
     return Entwurf(
         titel = _text(daten, "titel", hoechstens = TITEL_MAX),
-        beschreibung = _text(daten, "beschreibung", hoechstens = BESCHREIBUNG_MAX),
+        beschreibung = _mit_privatverkauf_hinweis(beschreibung),
         zustand = zustand,
         kategorie = (daten.get("kategorie") or None),
         preis_euro = preis,
         preis_begruendung = (daten.get("preis_begruendung") or None),
         sicherheit = sicherheit,
-        fragen = _fragen_lesen(daten.get("fragen")),
+        fragen = fragen,
     )
+
+
+_MASS_BEGRIFFE: Final[re.Pattern[str]] = re.compile(
+    r"(?:maße|masse|länge|laenge|breite|höhe|hoehe|nachmessen|zentimeter|\bcm\b)",
+    re.IGNORECASE,
+)
+_MASS_NENNUNG: Final[re.Pattern[str]] = re.compile(
+    r"(?:maße|masse|länge|laenge|breite|höhe|hoehe)",
+    re.IGNORECASE,
+)
+_MASS_PLATZHALTER: Final[re.Pattern[str]] = re.compile(
+    r"(?:"
+    r"\[[^\]\n]*(?:maße|masse|länge|laenge|breite|höhe|hoehe)[^\]\n]*\]"
+    r"|\{[^}\n]*(?:maße|masse|länge|laenge|breite|höhe|hoehe)[^}\n]*\}"
+    r"|<[^>\n]*(?:maße|masse|länge|laenge|breite|höhe|hoehe)[^>\n]*>"
+    r"|\b(?:länge|laenge)\s*[x×]\s*(?:breite)\s*[x×]\s*(?:höhe|hoehe)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _platzhalter_satz_entfernen(text: str, start: int, ende: int) -> str:
+    """Entfernt den ganzen Satz um einen gefundenen Platzhalter."""
+    links = max((text.rfind(zeichen, 0, start) for zeichen in ".!?\n"), default = -1)
+    rechts = min(
+        (position for zeichen in ".!?" if (position := text.find(zeichen, ende)) >= 0),
+        default = len(text),
+    )
+    return text[:links + 1] + text[rechts + 1:]
+
+
+def _platzhalter_bereinigen(text: str) -> tuple[str, bool]:
+    """Entfernt Modell-Platzhalter und meldet, ob daraus eine Frage noetig ist."""
+    bereinigt = text
+    gefunden = False
+    while (treffer := _MASS_PLATZHALTER.search(bereinigt)) is not None:
+        gefunden = True
+        bereinigt = _platzhalter_satz_entfernen(
+            bereinigt, treffer.start(), treffer.end(),
+        )
+
+    bereinigt = re.sub(r"[ \t]+", " ", bereinigt)
+    bereinigt = re.sub(r"\n\s*\n(?:\s*\n)+", "\n\n", bereinigt)
+    return bereinigt.strip(), gefunden
+
+
+def _massefrage_ergaenzen(fragen: list[Frage]) -> list[Frage]:
+    """Sichert bei einem entfernten Mass-Platzhalter eine echte Eingabefrage."""
+    for nummer, frage in enumerate(fragen):
+        if not _MASS_BEGRIFFE.search(f"{frage.id} {frage.frage}"):
+            continue
+        frage_text = frage.frage
+        if not re.search(r"nachmessen|zentimeter|\bcm\b", frage_text, re.IGNORECASE):
+            frage_text += " Bitte Länge × Breite × Höhe in Zentimetern nachmessen."
+        fragen[nummer] = Frage(
+            id = frage.id,
+            frage = frage_text[:200],
+            feld = "beschreibung",
+            freitext_erlaubt = True,
+            optionen = [],
+        )
+        return fragen
+
+    massefrage = Frage(
+        id = "masse",
+        frage = "Welche Maße hat der Gegenstand? Bitte Länge × Breite × Höhe in Zentimetern nachmessen.",
+        feld = "beschreibung",
+        freitext_erlaubt = True,
+    )
+    # Die Maße sind für die konkrete Beanstandung wichtiger als die letzte
+    # beliebige Modellfrage. Die Obergrenze von fünf bleibt erhalten.
+    return [*fragen[:4], massefrage]
+
+
+def _ohne_privatverkauf_hinweis(text: str) -> str:
+    """Entfernt den festen Hinweis, damit er beim Zusammensetzen nicht doppelt steht."""
+    return re.sub(re.escape(PRIVATVERKAUF_HINWEIS), "", text, flags = re.IGNORECASE).strip()
+
+
+def _mit_privatverkauf_hinweis(text: str) -> str:
+    """Setzt den festen Hinweis genau einmal ans Ende der Beschreibung."""
+    basis = _ohne_privatverkauf_hinweis(text)
+    max_basis = max(0, BESCHREIBUNG_MAX - len(PRIVATVERKAUF_HINWEIS) - 2)
+    basis = basis[:max_basis].rstrip()
+    if not basis:
+        return PRIVATVERKAUF_HINWEIS
+    return f"{basis}\n\n{PRIVATVERKAUF_HINWEIS}"
+
+
+def _masseantwort_als_satz(wert: str) -> str:
+    """Macht eine freie Massangabe zu einem lesbaren Satz fuer die Anzeige."""
+    sauber = " ".join(wert.split())
+    sauber = re.sub(r"(?<=\d)\s*[xX×]\s*(?=\d)", " × ", sauber)
+    satz = sauber if _MASS_NENNUNG.search(sauber) else f"Maße (Länge × Breite × Höhe): {sauber}"
+    return satz if satz.endswith((".", "!", "?")) else f"{satz}."
 
 
 def _fragen_lesen(roh: Any) -> list[Frage]:
@@ -294,7 +424,7 @@ def anwenden(entwurf: Entwurf, antworten: dict[str, str]) -> Entwurf:
     werden uebergangen.
     """
     titel = entwurf.titel
-    beschreibung = entwurf.beschreibung
+    beschreibung = _ohne_privatverkauf_hinweis(entwurf.beschreibung)
     zustand = entwurf.zustand
     preis = entwurf.preis_euro
     zusaetze: list[str] = []
@@ -318,10 +448,15 @@ def anwenden(entwurf: Entwurf, antworten: dict[str, str]) -> Entwurf:
             if zahl is not None:
                 preis = zahl
         else:
-            zusaetze.append(antwort)
+            zusaetze.append(
+                _masseantwort_als_satz(antwort) if _MASS_BEGRIFFE.search(
+                    f"{frage.id} {frage.frage}"
+                ) else antwort
+            )
 
     if zusaetze:
-        beschreibung = (beschreibung.rstrip() + "\n\n" + " ".join(zusaetze))[:BESCHREIBUNG_MAX]
+        beschreibung = f"{beschreibung.rstrip()}\n\n{' '.join(zusaetze)}"
+    beschreibung = _mit_privatverkauf_hinweis(beschreibung)
 
     return Entwurf(
         titel = titel,
@@ -357,7 +492,7 @@ def als_anzeigenfelder(entwurf: Entwurf) -> dict[str, Any]:
     """
     felder: dict[str, Any] = {
         "title": entwurf.titel,
-        "description": entwurf.beschreibung,
+        "description": _mit_privatverkauf_hinweis(entwurf.beschreibung),
         "special_attributes": {},
     }
     if entwurf.zustand:

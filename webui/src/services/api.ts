@@ -190,9 +190,10 @@ export const api = {
      * so lässt sich der Fortschritt des Hochladens melden, und bei mehreren
      * Handyfotos ist genau das die längste sichtbare Wartezeit.
      */
-    entwurf: (dateien: File[], aufFortschritt?: (anteil: number) => void) =>
+    entwurf: (profil: string, dateien: File[], aufFortschritt?: (anteil: number) => void) =>
       new Promise<KiEntwurfAntwort>((erfuellen, ablehnen) => {
         const daten = new FormData();
+        daten.append('profil', profil);
         dateien.forEach(datei => daten.append('bilder', datei));
 
         const xhr = new XMLHttpRequest();

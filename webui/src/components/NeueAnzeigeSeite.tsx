@@ -95,7 +95,7 @@ export function NeueAnzeigeSeite() {
   };
 
   const erkennen = async () => {
-    if (dateien.length === 0) return;
+    if (dateien.length === 0 || !profil) return;
     setFehler(null);
     zuruecksetzen();
     setStufe({ art: 'hochladen', anteil: 0 });
@@ -105,7 +105,7 @@ export function NeueAnzeigeSeite() {
     // können: Der Anbieter meldet keinen Zwischenstand.
     let uhr: number | undefined;
     try {
-      const antwort = await api.ki.entwurf(dateien, anteil => {
+      const antwort = await api.ki.entwurf(profil, dateien, anteil => {
         setStufe({ art: 'hochladen', anteil });
         if (anteil >= 1 && uhr === undefined) {
           const start = Date.now();
@@ -177,20 +177,22 @@ export function NeueAnzeigeSeite() {
           <button
             type="button"
             onClick={() => void erkennen()}
-            disabled={dateien.length === 0 || !kiStatus?.hinterlegt}
+            disabled={dateien.length === 0 || !profil || !kiStatus?.hinterlegt}
             className="flex w-full items-center justify-center gap-2 rounded bg-primary-custom px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Sparkles className="h-4 w-4" />
             {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
           </button>
           {/* Ein grauer Knopf ohne Begruendung laesst den Nutzer raten. */}
-          {(dateien.length === 0 || !kiStatus?.hinterlegt) && (
+          {(dateien.length === 0 || !profil || !kiStatus?.hinterlegt) && (
             <p className="mt-2 text-center text-xs text-gray-500">
               {kiStatus === null
                 ? 'Der Zustand des KI-Zugangs ließ sich nicht laden – ist das Backend erreichbar?'
                 : !kiStatus.hinterlegt
                   ? 'Es fehlt der OpenAI-Schlüssel.'
-                  : 'Wähle mindestens ein Foto.'}
+                  : !profil
+                    ? 'Zuerst ein Profil anlegen und auswählen.'
+                    : 'Wähle mindestens ein Foto.'}
             </p>
           )}
         </div>
@@ -268,6 +270,11 @@ function DatenschutzHinweis({ bildkante }: { bildkante: number }) {
             mitbringen und die bei einer Aufnahme zu Hause die Wohnadresse sind.
           </li>
           <li>Höchstens {MAX_BILDER} Bilder gehen mit; weitere werden nicht gesendet.</li>
+          <li>
+            Wenn im aktiven Profil eigene Anzeigen liegen, werden höchstens einige
+            Beschreibungstexte als Stilvorlage mitgeschickt. Nachrichten, Zugangsdaten
+            und Kontaktfelder werden nicht verwendet.
+          </li>
           <li>Prüfe trotzdem, was im Hintergrund zu sehen ist. Das kann keine Software für dich.</li>
         </ul>
       )}
@@ -503,6 +510,7 @@ function Rueckfrage({
 }) {
   const [freitext, setFreitext] = useState('');
   const beantwortet = antwort !== undefined;
+  const antwortAnzeige = frage.optionen.find(option => option.wert === antwort)?.text ?? antwort;
 
   const uebernehmen = useCallback(() => {
     if (freitext.trim()) aufAntwort(freitext.trim());
@@ -516,7 +524,7 @@ function Rueckfrage({
         <p className="flex items-start justify-between gap-3 text-sm">
           <span className="flex items-start gap-2 text-gray-800">
             <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" aria-hidden />
-            {antwort}
+            {antwortAnzeige}
           </span>
           <button type="button" onClick={aufZuruecknehmen} className="flex-shrink-0 text-xs text-gray-500 underline">
             ändern

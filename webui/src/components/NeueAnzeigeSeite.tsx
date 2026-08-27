@@ -31,6 +31,9 @@ type Stufe =
 
 const MAX_BILDER = 4;
 
+/** Was der Bot beim Hochladen spaeter wieder lesen kann. HEIC gehoert nicht dazu. */
+const ERLAUBTE_TYPEN = ['image/jpeg', 'image/png', 'image/gif'];
+
 export function NeueAnzeigeSeite() {
   const { aktiv } = useProfil();
   const profil = aktiv?.slug ?? '';
@@ -58,9 +61,30 @@ export function NeueAnzeigeSeite() {
   }, [dateien]);
 
   const dateienWaehlen = (liste: FileList | null) => {
-    if (!liste) return;
-    setFehler(null);
-    setDateien(vorher => [...vorher, ...Array.from(liste)].slice(0, MAX_BILDER));
+    if (!liste || liste.length === 0) return;
+
+    // SOFORT auslesen, nicht erst im Aktualisierer von setDateien. Eine
+    // FileList haengt am <input>; wer danach `input.value = ''` setzt - und das
+    // muss man, damit dieselbe Datei erneut gewaehlt werden kann - leert damit
+    // auch die FileList. React ruft den Aktualisierer spaeter auf, und dann ist
+    // sie leer. Genau daran ist die erste Fassung gescheitert: Datei waehlen
+    // ging, danach passierte nichts.
+    const gewaehlt = Array.from(liste);
+
+    const unbrauchbar = gewaehlt.filter(datei => !ERLAUBTE_TYPEN.includes(datei.type));
+    if (unbrauchbar.length > 0) {
+      const heic = unbrauchbar.some(d => /hei[cf]/i.test(d.type) || /\.hei[cf]$/i.test(d.name));
+      setFehler(heic
+        ? 'HEIC-Fotos vom iPhone kann das Studio noch nicht lesen. In den iPhone-Einstellungen '
+          + 'unter Kamera → Formate „Maximale Kompatibilität“ wählen, oder das Foto als JPEG exportieren.'
+        : `Nicht lesbar: ${unbrauchbar.map(d => d.name).join(', ')}. Erlaubt sind JPEG, PNG und GIF.`);
+    } else {
+      setFehler(null);
+    }
+
+    const brauchbar = gewaehlt.filter(datei => ERLAUBTE_TYPEN.includes(datei.type));
+    if (brauchbar.length === 0) return;
+    setDateien(vorher => [...vorher, ...brauchbar].slice(0, MAX_BILDER));
   };
 
   const zuruecksetzen = () => {
@@ -149,15 +173,27 @@ export function NeueAnzeigeSeite() {
       {stufe.art !== 'ruhe' ? (
         <Fortschritt stufe={stufe} />
       ) : (
-        <button
-          type="button"
-          onClick={() => void erkennen()}
-          disabled={dateien.length === 0 || !kiStatus?.hinterlegt}
-          className="mb-6 flex w-full items-center justify-center gap-2 rounded bg-primary-custom px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Sparkles className="h-4 w-4" />
-          {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
-        </button>
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => void erkennen()}
+            disabled={dateien.length === 0 || !kiStatus?.hinterlegt}
+            className="flex w-full items-center justify-center gap-2 rounded bg-primary-custom px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Sparkles className="h-4 w-4" />
+            {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
+          </button>
+          {/* Ein grauer Knopf ohne Begruendung laesst den Nutzer raten. */}
+          {(dateien.length === 0 || !kiStatus?.hinterlegt) && (
+            <p className="mt-2 text-center text-xs text-gray-500">
+              {kiStatus === null
+                ? 'Der Zustand des KI-Zugangs ließ sich nicht laden – ist das Backend erreichbar?'
+                : !kiStatus.hinterlegt
+                  ? 'Es fehlt der OpenAI-Schlüssel.'
+                  : 'Wähle mindestens ein Foto.'}
+            </p>
+          )}
+        </div>
       )}
 
       {entwurf && !angelegt && (
@@ -249,9 +285,34 @@ function BildAuswahl({
   aufEntfernen: (index: number) => void;
 }) {
   const eingabe = useRef<HTMLInputElement>(null);
+  const [ueberZone, setUeberZone] = useState(false);
+
+  // Reinziehen. Ohne `preventDefault` auf dragover nimmt der Browser die Datei
+  // selbst an und zeigt sie im Tab an - die Seite ist dann weg, samt allem,
+  // was schon eingetragen war.
+  const aufDragOver = (ereignis: React.DragEvent) => {
+    if (gesperrt) return;
+    ereignis.preventDefault();
+    setUeberZone(true);
+  };
+
+  const aufDrop = (ereignis: React.DragEvent) => {
+    ereignis.preventDefault();
+    setUeberZone(false);
+    if (gesperrt) return;
+    aufWaehlen(ereignis.dataTransfer.files);
+  };
 
   return (
-    <div className="mb-4">
+    <div
+      className={`mb-4 rounded-lg border-2 border-dashed p-3 transition-colors ${
+        ueberZone ? 'border-primary-custom bg-blue-50/50' : 'border-transparent'
+      }`}
+      onDragOver={aufDragOver}
+      onDragEnter={aufDragOver}
+      onDragLeave={() => setUeberZone(false)}
+      onDrop={aufDrop}
+    >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {vorschauen.map((url, index) => (
           <div key={url} className="group relative aspect-square overflow-hidden rounded border border-gray-200">
@@ -277,6 +338,7 @@ function BildAuswahl({
           >
             <ImagePlus className="h-6 w-6" />
             <span className="text-xs">Foto wählen</span>
+            <span className="text-[10px] text-gray-400">oder hierher ziehen</span>
           </button>
         )}
       </div>
@@ -294,7 +356,7 @@ function BildAuswahl({
       />
       <p className="mt-2 text-xs text-gray-500">
         {dateien.length} von {MAX_BILDER} Fotos. Mehrere Ansichten helfen – Vorderseite,
-        Rückseite, Typenschild.
+        Rückseite, Typenschild. JPEG, PNG oder GIF.
       </p>
     </div>
   );

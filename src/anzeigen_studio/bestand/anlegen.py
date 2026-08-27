@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 from ruamel.yaml import YAML
 
-from anzeigen_studio.bestand.lesen import BestandsAnzeige, bestand_lesen
+from anzeigen_studio.bestand.bearbeiten import rohdaten_lesen
+from anzeigen_studio.bestand.lesen import BestandsAnzeige, bestand_lesen, bildpfad
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -35,6 +36,9 @@ LOG = logging.getLogger(__name__)
 #: Wie viele Bilder eine neu angelegte Anzeige hoechstens bekommt.
 #: Kleinanzeigen erlaubt 20; mehr als das anzunehmen waere sinnlos.
 MAX_BILDER: Final[int] = 20
+
+#: Kleinanzeigen begrenzt den Titel. Gleiche Zahl wie im KI-Modul.
+_TITEL_MAX: Final[int] = 65
 
 #: Kopfzeile, die auch die heruntergeladenen Dateien tragen. Sie schaltet in
 #: Editoren die Schemapruefung ein und ist der einzige Grund, warum hier
@@ -125,24 +129,30 @@ def anlegen(
         (ordner / name).write_bytes(inhalt)
         bildnamen.append(name)
 
-    daten: dict[str, Any] = {
-        "active": True,
-        "type": "OFFER",
-        "title": titel,
-        "description": str(felder.get("description") or ""),
-        "category": felder.get("category"),
-        "special_attributes": felder.get("special_attributes") or {},
-        "price": felder.get("price"),
-        "price_type": felder.get("price_type") or "NEGOTIABLE",
-        # Versand bleibt offen. Ein geratener Versandweg waere teuer im
-        # Wortsinn - und die Wahl haengt an Groesse und Gewicht, die auf
-        # keinem Foto stehen.
-        "shipping_type": None,
-        "shipping_options": [],
-        "sell_directly": False,
-        "images": bildnamen,
-        "created_on": datetime.now(UTC).isoformat(timespec = "seconds"),
-    }
+    # Was der Aufrufer mitgibt, bleibt stehen; das Geruest fuellt nur, was
+    # fehlt. Der Unterschied ist beim Duplizieren wesentlich: Dort sollen
+    # Versand, Kontakt und Kategorie mitkommen - das ist der ganze Sinn einer
+    # Kopie. Beim KI-Entwurf werden diese Felder gar nicht erst mitgegeben und
+    # bleiben deshalb leer: Ein geratener Versandweg waere teuer im Wortsinn,
+    # und die Wahl haengt an Groesse und Gewicht, die auf keinem Foto stehen.
+    daten: dict[str, Any] = dict(felder)
+    daten["title"] = titel
+    daten["description"] = str(felder.get("description") or "")
+    daten["images"] = bildnamen
+    daten["created_on"] = datetime.now(UTC).isoformat(timespec = "seconds")
+
+    for schluessel, vorgabe in (
+        ("active", True),
+        ("type", "OFFER"),
+        ("category", None),
+        ("special_attributes", {}),
+        ("price", None),
+        ("price_type", "NEGOTIABLE"),
+        ("shipping_type", None),
+        ("shipping_options", []),
+        ("sell_directly", False),
+    ):
+        daten.setdefault(schluessel, vorgabe)
 
     pfad = ordner / f"ad_{ordner.name}.yaml"
     yaml = YAML()
@@ -160,3 +170,63 @@ def anlegen(
             return anzeige
     # Kann nur passieren, wenn das Lesen die eben geschriebene Datei verwirft.
     raise FachlicherFehler("Die Anzeige wurde angelegt, ließ sich aber nicht lesen.", status = 500)
+
+
+#: Was beim Duplizieren NICHT mitkommt.
+#:
+#: Jedes dieser Felder beschreibt die Anzeige auf der Plattform, nicht den
+#: Gegenstand. `id` waere der schlimmste Mitreisende: Der Bot haelt eine
+#: Anzeige mit Nummer fuer bereits online und wuerde beim naechsten Lauf das
+#: ORIGINAL ueberschreiben, statt die Kopie einzustellen.
+_NICHT_KOPIEREN: Final[frozenset[str]] = frozenset({
+    "id",
+    "created_on",
+    "updated_on",
+    "content_hash",
+})
+
+#: Zaehler, die bei einer Kopie wieder bei null anfangen.
+_ZURUECKSETZEN: Final[dict[str, Any]] = {
+    "repost_count": 0,
+    "price_reduction_count": 0,
+}
+
+#: Damit die Kopie in der Liste nicht mit dem Original zu verwechseln ist.
+KOPIE_ZUSATZ: Final[str] = " (Kopie)"
+
+
+def duplizieren(profil_wurzel: Path, datei: str) -> BestandsAnzeige:
+    """Legt eine Kopie einer vorhandenen Anzeige als neuen Entwurf an (AP-3.3).
+
+    Gedacht fuer den haeufigen Fall, dass jemand mehrere aehnliche Gegenstaende
+    verkauft: Kategorie, Versand, Zustand und Beschreibungsgeruest stehen dann
+    schon, geaendert werden nur Titel, Bilder und Preis.
+
+    Die Kopie landet wie jeder Entwurf unter `ads/` und ohne Anzeigennummer.
+    """
+    daten = rohdaten_lesen(profil_wurzel, datei)
+
+    titel = str(daten.get("title") or "").strip()
+    if not titel:
+        raise FachlicherFehler("Die Anzeige hat keinen Titel.", status = 422, feld = "titel")
+
+    # Die Bilder werden mitkopiert, nicht verlinkt: Wer das Original spaeter
+    # loescht, soll die Kopie nicht mit entwerten.
+    bilder: list[bytes] = []
+    for name in daten.get("images") or []:
+        if not isinstance(name, str):
+            continue
+        quelle = bildpfad(profil_wurzel, datei, name)
+        if quelle.is_file():
+            bilder.append(quelle.read_bytes())
+
+    felder = {
+        schluessel: wert
+        for schluessel, wert in daten.items()
+        if schluessel not in _NICHT_KOPIEREN and schluessel != "images"
+    }
+    felder.update(_ZURUECKSETZEN)
+    felder["title"] = (titel + KOPIE_ZUSATZ)[:_TITEL_MAX]
+
+    LOG.info("Anzeige %s wird dupliziert (%d Bilder)", datei, len(bilder))
+    return anlegen(profil_wurzel, felder, bilder)

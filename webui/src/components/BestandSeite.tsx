@@ -97,6 +97,12 @@ export function BestandSeite() {
           // der Liste stammen aus derselben Datei.
           if (geaendert) void laden();
         }}
+        aufKopie={kopie => {
+          // Ohne Umweg über die Liste direkt in die Kopie: Wer dupliziert,
+          // will Titel und Preis ändern, und zwar sofort.
+          void laden();
+          setBearbeitet(kopie);
+        }}
       />
     );
   }

@@ -14,7 +14,7 @@
 // Veröffentlichen im Weg steht.
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowUpFromLine, Check, Info, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowUpFromLine, Check, Copy, Info, Save } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
 import { BilderVerwaltung } from './BilderVerwaltung';
@@ -60,9 +60,11 @@ interface Props {
   profil: string;
   datei: string;
   aufZurueck: (geaendert: boolean) => void;
+  /** Wird nach dem Duplizieren mit der Datei der Kopie gerufen (AP-3.3). */
+  aufKopie?: (datei: string) => void;
 }
 
-export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
+export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
   const [inhalt, setInhalt] = useState<AnzeigeInhalt | null>(null);
   const [felder, setFelder] = useState<Felder>({});
   const [fehler, setFehler] = useState<string | null>(null);
@@ -71,6 +73,7 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
   const [speichert, setSpeichert] = useState(false);
   const [schmutzig, setSchmutzig] = useState(false);
   const [fragtHochladen, setFragtHochladen] = useState(false);
+  const [dupliziert, setDupliziert] = useState(false);
   const [laedtHoch, setLaedtHoch] = useState(false);
   const [eingereiht, setEingereiht] = useState<number | null>(null);
 
@@ -141,6 +144,29 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
       setSpeichert(false);
+    }
+  };
+
+  // Duplizieren kopiert den GESPEICHERTEN Stand, nicht den im Formular. Das
+  // ist der Grund fuer die Sperre bei ungespeicherten Aenderungen: Eine Kopie,
+  // die anders aussieht als das, was auf dem Bildschirm steht, waere eine
+  // Ueberraschung.
+  const duplizieren = async () => {
+    if (!profil) return;
+    setDupliziert(true);
+    try {
+      const kopie = await api.bestand.duplizieren(profil, datei);
+      // Direkt in die Kopie wechseln: Wer dupliziert, will sie bearbeiten -
+      // Titel und Preis stimmen ja noch nicht.
+      if (aufKopie) {
+        aufKopie(kopie.datei);
+      } else {
+        aufZurueck(true);
+      }
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setDupliziert(false);
     }
   };
 
@@ -448,6 +474,20 @@ export function AnzeigenEditor({ profil, datei, aufZurueck }: Props) {
               <Check className="h-4 w-4" aria-hidden /> Gespeichert
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => void duplizieren()}
+            disabled={speichert || dupliziert || schmutzig}
+            title={schmutzig
+              ? 'Erst speichern - kopiert wird der gespeicherte Stand.'
+              : 'Legt eine Kopie als neuen Entwurf an. Nur lokal.'}
+            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
+                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Copy className="h-4 w-4" aria-hidden />
+            {dupliziert ? 'Wird kopiert …' : 'Duplizieren'}
+          </button>
+
           <button
             type="button"
             onClick={() => setFragtHochladen(true)}

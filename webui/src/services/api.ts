@@ -137,6 +137,12 @@ export const api = {
         `/bestand/vergleich?profil=${encodeURIComponent(profil)}&datei=${encodeURIComponent(datei)}`,
       ),
 
+    /** Legt eine Kopie als neuen Entwurf an - nur lokal (AP-3.3). */
+    duplizieren: (profil: string, datei: string) =>
+      anfrage<BestandsAnzeige>(`/bestand/duplizieren?profil=${encodeURIComponent(profil)}`, {
+        method: 'POST', ...json({ datei }),
+      }),
+
     /** Liest Anzeigennummern aus eingefügtem Text - ohne etwas zu tun (AP-3.7). */
     linksLesen: (profil: string, text: string) =>
       anfrage<{ neu: number[]; schon_vorhanden: number[]; unlesbare_zeilen: string[] }>(

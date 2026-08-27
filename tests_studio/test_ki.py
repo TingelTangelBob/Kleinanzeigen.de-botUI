@@ -330,3 +330,72 @@ def test_umlaute_im_titel_ergeben_einen_brauchbaren_ordnernamen() -> None:
 
 def test_titel_ohne_verwertbare_zeichen_bekommt_einen_ersatznamen() -> None:
     assert anlegen_dienst.kurzname("!!! ??? ###") == "anzeige"
+
+
+# --------------------------------------------------------------- Duplizieren
+
+def _anzeige_anlegen(wurzel: Any, **felder: Any) -> Any:
+    grund: dict[str, Any] = {"title": "Bosch Akkuschrauber", "description": "Text"}
+    grund.update(felder)
+    return anlegen_dienst.anlegen(wurzel, grund, [_foto(400, 300)])
+
+
+def test_kopie_traegt_keine_anzeigennummer(tmp_path: Any) -> None:
+    """Mit `id` hielte der Bot die Kopie für online - und überschriebe das Original."""
+    import ruamel.yaml
+
+    original = _anzeige_anlegen(tmp_path)
+    pfad = tmp_path / original.datei
+    yaml = ruamel.yaml.YAML()
+    daten = yaml.load(pfad.read_text(encoding = "utf-8"))
+    daten["id"] = 3310837392
+    daten["content_hash"] = "abc"
+    with pfad.open("w", encoding = "utf-8") as datei:
+        yaml.dump(daten, datei)
+
+    kopie = anlegen_dienst.duplizieren(tmp_path, original.datei)
+
+    assert kopie.id is None
+    inhalt = (tmp_path / kopie.datei).read_text(encoding = "utf-8")
+    assert "content_hash" not in inhalt
+
+
+def test_kopie_uebernimmt_versand_und_kategorie(tmp_path: Any) -> None:
+    """Genau dafür dupliziert man: Das Gerüst steht, nur der Gegenstand wechselt."""
+    original = _anzeige_anlegen(
+        tmp_path, category = "161/168", shipping_type = "SHIPPING",
+        shipping_options = ["Hermes_Päckchen"], sell_directly = True,
+    )
+
+    kopie = anlegen_dienst.duplizieren(tmp_path, original.datei)
+
+    assert kopie.kategorie == "161/168"
+    assert kopie.versandart == "SHIPPING"
+    assert kopie.versandpakete == ["Hermes_Päckchen"]
+    assert kopie.direkt_kaufen
+
+
+def test_kopie_ist_im_titel_erkennbar(tmp_path: Any) -> None:
+    original = _anzeige_anlegen(tmp_path)
+    kopie = anlegen_dienst.duplizieren(tmp_path, original.datei)
+    assert kopie.titel == "Bosch Akkuschrauber (Kopie)"
+
+
+def test_kopie_bekommt_eigene_bilddateien(tmp_path: Any) -> None:
+    """Verlinkte Bilder wären mit dem Original gelöscht."""
+    original = _anzeige_anlegen(tmp_path)
+    kopie = anlegen_dienst.duplizieren(tmp_path, original.datei)
+
+    assert kopie.bilder == 1
+    assert (tmp_path / kopie.datei).parent != (tmp_path / original.datei).parent
+    assert kopie.datei != original.datei
+
+
+def test_zaehler_fangen_bei_der_kopie_wieder_bei_null_an(tmp_path: Any) -> None:
+    original = _anzeige_anlegen(tmp_path, repost_count = 7, price_reduction_count = 3)
+
+    kopie = anlegen_dienst.duplizieren(tmp_path, original.datei)
+
+    inhalt = (tmp_path / kopie.datei).read_text(encoding = "utf-8")
+    assert "repost_count: 0" in inhalt
+    assert "price_reduction_count: 0" in inhalt

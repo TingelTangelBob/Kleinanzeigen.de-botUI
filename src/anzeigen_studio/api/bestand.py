@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from anzeigen_studio import bestand as bestand_dienst
+from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.bestand import stand as stand_dienst
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
@@ -443,6 +444,23 @@ def _nummern_ordnen(conn: sqlite3.Connection, cfg: Settings, profil: str, text: 
         schon_vorhanden = [n for n in fund.nummern if n in vorhanden],
         unlesbare_zeilen = fund.unlesbare_zeilen,
     )
+
+
+class DuplizierenEingabe(BaseModel):
+    datei: str = Field(max_length = 400)
+
+
+@router.post("/duplizieren", response_model = AnzeigeAusgabe, status_code = 201)
+def duplizieren(
+    profil: str, daten: DuplizierenEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> AnzeigeAusgabe:
+    """Legt eine Kopie einer Anzeige als neuen Entwurf an (AP-3.3).
+
+    Nur lokal. Die Kopie hat keine Anzeigennummer und ist damit fuer den Bot
+    eine neue Anzeige - das Original bleibt unangetastet.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return _ausgabe(anlegen_dienst.duplizieren(wurzel, daten.datei))
 
 
 @router.post("/links-lesen", response_model = LinksAusgabe)

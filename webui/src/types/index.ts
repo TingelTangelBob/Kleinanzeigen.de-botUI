@@ -153,6 +153,10 @@ export interface KiStatus {
   geaendert_am: string | null;
   modell: string;
   bildkante: number;
+  /** Verbrauch des laufenden Kalendermonats und die Grenze dafür (AP-4.7). */
+  verbrauch_usd: number;
+  budget_usd: number;
+  verbrauch_aufrufe: number;
 }
 
 export interface KiOption {
@@ -188,6 +192,10 @@ export interface KiKosten {
   usd: number;
   bilder_gesendet: number;
   bytes_gesendet: number;
+  /** Wie viele eigene Anzeigentexte den Ton vorgegeben haben. 0 = Standardstil. */
+  stil_eigene_texte: number;
+  verbrauch_usd: number;
+  budget_usd: number;
 }
 
 export interface KiEntwurfAntwort {

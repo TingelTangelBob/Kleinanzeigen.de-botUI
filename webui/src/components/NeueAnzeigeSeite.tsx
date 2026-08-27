@@ -271,9 +271,11 @@ function DatenschutzHinweis({ bildkante }: { bildkante: number }) {
           </li>
           <li>Höchstens {MAX_BILDER} Bilder gehen mit; weitere werden nicht gesendet.</li>
           <li>
-            Wenn im aktiven Profil eigene Anzeigen liegen, werden höchstens einige
-            Beschreibungstexte als Stilvorlage mitgeschickt. Nachrichten, Zugangsdaten
-            und Kontaktfelder werden nicht verwendet.
+            Wenn im aktiven Profil <strong>veröffentlichte</strong> Anzeigen liegen, gehen
+            höchstens fünf ihrer Beschreibungstexte als Stilvorlage mit – ohne E-Mail-Adressen
+            und Telefonnummern. Eigene Entwürfe, die nie online waren, bleiben außen vor:
+            Sonst ahmt das Modell sich selbst nach. Ohne veröffentlichte Anzeigen gilt eine
+            feste Stilvorgabe, und es gehen nur die Fotos raus.
           </li>
           <li>Prüfe trotzdem, was im Hintergrund zu sehen ist. Das kann keine Software für dich.</li>
         </ul>
@@ -468,11 +470,22 @@ function Ergebnis({
       )}
 
       {kosten && (
-        <p className="text-xs text-gray-500">
-          {kosten.modell} · {kosten.bilder_gesendet} Bilder ({Math.round(kosten.bytes_gesendet / 1024)} KB)
-          {' · '}{kosten.token_eingabe + kosten.token_ausgabe} Token
-          {' · rund '}{(kosten.usd * 100).toFixed(2).replace('.', ',')} US-Cent
-        </p>
+        <div className="space-y-1 text-xs text-gray-500">
+          <p>
+            {kosten.modell} · {kosten.bilder_gesendet} Bilder ({Math.round(kosten.bytes_gesendet / 1024)} KB)
+            {' · '}{kosten.token_eingabe + kosten.token_ausgabe} Token
+            {' · rund '}{(kosten.usd * 100).toFixed(2).replace('.', ',')} US-Cent
+          </p>
+          <p>
+            Ton nach{' '}
+            {kosten.stil_eigene_texte > 0
+              ? `${kosten.stil_eigene_texte} eigenen Anzeige${kosten.stil_eigene_texte === 1 ? '' : 'n'}`
+              : 'Standardvorgabe – noch keine eigene Anzeige veröffentlicht'}
+            {' · diesen Monat '}
+            {kosten.verbrauch_usd.toFixed(2).replace('.', ',')} von{' '}
+            {kosten.budget_usd.toFixed(2).replace('.', ',')} US-Dollar
+          </p>
+        </div>
       )}
 
       <button

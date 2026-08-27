@@ -44,16 +44,47 @@ _E_MAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 _TELEFON = re.compile(r"(?<!\w)(?:(?:\+|00)49|0)(?:[\s()/.-]*\d){6,}(?!\w)")
 
 
+#: Stilvorgabe ohne eigene Vorlagen (AP-4.3).
+#:
+#: Wer das Studio gerade erst eingerichtet hat, hat noch keine
+#: veroeffentlichte Anzeige - und bekaeme sonst gar keine Stilvorgabe. Dann
+#: schreibt das Modell in seinem eigenen Ton, und der ist fuer eine private
+#: Kleinanzeige regelmaessig zu glatt und zu lang.
+#:
+#: Bewusst als Regeln formuliert und nicht als erfundene Beispielanzeige: Ein
+#: ausgedachter Beispieltext waere ein fremder Stil, den niemand gewaehlt hat,
+#: und er wuerde mit Sachangaben locken, die nicht zum Foto gehoeren.
+STANDARDSTIL: Final[str] = (
+    "Fuer den Ton gilt, solange keine eigenen Anzeigen als Vorlage vorliegen: "
+    "Schreibe wie ein Privatmensch, der einen Gegenstand aus dem eigenen Haushalt "
+    "abgibt. Kurze Hauptsaetze, kein Marketing, keine Superlative, keine "
+    "Aufzaehlung technischer Daten, die nicht auf den Fotos stehen. Nenne "
+    "Gebrauchsspuren offen - sie schaffen Vertrauen und ersparen Rueckfragen. "
+    "Duze nicht und sieze nicht; schreibe ueber den Gegenstand, nicht ueber den "
+    "Leser."
+)
+
+
 @dataclass(frozen = True, slots = True)
 class Stilprofil:
-    """Begrenzte Textbeispiele, die nur den Schreibstil vorgeben."""
+    """Woran sich der Ton des Entwurfs ausrichtet.
+
+    Entweder an eigenen Texten (AP-4.2) oder, wenn es keine gibt, an einer
+    festen Vorgabe (AP-4.3). Beides ist eine Stilreferenz - nie eine Quelle
+    fuer Sachangaben.
+    """
 
     beispiele: tuple[str, ...]
 
+    @property
+    def aus_eigenen_texten(self) -> bool:
+        """Ob eigene Anzeigen die Vorlage sind. Fuer Protokoll und Oberflaeche."""
+        return bool(self.beispiele)
+
     def anweisungsteil(self) -> str:
-        """Formuliert die Beispiele fuer den Prompt des einzigen KI-Aufrufs."""
+        """Formuliert die Stilvorgabe fuer den Prompt des einzigen KI-Aufrufs."""
         if not self.beispiele:
-            return ""
+            return STANDARDSTIL
 
         texte = "\n\n".join(
             f"Beispiel {nummer}:\n{beispiel}"

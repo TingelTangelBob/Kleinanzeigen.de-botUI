@@ -212,6 +212,34 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        9,
+        "ki-verbrauch",
+        """
+        -- Was jeder KI-Aufruf gekostet hat (AP-4.7).
+        --
+        -- Kosten, die niemand zaehlt, faellt erst die Kreditkartenabrechnung
+        -- auf. Ein Entwurf kostet Bruchteile eines Cents; ein Fehler in einer
+        -- Schleife kostet das Tausendfache, und zwar bevor jemand hinsieht.
+        --
+        -- Gespeichert wird in MIKRO-DOLLAR als ganze Zahl, nicht als
+        -- Fliesskommazahl: Ueber viele kleine Summanden driftet Fliesskomma,
+        -- und ausgerechnet die Summe ist hier die Zahl, auf die es ankommt.
+        -- Dasselbe Verfahren wie in Roomverse (`costTrackingService`).
+        CREATE TABLE ki_verbrauch (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            zeitpunkt     TEXT    NOT NULL,
+            profil_slug   TEXT,
+            modell        TEXT    NOT NULL,
+            token_eingabe INTEGER NOT NULL,
+            token_ausgabe INTEGER NOT NULL,
+            mikro_usd     INTEGER NOT NULL
+        );
+
+        -- Abgefragt wird immer "was lief in diesem Monat".
+        CREATE INDEX idx_ki_verbrauch_zeit ON ki_verbrauch(zeitpunkt);
+        """,
+    ),
 ]
 
 

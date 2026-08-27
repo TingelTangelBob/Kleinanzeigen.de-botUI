@@ -74,11 +74,33 @@ def test_eigene_entwuerfe_dienen_nicht_als_stilvorlage(tmp_path: Path) -> None:
     assert not any("Vom Modell entworfener" in b for b in beispiele)
 
 
-def test_ohne_veroeffentlichte_anzeigen_gibt_es_kein_stilprofil(tmp_path: Path) -> None:
-    """Kein Stil ist besser als ein geliehener - die Anweisung bleibt dann pur."""
+def test_ohne_veroeffentlichte_anzeigen_greift_der_standardstil(tmp_path: Path) -> None:
+    """AP-4.3: Wer noch nichts veroeffentlicht hat, bekommt trotzdem eine Vorgabe.
+
+    Ohne sie schreibt das Modell in seinem eigenen Ton - fuer eine private
+    Kleinanzeige regelmaessig zu glatt und zu lang.
+    """
     _anzeige_schreiben(tmp_path, 1, "Nur ein Entwurf.", veroeffentlicht = False)
 
     profil = stil.aus_bestand(tmp_path)
 
     assert profil.beispiele == ()
-    assert profil.anweisungsteil() == ""
+    assert not profil.aus_eigenen_texten
+    assert profil.anweisungsteil() == stil.STANDARDSTIL
+
+
+def test_leeres_verzeichnis_bekommt_ebenfalls_den_standardstil(tmp_path: Path) -> None:
+    profil = stil.aus_bestand(tmp_path)
+
+    assert not profil.aus_eigenen_texten
+    assert "Privatmensch" in profil.anweisungsteil()
+
+
+def test_eigene_texte_verdraengen_den_standardstil(tmp_path: Path) -> None:
+    _anzeige_schreiben(tmp_path, 1, "Schlicht geschrieben und mit Gebrauchsspuren.")
+
+    profil = stil.aus_bestand(tmp_path)
+
+    assert profil.aus_eigenen_texten
+    assert stil.STANDARDSTIL not in profil.anweisungsteil()
+    assert "Schlicht geschrieben" in profil.anweisungsteil()

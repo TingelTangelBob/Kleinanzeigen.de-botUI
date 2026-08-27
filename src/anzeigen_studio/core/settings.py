@@ -19,6 +19,12 @@ _DEFAULT_DATA_DIR = "/data"
 _DEFAULT_KI_MODELL = "gpt-5.6-luna"
 _DEFAULT_KI_BILDKANTE = 768
 
+#: Monatsgrenze fuer KI-Aufrufe in US-Dollar (AP-4.7). Bei rund 0,13 Cent je
+#: Entwurf sind 5 Dollar ueber 3800 Entwuerfe - grosszuegig fuer den
+#: gedachten Gebrauch und trotzdem eine Grenze, die eine Schleife stoppt,
+#: bevor sie in der Abrechnung auffaellt.
+_DEFAULT_KI_BUDGET_USD = 5.0
+
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
     raw = os.environ.get(name)
@@ -42,6 +48,22 @@ def _env_zahl(name: str, vorgabe: int, *, mindestens: int, hoechstens: int) -> i
     except ValueError:
         return vorgabe
     return max(mindestens, min(hoechstens, wert))
+
+
+def _env_kommazahl(name: str, vorgabe: float) -> float:
+    """Kommazahl aus der Umgebung, niemals negativ.
+
+    Eine negative Grenze waere keine Grenze, sondern eine Sperre - und wer
+    das will, entfernt den Schluessel.
+    """
+    roh = os.environ.get(name)
+    if roh is None:
+        return vorgabe
+    try:
+        wert = float(roh.strip().replace(",", "."))
+    except ValueError:
+        return vorgabe
+    return max(0.0, wert)
 
 
 @dataclass(frozen = True, slots = True)
@@ -83,6 +105,12 @@ class Settings:
     #: Verkaufsgegenstands erkennbar mehr zu liefern.
     ki_bildkante: int = _DEFAULT_KI_BILDKANTE
 
+    #: Wie viel je Kalendermonat hoechstens fuer KI-Entwuerfe ausgegeben
+    #: werden darf (AP-4.7). Geprueft wird vor dem Aufruf; ueberschritten
+    #: werden kann die Grenze nur um den Betrag eines einzelnen Aufrufs,
+    #: weil vorher niemand weiss, wie viele Token eine Antwort braucht.
+    ki_budget_usd: float = _DEFAULT_KI_BUDGET_USD
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / "app.db"
@@ -102,6 +130,9 @@ class Settings:
             ki_bildkante = _env_zahl(
                 "ANZEIGEN_STUDIO_KI_BILDKANTE", _DEFAULT_KI_BILDKANTE,
                 mindestens = 256, hoechstens = 2048,
+            ),
+            ki_budget_usd = _env_kommazahl(
+                "ANZEIGEN_STUDIO_KI_BUDGET_USD", _DEFAULT_KI_BUDGET_USD,
             ),
         )
 

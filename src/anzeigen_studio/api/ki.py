@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from anzeigen_studio.ai import anbieter as anbieter_dienst
 from anzeigen_studio.ai import bilder as ki_bilder
+from anzeigen_studio.ai import budget as budget_dienst
 from anzeigen_studio.ai import entwurf as entwurf_dienst
 from anzeigen_studio.ai import stil as stil_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
@@ -85,18 +86,38 @@ class StatusAusgabe(BaseModel):
     geaendert_am: str | None = None
     modell: str
     bildkante: int
+    #: Verbrauch des laufenden Monats (AP-4.7). Steht im Status, damit die
+    #: Grenze sichtbar ist, bevor sie greift - nicht erst als Fehlermeldung.
+    verbrauch_usd: float = 0.0
+    budget_usd: float = 0.0
+    verbrauch_aufrufe: int = 0
 
 
 class SchluesselEingabe(BaseModel):
     api_schluessel: str
 
 
+def _status_ausgabe(
+    conn: sqlite3.Connection, cfg: Settings, *,
+    hinterlegt: bool, endet_auf: str | None, geaendert_am: str | None,
+) -> StatusAusgabe:
+    """Baut die Statusantwort. Eine Stelle statt drei fast gleicher."""
+    stand = budget_dienst.verbrauch(conn, grenze_usd = cfg.ki_budget_usd)
+    return StatusAusgabe(
+        hinterlegt = hinterlegt, endet_auf = endet_auf, geaendert_am = geaendert_am,
+        modell = cfg.ki_modell, bildkante = cfg.ki_bildkante,
+        verbrauch_usd = round(stand.usd, 4),
+        budget_usd = round(stand.grenze_usd, 2),
+        verbrauch_aufrufe = stand.aufrufe,
+    )
+
+
 @router.get("/status", response_model = StatusAusgabe)
 def status(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
     z = ki_zugang.status(conn, schluessel = cfg.secret_key)
-    return StatusAusgabe(
+    return _status_ausgabe(
+        conn, cfg,
         hinterlegt = z.hinterlegt, endet_auf = z.endet_auf, geaendert_am = z.geaendert_am,
-        modell = cfg.ki_modell, bildkante = cfg.ki_bildkante,
     )
 
 
@@ -104,9 +125,9 @@ def status(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
 def schluessel_setzen(daten: SchluesselEingabe, conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
     z = ki_zugang.setzen(conn, daten.api_schluessel, schluessel = cfg.secret_key)
     LOG.info("OpenAI-Schlüssel hinterlegt")  # ohne Wert, auch nicht gekuerzt
-    return StatusAusgabe(
+    return _status_ausgabe(
+        conn, cfg,
         hinterlegt = z.hinterlegt, endet_auf = z.endet_auf, geaendert_am = z.geaendert_am,
-        modell = cfg.ki_modell, bildkante = cfg.ki_bildkante,
     )
 
 
@@ -114,9 +135,8 @@ def schluessel_setzen(daten: SchluesselEingabe, conn: Verbindung, cfg: Konfigura
 def schluessel_entfernen(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
     ki_zugang.entfernen(conn)
     LOG.info("OpenAI-Schlüssel entfernt")
-    return StatusAusgabe(
-        hinterlegt = False, endet_auf = None, geaendert_am = None,
-        modell = cfg.ki_modell, bildkante = cfg.ki_bildkante,
+    return _status_ausgabe(
+        conn, cfg, hinterlegt = False, endet_auf = None, geaendert_am = None,
     )
 
 
@@ -154,6 +174,12 @@ class KostenAusgabe(BaseModel):
     usd: float
     bilder_gesendet: int
     bytes_gesendet: int
+    #: Woran sich der Ton ausgerichtet hat (AP-4.2/4.3). Sichtbar, damit
+    #: erkennbar ist, ob eigene Texte gewirkt haben oder die Standardvorgabe.
+    stil_eigene_texte: int = 0
+    #: Monatsstand nach diesem Aufruf.
+    verbrauch_usd: float = 0.0
+    budget_usd: float = 0.0
 
 
 class EntwurfAntwort(BaseModel):
@@ -223,6 +249,11 @@ async def entwurf_erzeugen(
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
     api_schluessel = ki_zugang.lesen(conn, schluessel = cfg.secret_key)
+
+    # Vor dem Aufruf, nicht danach: Eine Grenze, die erst nach dem Bezahlen
+    # greift, ist keine.
+    budget_dienst.pruefen(conn, grenze_usd = cfg.ki_budget_usd)
+
     inhalte = await _dateien_lesen(bilder)
 
     vorbereitet = ki_bilder.alle_vorbereiten(inhalte, kante = cfg.ki_bildkante)
@@ -242,12 +273,29 @@ async def entwurf_erzeugen(
         schema_name = "anzeigenentwurf",
     )
 
-    ergebnis = entwurf_dienst.aus_antwort(antwort.daten)
     usd = (antwort.token_eingabe * _PREIS_EINGABE_USD_JE_TOKEN
            + antwort.token_ausgabe * _PREIS_AUSGABE_USD_JE_TOKEN)
+
+    # Gebucht wird VOR dem Auswerten der Antwort: Bezahlt ist sie auch dann,
+    # wenn sich daraus kein brauchbarer Entwurf lesen laesst. Ein
+    # Verbrauchsbuch, das nur gelungene Aufrufe kennt, zaehlt ausgerechnet die
+    # teure Fehlersuche nicht mit.
+    budget_dienst.buchen(
+        conn,
+        profil_slug = profil,
+        modell = antwort.modell,
+        token_eingabe = antwort.token_eingabe,
+        token_ausgabe = antwort.token_ausgabe,
+        mikro_usd = round(usd * budget_dienst.MIKRO_JE_USD),
+    )
+    stand = budget_dienst.verbrauch(conn, grenze_usd = cfg.ki_budget_usd)
+
+    ergebnis = entwurf_dienst.aus_antwort(antwort.daten)
     LOG.info(
-        "KI-Entwurf fertig: %d/%d Token, rund %.4f USD, %d Rückfragen",
+        "KI-Entwurf fertig: %d/%d Token, rund %.4f USD, %d Rückfragen, "
+        "Monatsstand %.4f von %.2f USD",
         antwort.token_eingabe, antwort.token_ausgabe, usd, len(ergebnis.fragen),
+        stand.usd, stand.grenze_usd,
     )
 
     return EntwurfAntwort(
@@ -259,6 +307,9 @@ async def entwurf_erzeugen(
             usd = round(usd, 6),
             bilder_gesendet = len(vorbereitet),
             bytes_gesendet = sum(b.bytes_nachher for b in vorbereitet),
+            stil_eigene_texte = len(stilprofil.beispiele),
+            verbrauch_usd = round(stand.usd, 4),
+            budget_usd = round(stand.grenze_usd, 2),
         ),
     )
 

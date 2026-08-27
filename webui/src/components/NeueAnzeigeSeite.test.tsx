@@ -73,6 +73,7 @@ beforeEach(() => {
   status.mockResolvedValue({
     hinterlegt: true, endet_auf: 'TR0A', geaendert_am: null,
     modell: 'gpt-5.6-luna', bildkante: 768,
+    verbrauch_usd: 0, budget_usd: 5, verbrauch_aufrufe: 0,
   });
   // jsdom kennt keine Objekt-URLs.
   URL.createObjectURL = vi.fn(() => `blob:test-${objektUrlNummer++}`);
@@ -147,6 +148,7 @@ describe('Erkennen-Knopf', () => {
     status.mockResolvedValue({
       hinterlegt: false, endet_auf: null, geaendert_am: null,
       modell: 'gpt-5.6-luna', bildkante: 768,
+      verbrauch_usd: 0, budget_usd: 5, verbrauch_aufrufe: 0,
     });
     render(<NeueAnzeigeSeite />);
 

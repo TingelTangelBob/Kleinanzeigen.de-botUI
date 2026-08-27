@@ -4,7 +4,7 @@
 // Läufe starten und live mitlesen (AP-2.8, AP-1.7).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Ban, Hand, Hourglass, Play } from 'lucide-react';
+import { AlertTriangle, Ban, Hand, Hourglass, Loader2, Play } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import type { BestandsAnzeige, Job, JobZustand, LogZeile } from '../types';
@@ -263,6 +263,39 @@ function UeberschreibWarnung({
   );
 }
 
+/**
+ * Woran der Lauf gerade ist, und seit wann (AP-2.8).
+ *
+ * Die Dauer ist der eigentliche Punkt. „Bild 2/3 hochladen" beruhigt;
+ * dieselbe Zeile seit vier Minuten sagt, dass etwas klemmt. Ein Zustand
+ * „läuft" ohne beides hat am 2026-08-27 dazu geführt, dass ein Lauf 40
+ * Sekunden vor seinem Ende für gescheitert gehalten wurde.
+ */
+function Phasenzeile({ text, seit }: { text: string; seit: string | null }) {
+  // Eigener Sekundentakt: Die Jobliste wird nur alle zwei Sekunden geladen,
+  // und zwischen zwei Ladungen soll die Dauer trotzdem weiterlaufen.
+  const [jetzt, setJetzt] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setJetzt(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const sekunden = seit ? Math.max(0, Math.round((jetzt - new Date(seit).getTime()) / 1000)) : null;
+  const dauer = sekunden === null || Number.isNaN(sekunden)
+    ? null
+    : sekunden < 60
+      ? `${sekunden} s`
+      : `${Math.floor(sekunden / 60)} min ${sekunden % 60} s`;
+
+  return (
+    <span className="mt-1 flex items-center gap-2 text-sm text-blue-800">
+      <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" aria-hidden />
+      <span className="min-w-0 truncate">{text}</span>
+      {dauer && <span className="flex-shrink-0 text-xs text-gray-500">seit {dauer}</span>}
+    </span>
+  );
+}
+
 function JobKarte({
   job, offen, aufUmschalten, aufAenderung,
 }: { job: Job; offen: boolean; aufUmschalten: () => void; aufAenderung: () => void }) {
@@ -282,6 +315,9 @@ function JobKarte({
           </span>
           {job.meldung && (
             <span className="mt-1 block text-sm text-gray-700">{job.meldung}</span>
+          )}
+          {laeuftNoch && job.phase_text && (
+            <Phasenzeile text={job.phase_text} seit={job.phase_seit} />
           )}
         </button>
 

@@ -79,6 +79,11 @@ class JobAusgabe(BaseModel):
     wartet_bis: str | None
     wartegrund: str | None
 
+    #: Woran der Lauf gerade ist (AP-2.8). Reine Anzeige.
+    phase: str | None = None
+    phase_text: str | None = None
+    phase_seit: str | None = None
+
 
 class JobEingabe(BaseModel):
     profil: str = Field(min_length = 1, max_length = 32)
@@ -98,6 +103,7 @@ def _ausgabe(job: Job) -> JobAusgabe:
         beendet_am = job.beendet_am, rueckgabecode = job.rueckgabecode,
         aufmerksamkeit = job.aufmerksamkeit, eingriff = job.eingriff, meldung = job.meldung,
         wartet_bis = job.wartet_bis, wartegrund = job.wartegrund,
+        phase = job.phase, phase_text = job.phase_text, phase_seit = job.phase_seit,
     )
 
 

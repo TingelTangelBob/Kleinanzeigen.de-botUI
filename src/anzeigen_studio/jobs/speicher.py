@@ -45,6 +45,9 @@ def _zu_job(row: sqlite3.Row) -> Job:
         wartet_bis = row["wartet_bis"],
         wartegrund = row["wartegrund"],
         anzeigen_glob = row["anzeigen_glob"],
+        phase = row["phase"],
+        phase_text = row["phase_text"],
+        phase_seit = row["phase_seit"],
     )
 
 
@@ -182,6 +185,24 @@ def zustand_setzen(
     # Die Feldnamen stammen ausschliesslich aus den festen Zeichenketten oben,
     # nie aus Eingaben; die Werte gehen als Parameter.
     conn.execute(f"UPDATE job SET {', '.join(felder)} WHERE id = ?", werte)  # noqa: S608
+
+
+def phase_setzen(conn: sqlite3.Connection, job_id: int, phase: str, text: str) -> bool:
+    """Haelt fest, woran der Lauf gerade ist (AP-2.8).
+
+    Schreibt nur, wenn sich der Text tatsaechlich geaendert hat, und meldet
+    das zurueck. Ein Lauf schreibt hunderte Zeilen; je Zeile ein UPDATE waere
+    Schreiblast ohne Gegenwert - und `phase_seit` wuerde bei jeder Zeile neu
+    beginnen, womit die Dauer, also die eigentliche Auskunft, verloren ginge.
+    """
+    row = conn.execute("SELECT phase_text FROM job WHERE id = ?", (job_id,)).fetchone()
+    if row is not None and row["phase_text"] == text:
+        return False
+    conn.execute(
+        "UPDATE job SET phase = ?, phase_text = ?, phase_seit = ? WHERE id = ?",
+        (phase, text, _jetzt(), job_id),
+    )
+    return True
 
 
 def log_anhaengen(conn: sqlite3.Connection, job_id: int, ereignis: Ereignis) -> None:

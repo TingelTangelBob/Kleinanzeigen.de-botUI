@@ -263,6 +263,11 @@ class Warteschlange:
         async for ereignis in lauf.ereignisse():
             with db.transaction(conn):
                 speicher.log_anhaengen(conn, job_id, ereignis)
+                # Woran der Lauf gerade ist (AP-2.8). Sagt die Zeile nichts
+                # dazu, gilt die zuletzt erkannte Phase weiter - deshalb wird
+                # hier nichts zurueckgesetzt.
+                if ereignis.phase is not None and ereignis.phase_text:
+                    speicher.phase_setzen(conn, job_id, str(ereignis.phase), ereignis.phase_text)
                 if ereignis.braucht_menschen:
                     speicher.zustand_setzen(conn, job_id, JobZustand.BRAUCHT_EINGABE,
                                             eingriff = str(ereignis.eingriff))

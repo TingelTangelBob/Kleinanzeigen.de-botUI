@@ -50,6 +50,13 @@ export interface Job {
   /** Bis wann der Lauf absichtlich wartet (ISO-8601), und warum. */
   wartet_bis: string | null;
   wartegrund: string | null;
+  /**
+   * Woran der Lauf gerade ist (AP-2.8) — Kennung, fertiger Text und seit wann.
+   * Reine Anzeige. `null` heißt nur, dass noch nichts erkannt wurde.
+   */
+  phase: string | null;
+  phase_text: string | null;
+  phase_seit: string | null;
 }
 
 export interface LogZeile {

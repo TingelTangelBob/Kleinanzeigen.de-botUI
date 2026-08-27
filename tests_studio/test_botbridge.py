@@ -20,6 +20,7 @@ from anzeigen_studio.botbridge.events import (
     Aufmerksamkeit,
     Eingriff,
     LaufErgebnis,
+    Phase,
     Stufe,
     zeile_auswerten,
 )
@@ -250,3 +251,66 @@ class TestDeutscheStufen:
     ])
     def test_stufe_wird_erkannt(self, zeile:str, erwartet:Stufe) -> None:
         assert zeile_auswerten(zeile).stufe is erwartet
+
+
+class TestLaufphase:
+    """Woran ist der Lauf gerade? (AP-2.8)
+
+    Die Zeilen unten sind woertlich aus dem Protokoll des ersten
+    erfolgreichen Aktualisierens vom 2026-08-27 uebernommen, die englischen
+    aus `resources/translations.de.yaml`. Beide Sprachen muessen erkannt
+    werden: Die Sprache des Bots haengt an `LANG`, und ein Container ohne
+    `LANG=de_DE.UTF-8` protokolliert englisch.
+    """
+
+    @pytest.mark.parametrize(("zeile", "phase", "text"), [
+        ("[INFO] Suche nach Anzeigendateien...", Phase.EINLESEN, "Anzeigen einlesen"),
+        ("[INFO] Searching for ad config files...", Phase.EINLESEN, "Anzeigen einlesen"),
+        ("[INFO] Erstelle Browser-Sitzung...", Phase.BROWSER, "Browser starten"),
+        ("[INFO] Creating Browser session...", Phase.BROWSER, "Browser starten"),
+        ("[INFO] Überprüfe, ob bereits eingeloggt...", Phase.ANMELDEN, "Anmelden"),
+        ("[INFO] Checking if already logged in...", Phase.ANMELDEN, "Anmelden"),
+        ("[INFO] Aktualisiere Anzeige [Dimmer]...", Phase.FORMULAR, "Formular ausfüllen"),
+        ("[INFO] Publishing ad 'Dimmer'...", Phase.FORMULAR, "Formular ausfüllen"),
+        ("[INFO]  -> Lade Bild 2/3 [/data/x.jpg] hoch", Phase.BILDER, "Bild 2/3 hochladen"),
+        ("[INFO]  -> uploading image 3/3 [/data/x.jpg]", Phase.BILDER, "Bild 3/3 hochladen"),
+        ("[INFO]  -> Warte auf Verarbeitung von 3 Bilder...", Phase.BILDER, "Warte auf die Bildverarbeitung"),
+        ("[INFO] Upsell-Dialog schließen...", Phase.ABSENDEN, "Absenden"),
+        ("[INFO] Dismissing upsell dialog...", Phase.ABSENDEN, "Absenden"),
+        ("[INFO]  -> ERFOLG: Anzeige mit ID 3310837392 aktualisiert", Phase.ABSCHLUSS, "Gespeichert, räume auf"),
+    ])
+    def test_phase_wird_erkannt(self, zeile:str, phase:Phase, text:str) -> None:
+        ereignis = zeile_auswerten(zeile)
+        assert ereignis.phase is phase
+        assert ereignis.phase_text == text
+
+    def test_anzeigenzaehler_kommt_in_den_text(self) -> None:
+        """Die einzige Stelle, die sagt, die wievielte von wie vielen dran ist."""
+        ereignis = zeile_auswerten("[INFO] Processing 2/5: 'Dimmer Modul' from [/data/x.yaml]...")
+        assert ereignis.phase is Phase.FORMULAR
+        assert ereignis.phase_text == "Anzeige 2/5: Dimmer Modul"
+
+    @pytest.mark.parametrize("zeile", [
+        "[INFO] Python Version: 3.12.14",
+        "[INFO] App Version: 2026+studio",
+        "[INFO] -> 1 Anzeigendatei gefunden",
+        "",
+    ])
+    def test_gewoehnliche_zeilen_setzen_keine_phase(self, zeile:str) -> None:
+        """Lieber keine Phase als eine falsche - die zuletzt erkannte gilt weiter."""
+        ereignis = zeile_auswerten(zeile)
+        assert ereignis.phase is None
+        assert ereignis.phase_text is None
+
+    def test_langer_titel_wird_gekuerzt(self) -> None:
+        """Ein Anzeigentitel kann beliebig lang sein, die Zeile darf es nicht."""
+        ereignis = zeile_auswerten(
+            f"[INFO] Processing 1/1: '{'A' * 300}' from [/data/x.yaml]...",
+        )
+        assert ereignis.phase_text is not None
+        assert len(ereignis.phase_text) <= 70
+
+    def test_phase_bricht_den_lauf_nie_ab(self) -> None:
+        """Diese Schicht ist reine Anzeige und darf nichts kaputtmachen."""
+        for zeile in ["Processing /: '' from [", "uploading image /", "%s %d {0} {1}"]:
+            assert zeile_auswerten(zeile) is not None

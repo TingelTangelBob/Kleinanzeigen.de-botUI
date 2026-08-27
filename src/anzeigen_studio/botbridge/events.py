@@ -57,6 +57,28 @@ class Eingriff(enum.StrEnum):
     UNBEKANNT = "unbekannt"
 
 
+class Phase(enum.StrEnum):
+    """Woran ein Lauf gerade ist (AP-2.8).
+
+    Nur zur Anzeige. Aus dem Ablauf wird hier NICHTS abgeleitet - eine
+    verpasste oder falsch erkannte Phase darf hoechstens eine ungenaue
+    Beschriftung erzeugen, niemals eine falsche Entscheidung.
+
+    Anlass am 2026-08-27: Der Projektinhaber hat 40 Sekunden vor dem Ende
+    nachgesehen, die Anzeige unveraendert vorgefunden und den Lauf fuer
+    gescheitert gehalten. "Laeuft" allein sagt zu wenig, wenn ein Lauf
+    anderthalb Minuten braucht.
+    """
+
+    EINLESEN = "einlesen"
+    BROWSER = "browser"
+    ANMELDEN = "anmelden"
+    FORMULAR = "formular"
+    BILDER = "bilder"
+    ABSENDEN = "absenden"
+    ABSCHLUSS = "abschluss"
+
+
 #: Ausnahmenamen des Upstreams, die auf einen Aufmerksamkeitsfall hinweisen.
 #: Bewusst auf die Klassennamen abgestellt, nicht auf Meldungstexte - Namen
 #: sind stabiler als Formulierungen.
@@ -99,6 +121,80 @@ _STUFE_MUSTER: Final[list[tuple[re.Pattern[str], Stufe]]] = [
 ]
 
 
+#: Woran der Lauf gerade ist, erkannt an seinen eigenen Meldungen.
+#:
+#: Jeder Eintrag ist (Muster, Phase, Beschriftung). Die Beschriftung darf
+#: `%s`-artige Platzhalter im Python-Format nutzen; gefuellt wird sie mit den
+#: Fanggruppen des Musters. Passt keine, bleibt der Text ohne Zusatz.
+#:
+#: ZERBRECHLICH, wie die Eingriffsmuster daneben: Die Texte gehoeren dem
+#: Upstream. Beide Sprachen stehen hier, weil die Sprache des Bots an `LANG`
+#: haengt - ein Container ohne `LANG=de_DE.UTF-8` protokolliert englisch.
+#: Deutsche Fassungen aus `resources/translations.de.yaml`, Stand 2026-08-27.
+#: Aendert der Upstream einen Text, verliert die Anzeige ihre Genauigkeit -
+#: mehr nicht. Siehe die Liste in docs/UPSTREAM-SYNC.md.
+_PHASE_MUSTER: Final[list[tuple[re.Pattern[str], "Phase", str]]] = [
+    # Bilder zuerst: Ihre Zeilen sind die einzigen mit einem echten Zaehler,
+    # und sie sind die laengste Wartezeit im ganzen Lauf.
+    (re.compile(r"uploading image (\d+)/(\d+)|Lade Bild (\d+)/(\d+)"),
+     Phase.BILDER, "Bild {0}/{1} hochladen"),
+    (re.compile(r"waiting for .* to be processed|Warte auf Verarbeitung"),
+     Phase.BILDER, "Warte auf die Bildverarbeitung"),
+    (re.compile(r"all images uploaded successfully|Alle Bilder erfolgreich hochgeladen"),
+     Phase.BILDER, "Bilder sind hochgeladen"),
+    (re.compile(r"removed \d+ existing image|vorhandene Bilder vor dem Hochladen entfernt"),
+     Phase.BILDER, "Alte Bilder entfernen"),
+
+    (re.compile(r"Searching for ad config files|Suche nach Anzeigendateien"),
+     Phase.EINLESEN, "Anzeigen einlesen"),
+    (re.compile(r"Creating Browser session|Erstelle Browser-Sitzung"),
+     Phase.BROWSER, "Browser starten"),
+    (re.compile(r"Checking if already logged in|Überprüfe, ob bereits eingeloggt"
+                r"|Logging in\.\.\.|Anmeldung\.\.\."),
+     Phase.ANMELDEN, "Anmelden"),
+
+    # "Processing 2/5: 'Titel' from [...]" - die einzige Stelle, die sagt,
+    # die wievielte von wie vielen Anzeigen gerade dran ist.
+    (re.compile(r"Processing (\d+)/(\d+): .(.*?). (?:from|aus) \["),
+     Phase.FORMULAR, "Anzeige {0}/{1}: {2}"),
+    (re.compile(r"Publishing ad|Veröffentliche Anzeige|Updating ad|Aktualisiere Anzeige"),
+     Phase.FORMULAR, "Formular ausfüllen"),
+
+    (re.compile(r"Dismissing upsell dialog|Upsell-Dialog schließen"),
+     Phase.ABSENDEN, "Absenden"),
+    (re.compile(r"SUCCESS: ad (?:published|updated)|ERFOLG: Anzeige mit ID"),
+     Phase.ABSCHLUSS, "Gespeichert, räume auf"),
+]
+
+#: Wie lang die Beschriftung hoechstens wird. Ein Anzeigentitel kann beliebig
+#: lang sein; die Zeile soll in der Oberflaeche nicht umbrechen.
+_PHASE_TEXT_MAX: Final[int] = 70
+
+
+def _phase_erkennen(text: str) -> tuple[Phase, str] | None:
+    """Liest aus einer Ausgabezeile, woran der Lauf gerade ist.
+
+    Gibt None zurueck, wenn die Zeile nichts darueber sagt - das ist der
+    Normalfall und ausdruecklich kein Mangel.
+    """
+    for muster, phase, vorlage in _PHASE_MUSTER:
+        treffer = muster.search(text)
+        if treffer is None:
+            continue
+        # Nur die Gruppen, die wirklich gefangen haben: Die Bildmuster halten
+        # je Sprache ein eigenes Klammerpaar, von denen immer eines leer bleibt.
+        gefangen = [g for g in treffer.groups() if g is not None]
+        try:
+            beschriftung = vorlage.format(*gefangen) if gefangen else vorlage
+        except (IndexError, KeyError):
+            # Die Vorlage erwartet mehr, als das Muster gefangen hat. Lieber
+            # die nackte Vorlage zeigen als den Lauf mit einem Formatfehler
+            # abbrechen - diese Schicht darf nichts kaputtmachen.
+            beschriftung = vorlage
+        return phase, beschriftung.strip()[:_PHASE_TEXT_MAX]
+    return None
+
+
 @dataclass(frozen = True, slots = True)
 class Ereignis:
     """Eine Zeile Bot-Ausgabe, angereichert um das, was sich sicher erkennen laesst."""
@@ -108,6 +204,11 @@ class Ereignis:
     stufe: Stufe = Stufe.INFO
     aufmerksamkeit: Aufmerksamkeit | None = None
     eingriff: Eingriff | None = None
+
+    #: Woran der Lauf laut dieser Zeile gerade ist. None heisst nur: Die Zeile
+    #: sagt nichts darueber - die zuletzt erkannte Phase gilt weiter.
+    phase: Phase | None = None
+    phase_text: str | None = None
 
     @property
     def braucht_menschen(self) -> bool:
@@ -169,10 +270,14 @@ def zeile_auswerten(zeile: str) -> Ereignis:
             eingriff = e_kandidat
             break
 
+    phase_treffer = _phase_erkennen(text)
+
     return Ereignis(
         zeitpunkt = _jetzt(),
         text = text,
         stufe = stufe,
         aufmerksamkeit = aufmerksamkeit,
         eingriff = eingriff,
+        phase = phase_treffer[0] if phase_treffer else None,
+        phase_text = phase_treffer[1] if phase_treffer else None,
     )

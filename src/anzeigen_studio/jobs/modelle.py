@@ -73,6 +73,14 @@ class Job:
     #: diese Dateien ein - gedacht fuer das Hochladen einer einzelnen Anzeige.
     anzeigen_glob: str | None = None
 
+    #: Woran der Lauf zuletzt war (AP-2.8), als Kennung und als fertiger Text,
+    #: dazu seit wann. Reine Anzeige - es haengt keine Entscheidung daran.
+    #: Nach dem Ende bleibt der letzte Stand stehen; die Oberflaeche zeigt ihn
+    #: nur, solange der Lauf laeuft.
+    phase: str | None = None
+    phase_text: str | None = None
+    phase_seit: str | None = None
+
     @property
     def laeuft_noch(self) -> bool:
         return self.zustand not in ENDZUSTAENDE

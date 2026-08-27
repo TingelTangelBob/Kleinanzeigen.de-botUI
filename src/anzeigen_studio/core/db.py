@@ -148,6 +148,25 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE job ADD COLUMN anzeigen_glob TEXT;
         """,
     ),
+    (
+        6,
+        "laufphase",
+        """
+        -- Woran ein Lauf gerade ist (AP-2.8).
+        --
+        -- "laeuft" allein sagt zu wenig: Ein Bearbeiten-Lauf braucht gut
+        -- anderthalb Minuten, und wer waehrenddessen auf kleinanzeigen.de
+        -- nachsieht, findet die Anzeige unveraendert und haelt den Lauf fuer
+        -- gescheitert. Genau so geschehen am 2026-08-27.
+        --
+        -- `phase_seit` steht daneben, weil die Dauer die eigentliche Auskunft
+        -- ist: "Bild 2/3 hochladen" ist beruhigend, dieselbe Zeile seit vier
+        -- Minuten ist es nicht.
+        ALTER TABLE job ADD COLUMN phase TEXT;
+        ALTER TABLE job ADD COLUMN phase_text TEXT;
+        ALTER TABLE job ADD COLUMN phase_seit TEXT;
+        """,
+    ),
 ]
 
 

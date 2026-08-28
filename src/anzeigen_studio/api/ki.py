@@ -26,16 +26,19 @@ from typing import TYPE_CHECKING, Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from pydantic import BaseModel
 
+from anzeigen_studio import bestand as bestand_dienst
 from anzeigen_studio.ai import anbieter as anbieter_dienst
 from anzeigen_studio.ai import bilder as ki_bilder
 from anzeigen_studio.ai import budget as budget_dienst
 from anzeigen_studio.ai import entwurf as entwurf_dienst
 from anzeigen_studio.ai import stil as stil_dienst
+from anzeigen_studio.ai import vorschlag as vorschlag_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.core import db, ki_zugang
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.core.settings import Settings
+from anzeigen_studio.katalog import daten as katalog
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -155,6 +158,17 @@ class FrageAusgabe(BaseModel):
     optionen: list[OptionAusgabe]
 
 
+class KategorieVorschlagAusgabe(BaseModel):
+    wert: str
+    name: str
+
+
+class VersandVorschlagAusgabe(BaseModel):
+    wert: str
+    groesse: str
+    preis: float | None
+
+
 class EntwurfAusgabe(BaseModel):
     titel: str
     beschreibung: str
@@ -165,6 +179,11 @@ class EntwurfAusgabe(BaseModel):
     preis_begruendung: str | None
     sicherheit: str
     fragen: list[FrageAusgabe]
+    #: Gegen den echten Katalog abgeglichene Vorschlaege (AP-4.5). Was hier
+    #: steht, gibt es wirklich - gesetzt wird es trotzdem erst auf Zuruf.
+    kategorie_vorschlaege: list[KategorieVorschlagAusgabe] = []
+    versandgroesse: str | None = None
+    versand_vorschlaege: list[VersandVorschlagAusgabe] = []
 
 
 class KostenAusgabe(BaseModel):
@@ -197,6 +216,15 @@ def _als_ausgabe(e: entwurf_dienst.Entwurf) -> EntwurfAusgabe:
         preis_euro = e.preis_euro,
         preis_begruendung = e.preis_begruendung,
         sicherheit = e.sicherheit,
+        versandgroesse = e.versandgroesse,
+        kategorie_vorschlaege = [
+            KategorieVorschlagAusgabe(wert = k.wert, name = k.name)
+            for k in vorschlag_dienst.kategorie_treffer(e.kategorie)
+        ],
+        versand_vorschlaege = [
+            VersandVorschlagAusgabe(wert = v.wert, groesse = v.groesse, preis = v.preis)
+            for v in vorschlag_dienst.versand_treffer(e.versandgroesse)
+        ],
         fragen = [
             FrageAusgabe(
                 id = f.id, frage = f.frage, feld = f.feld,
@@ -320,14 +348,51 @@ class AnlegenAntwort(BaseModel):
     bilder: int
 
 
+def _pakete_lesen(roh: str | None) -> list[str]:
+    """Liest die gewaehlten Versandpakete und weist Unmoegliches ab.
+
+    Gemischte Groessen laesst Kleinanzeigen nicht zu; der Lauf braeche sonst
+    mitten im Versanddialog ab. Dieselbe Regel wie beim Speichern
+    (`bestand/bearbeiten.versandgroessen_pruefen`), hier nur frueher.
+    """
+    if not roh or not roh.strip():
+        return []
+    try:
+        gewaehlt = json.loads(roh)
+    except ValueError as fehler:
+        raise FachlicherFehler("Die Versandauswahl war unlesbar.", status = 400) from fehler
+    if not isinstance(gewaehlt, list):
+        raise FachlicherFehler("Die Versandauswahl hatte die falsche Form.", status = 400)
+
+    namen = [str(name) for name in gewaehlt if isinstance(name, str) and name.strip()]
+    if not namen:
+        return []
+
+    bekannt = katalog.groesse_je_paket()
+    unbekannt = [name for name in namen if name not in bekannt]
+    if unbekannt:
+        raise FachlicherFehler(
+            f"Unbekanntes Versandpaket: {', '.join(unbekannt)}",
+            status = 422, feld = "versandpakete",
+        )
+    if len({bekannt[name] for name in namen}) > 1:
+        raise FachlicherFehler(
+            bestand_dienst.GEMISCHTE_GROESSEN_MELDUNG, status = 422, feld = "versandpakete",
+        )
+    return namen
+
+
 @router.post("/anlegen", response_model = AnlegenAntwort, status_code = 201)
 async def anzeige_anlegen(
     conn: Verbindung,
     cfg: Konfiguration,
+    *,
     profil: Annotated[str, Form()],
     entwurf_json: Annotated[str, Form()],
     antworten_json: Annotated[str, Form()],
     bilder: Annotated[list[UploadFile], File()],
+    kategorie: Annotated[str | None, Form()] = None,
+    versandpakete_json: Annotated[str | None, Form()] = None,
 ) -> AnlegenAntwort:
     """Legt die Anzeige lokal an. Ohne Anbieter, ohne Kosten, ohne Veroeffentlichen.
 
@@ -352,9 +417,26 @@ async def anzeige_anlegen(
     if not inhalte:
         raise FachlicherFehler("Ohne Bild wird keine Anzeige angelegt.", status = 400, feld = "bilder")
 
-    angelegt = anlegen_dienst.anlegen(
-        wurzel, entwurf_dienst.als_anzeigenfelder(fertig), inhalte,
-    )
+    felder = entwurf_dienst.als_anzeigenfelder(fertig)
+
+    # Kategorie und Versand kommen NUR, wenn der Mensch einen Vorschlag
+    # angeklickt hat. Beide werden gegen den Katalog geprueft, nicht
+    # uebernommen wie geliefert: Der Weg fuehrt zwar ueber unsere eigene
+    # Oberflaeche, aber ein Endpunkt ist eine Schnittstelle und keine
+    # Vertrauensbeziehung.
+    if kategorie:
+        if not any(k.wert == kategorie for k in katalog.kategorien()):
+            raise FachlicherFehler(
+                "Diese Kategorie steht nicht im Katalog.", status = 422, feld = "kategorie",
+            )
+        felder["category"] = kategorie
+
+    pakete = _pakete_lesen(versandpakete_json)
+    if pakete:
+        felder["shipping_type"] = "SHIPPING"
+        felder["shipping_options"] = pakete
+
+    angelegt = anlegen_dienst.anlegen(wurzel, felder, inhalte)
     return AnlegenAntwort(
         datei = angelegt.datei, titel = angelegt.titel, bilder = angelegt.bilder,
     )

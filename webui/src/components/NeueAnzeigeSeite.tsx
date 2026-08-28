@@ -45,6 +45,8 @@ export function NeueAnzeigeSeite() {
   const [entwurf, setEntwurf] = useState<KiEntwurf | null>(null);
   const [kosten, setKosten] = useState<KiKosten | null>(null);
   const [antworten, setAntworten] = useState<Record<string, string>>({});
+  const [kategorie, setKategorie] = useState<string | null>(null);
+  const [versandpakete, setVersandpakete] = useState<string[]>([]);
   const [fehler, setFehler] = useState<string | null>(null);
   const [angelegt, setAngelegt] = useState<string | null>(null);
 
@@ -91,6 +93,8 @@ export function NeueAnzeigeSeite() {
     setEntwurf(null);
     setKosten(null);
     setAntworten({});
+    setKategorie(null);
+    setVersandpakete([]);
     setAngelegt(null);
   };
 
@@ -130,7 +134,9 @@ export function NeueAnzeigeSeite() {
     setFehler(null);
     setStufe({ art: 'anlegen' });
     try {
-      const ergebnis = await api.ki.anlegen(profil, entwurf, antworten, dateien);
+      const ergebnis = await api.ki.anlegen(profil, entwurf, antworten, dateien, {
+        kategorie, versandpakete,
+      });
       setAngelegt(ergebnis.titel);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
@@ -212,6 +218,10 @@ export function NeueAnzeigeSeite() {
           offen={offeneFragen.length}
           gesperrt={stufe.art !== 'ruhe'}
           aufAnlegen={() => void anlegen()}
+          kategorie={kategorie}
+          versandpakete={versandpakete}
+          setKategorie={setKategorie}
+          setVersandpakete={setVersandpakete}
         />
       )}
 
@@ -403,10 +413,15 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
 
 function Ergebnis({
   entwurf, kosten, antworten, aufAntwort, aufZuruecknehmen, offen, gesperrt, aufAnlegen,
+  kategorie, versandpakete, setKategorie, setVersandpakete,
 }: {
   entwurf: KiEntwurf;
   kosten: KiKosten | null;
   antworten: Record<string, string>;
+  kategorie: string | null;
+  versandpakete: string[];
+  setKategorie: (wert: string | null) => void;
+  setVersandpakete: (werte: string[]) => void;
   aufAntwort: (id: string, wert: string) => void;
   aufZuruecknehmen: (id: string) => void;
   offen: number;
@@ -468,6 +483,14 @@ function Ergebnis({
           </div>
         </div>
       )}
+
+      <Vorschlaege
+        entwurf={entwurf}
+        kategorie={kategorie}
+        versandpakete={versandpakete}
+        aufKategorie={setKategorie}
+        aufVersand={setVersandpakete}
+      />
 
       {kosten && (
         <div className="space-y-1 text-xs text-gray-500">
@@ -581,5 +604,101 @@ function Rueckfrage({
         </>
       )}
     </fieldset>
+  );
+}
+
+
+/**
+ * Kategorie- und Versandvorschlag (AP-4.5).
+ *
+ * Angeklickt statt gesetzt: Beide Felder können einen Lauf zum Stehen bringen -
+ * ein falscher Kategoriepfad im Kategoriedialog, ein unpassender Versandweg im
+ * Versanddialog. Was hier steht, ist gegen den echten Katalog abgeglichen und
+ * existiert damit; ob es *stimmt*, weiß nur der Mensch vor dem Bildschirm.
+ */
+function Vorschlaege({
+  entwurf, kategorie, versandpakete, aufKategorie, aufVersand,
+}: {
+  entwurf: KiEntwurf;
+  kategorie: string | null;
+  versandpakete: string[];
+  aufKategorie: (wert: string | null) => void;
+  aufVersand: (werte: string[]) => void;
+}) {
+  const hatKategorien = entwurf.kategorie_vorschlaege.length > 0;
+  const hatVersand = entwurf.versand_vorschlaege.length > 0;
+  if (!hatKategorien && !hatVersand) return null;
+
+  const paketUmschalten = (wert: string) => {
+    aufVersand(versandpakete.includes(wert)
+      ? versandpakete.filter(p => p !== wert)
+      : [...versandpakete, wert]);
+  };
+
+  return (
+    <div className="rounded border border-gray-200 bg-white p-4">
+      <h2 className="mb-1 font-medium text-gray-900">Vorschläge zum Übernehmen</h2>
+      <p className="mb-3 text-xs text-gray-600">
+        Nichts davon wird automatisch gesetzt. Was du hier nicht anklickst, bleibt leer
+        und lässt sich später im Editor nachtragen.
+      </p>
+
+      {hatKategorien && (
+        <fieldset className="mb-4">
+          <legend className="mb-2 text-sm font-medium text-gray-800">Kategorie</legend>
+          <div className="flex flex-wrap gap-2">
+            {entwurf.kategorie_vorschlaege.map(k => (
+              <button
+                key={k.wert}
+                type="button"
+                onClick={() => aufKategorie(kategorie === k.wert ? null : k.wert)}
+                aria-pressed={kategorie === k.wert}
+                className={`rounded border px-3 py-1.5 text-sm ${
+                  kategorie === k.wert
+                    ? 'border-primary-custom bg-blue-50 text-gray-900'
+                    : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                {k.name}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {hatVersand && (
+        <fieldset>
+          <legend className="mb-1 text-sm font-medium text-gray-800">
+            Versand ({entwurf.versand_vorschlaege[0].groesse})
+          </legend>
+          <p className="mb-2 text-xs text-gray-600">
+            Geschätzt nach den Fotos. Miss im Zweifel nach – ein zu kleines Paket fällt
+            erst beim Versenden auf.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {entwurf.versand_vorschlaege.map(v => (
+              <button
+                key={v.wert}
+                type="button"
+                onClick={() => paketUmschalten(v.wert)}
+                aria-pressed={versandpakete.includes(v.wert)}
+                className={`rounded border px-3 py-1.5 text-sm ${
+                  versandpakete.includes(v.wert)
+                    ? 'border-primary-custom bg-blue-50 text-gray-900'
+                    : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                {v.wert.replace(/_/g, ' ')}
+                {v.preis !== null && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    {v.preis.toFixed(2).replace('.', ',')} €
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+    </div>
   );
 }

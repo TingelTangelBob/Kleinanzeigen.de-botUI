@@ -173,6 +173,17 @@ export interface KiFrage {
   optionen: KiOption[];
 }
 
+export interface KiKategorieVorschlag {
+  wert: string;
+  name: string;
+}
+
+export interface KiVersandVorschlag {
+  wert: string;
+  groesse: string;
+  preis: number | null;
+}
+
 export interface KiEntwurf {
   titel: string;
   beschreibung: string;
@@ -183,6 +194,10 @@ export interface KiEntwurf {
   preis_begruendung: string | null;
   sicherheit: 'hoch' | 'mittel' | 'niedrig';
   fragen: KiFrage[];
+  /** Gegen den echten Katalog abgeglichen (AP-4.5) - was hier steht, gibt es. */
+  kategorie_vorschlaege: KiKategorieVorschlag[];
+  versandgroesse: string | null;
+  versand_vorschlaege: KiVersandVorschlag[];
 }
 
 export interface KiKosten {

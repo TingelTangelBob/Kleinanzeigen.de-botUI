@@ -231,11 +231,22 @@ export const api = {
       }),
 
     /** Legt die Anzeige lokal an. Kein Anbieteraufruf, keine Kosten. */
-    anlegen: (profil: string, entwurf: unknown, antworten: Record<string, string>, dateien: File[]) => {
+    anlegen: (
+      profil: string,
+      entwurf: unknown,
+      antworten: Record<string, string>,
+      dateien: File[],
+      wahl: { kategorie?: string | null; versandpakete?: string[] } = {},
+    ) => {
       const daten = new FormData();
       daten.append('profil', profil);
       daten.append('entwurf_json', JSON.stringify(entwurf));
       daten.append('antworten_json', JSON.stringify(antworten));
+      // Nur mitschicken, was der Mensch angeklickt hat (AP-4.5/4.6).
+      if (wahl.kategorie) daten.append('kategorie', wahl.kategorie);
+      if (wahl.versandpakete?.length) {
+        daten.append('versandpakete_json', JSON.stringify(wahl.versandpakete));
+      }
       dateien.forEach(datei => daten.append('bilder', datei));
       return anfrage<KiAnlegenAntwort>('/ki/anlegen', { method: 'POST', body: daten });
     },

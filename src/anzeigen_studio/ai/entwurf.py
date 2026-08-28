@@ -64,6 +64,12 @@ PRIVATVERKAUF_HINWEIS: Final[str] = (
     "Privatverkauf, daher keine Garantie, Gewährleistung und Rücknahme."
 )
 
+#: Groessenstufen, die das Modell schaetzen darf (AP-4.5). Steht hier als
+#: Kopie und nicht als Import aus `vorschlag.py`, weil dieses Modul sonst
+#: den Katalog des Bots mitziehen wuerde - `entwurf.py` soll ohne ihn
+#: benutzbar bleiben. Die Tests halten beide Listen gleich.
+_GROESSEN: Final[tuple[str, ...]] = ("klein", "mittel", "gross", "sperrgut")
+
 #: Felder, auf die sich eine Rueckfrage beziehen darf.
 _FELDER: Final[frozenset[str]] = frozenset({"titel", "beschreibung", "zustand", "preis"})
 
@@ -115,7 +121,7 @@ def schema() -> dict[str, Any]:
         "additionalProperties": False,
         "required": [
             "titel", "beschreibung", "zustand", "kategorie",
-            "preis_euro", "preis_begruendung", "sicherheit", "fragen",
+            "preis_euro", "preis_begruendung", "versandgroesse", "sicherheit", "fragen",
         ],
         "properties": {
             "titel": {"type": "string", "description": f"hoechstens {TITEL_MAX} Zeichen"},
@@ -134,6 +140,15 @@ def schema() -> dict[str, Any]:
                 "description": "realistischer Gebrauchtpreis in Euro, null wenn nicht schaetzbar",
             },
             "preis_begruendung": {"type": ["string", "null"], "description": "ein Satz, woraus sich der Preis ergibt"},
+            "versandgroesse": {
+                "type": ["string", "null"],
+                "enum": [*_GROESSEN, None],
+                "description": (
+                    "geschaetzte Paketgroesse: klein (bis Schuhkarton), mittel (bis Umzugskarton), "
+                    "gross (groesser, aber noch versendbar), sperrgut (Moebel und aehnliches, "
+                    "wird abgeholt). null, wenn nicht abschaetzbar."
+                ),
+            },
             "sicherheit": {"type": "string", "enum": ["hoch", "mittel", "niedrig"]},
             "fragen": {"type": "array", "items": frage},
         },
@@ -226,7 +241,10 @@ class Entwurf:
     kategorie: str | None
     preis_euro: float | None
     preis_begruendung: str | None
-    sicherheit: str
+    #: Geschaetzte Paketgroesse (AP-4.5). Nur Grundlage fuer einen Vorschlag -
+    #: gesetzt wird der Versandweg nie automatisch.
+    versandgroesse: str | None = None
+    sicherheit: str = "niedrig"
     fragen: list[Frage] = field(default_factory = list)
 
 
@@ -268,6 +286,10 @@ def aus_antwort(daten: dict[str, Any]) -> Entwurf:
     if platzhalter_entfernt:
         fragen = _massefrage_ergaenzen(fragen)
 
+    groesse = daten.get("versandgroesse")
+    if groesse not in _GROESSEN:
+        groesse = None
+
     return Entwurf(
         titel = _text(daten, "titel", hoechstens = TITEL_MAX),
         beschreibung = _mit_privatverkauf_hinweis(beschreibung),
@@ -275,6 +297,7 @@ def aus_antwort(daten: dict[str, Any]) -> Entwurf:
         kategorie = (daten.get("kategorie") or None),
         preis_euro = preis,
         preis_begruendung = (daten.get("preis_begruendung") or None),
+        versandgroesse = groesse,
         sicherheit = sicherheit,
         fragen = fragen,
     )
@@ -466,6 +489,7 @@ def anwenden(entwurf: Entwurf, antworten: dict[str, str]) -> Entwurf:
         kategorie = entwurf.kategorie,
         preis_euro = preis,
         preis_begruendung = entwurf.preis_begruendung,
+        versandgroesse = entwurf.versandgroesse,
         sicherheit = entwurf.sicherheit,
         fragen = entwurf.fragen,
     )

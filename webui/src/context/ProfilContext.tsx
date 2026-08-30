@@ -12,9 +12,10 @@
 // will nicht nach jedem Laden wieder umschalten.
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api } from '../services/api';
+import { api, ApiFehler } from '../services/api';
 import type { Profil } from '../types';
 import { ProfilKontext, type ProfilWert } from './profilKontext';
+import { useAuth } from './useAuth';
 
 const SCHLUESSEL = 'anzeigen-studio-profil';
 
@@ -24,11 +25,24 @@ function gemerktesProfil(): string | null {
 }
 
 export function ProfilProvider({ children }: { children: ReactNode }) {
+  // Der Abruf hängt am Anmeldezustand. Vorher lud dieser Provider EINMAL beim
+  // Einhängen - und das war vor der Anmeldung, weil er die Anmeldeseite mit
+  // umschließt. `/api/profile` antwortete mit 401, die Liste blieb leer, und
+  // danach fragte niemand mehr nach. Wer sich anmeldete, sah deshalb „Noch
+  // kein Profil angelegt", obwohl das Profil existierte; erst ein
+  // vollständiges Neuladen der Seite half. Ein Hash-Wechsel nicht - die
+  // Anwendung wird dabei nicht neu gestartet.
+  const { status } = useAuth();
+  const angemeldet = status?.angemeldet ?? false;
+
   const [profile, setProfile] = useState<Profil[]>([]);
   const [slug, setSlug] = useState<string | null>(gemerktesProfil);
   const [laedt, setLaedt] = useState(true);
+  const [fehler, setFehler] = useState<string | null>(null);
 
   const neuLaden = useCallback(async () => {
+    setLaedt(true);
+    setFehler(null);
     try {
       const liste = await api.profile.liste();
       setProfile(liste);
@@ -38,14 +52,31 @@ export function ProfilProvider({ children }: { children: ReactNode }) {
         if (vorher && liste.some(p => p.slug === vorher)) return vorher;
         return liste[0]?.slug ?? null;
       });
+    } catch (ursache) {
+      // Ein fehlgeschlagener Abruf ist KEIN leerer Bestand. Genau diese
+      // Gleichsetzung war der sichtbare Teil des Fehlers: Der 401 kam als
+      // „du hast noch kein Profil" auf den Bildschirm - eine Störung, die
+      // aussah wie ein gültiger Zustand, und deshalb niemanden alarmierte.
+      setProfile([]);
+      setFehler(ursache instanceof ApiFehler
+        ? ursache.message
+        : 'Die Profile ließen sich nicht laden.');
     } finally {
       setLaedt(false);
     }
   }, []);
 
   useEffect(() => {
+    if (!angemeldet) {
+      // Abgemeldet wird die Liste geleert, nicht bloß nicht neu geholt: Sonst
+      // stünden nach dem Abmelden die Profile des vorigen Benutzers noch da.
+      setProfile([]);
+      setFehler(null);
+      setLaedt(false);
+      return;
+    }
     void neuLaden();
-  }, [neuLaden]);
+  }, [angemeldet, neuLaden]);
 
   useEffect(() => {
     if (slug) window.localStorage.setItem(SCHLUESSEL, slug);
@@ -55,9 +86,10 @@ export function ProfilProvider({ children }: { children: ReactNode }) {
     profile,
     aktiv: profile.find(p => p.slug === slug) ?? null,
     laedt,
+    fehler,
     waehlen: setSlug,
     neuLaden,
-  }), [profile, slug, laedt, neuLaden]);
+  }), [profile, slug, laedt, fehler, neuLaden]);
 
   return <ProfilKontext.Provider value={wert}>{children}</ProfilKontext.Provider>;
 }

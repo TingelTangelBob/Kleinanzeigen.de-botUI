@@ -42,7 +42,7 @@ function Kachel({ zahl, label, betont }: { zahl: number; label: string; betont?:
 }
 
 export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void }) {
-  const { aktiv, laedt: profileLaden } = useProfil();
+  const { aktiv, laedt: profileLaden, fehler: profilFehler, neuLaden: profileNeuLaden } = useProfil();
   const [anzeigen, setAnzeigen] = useState<BestandsAnzeige[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [zugang, setZugang] = useState<ZugangStatus | null>(null);
@@ -70,6 +70,26 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
   }, [laden]);
 
   if (profileLaden) return <p className="text-sm text-gray-500">Wird geladen …</p>;
+
+  // Eine Störung darf nicht als „noch kein Profil" erscheinen. Das sah aus wie
+  // ein gültiger Zustand und verschwieg, dass ein Abruf fehlgeschlagen war.
+  if (profilFehler) {
+    return (
+      <div className="mx-auto max-w-4xl">
+        <h1 className="mb-4 text-2xl font-bold text-gray-900">Übersicht</h1>
+        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Die Profile ließen sich nicht laden: {profilFehler}
+        </p>
+        <button
+          type="button"
+          onClick={() => void profileNeuLaden()}
+          className="mt-3 rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Erneut versuchen
+        </button>
+      </div>
+    );
+  }
 
   if (!aktiv) {
     return (

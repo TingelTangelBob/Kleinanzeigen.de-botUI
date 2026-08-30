@@ -12,6 +12,12 @@ export interface ProfilWert {
   /** Das gerade gewählte Profil, oder null solange keins existiert. */
   aktiv: Profil | null;
   laedt: boolean;
+  /**
+   * Warum die Liste leer ist, falls sie es wegen einer Störung ist. Getrennt
+   * von `profile.length === 0`, weil beides sonst gleich aussieht - und ein
+   * Fehler, der wie ein gültiger Leerzustand aussieht, wird nicht gemeldet.
+   */
+  fehler: string | null;
   waehlen: (slug: string) => void;
   neuLaden: () => Promise<void>;
 }

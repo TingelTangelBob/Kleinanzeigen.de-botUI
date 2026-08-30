@@ -16,6 +16,7 @@ import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { NachladenDialog } from './NachladenDialog';
+import { VorlagenListe } from './VorlagenListe';
 
 type Filter = 'alle' | 'faellig' | 'geaendert' | 'auffaellig' | 'inaktiv';
 
@@ -150,6 +151,18 @@ export function BestandSeite() {
       {fehler && (
         <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{fehler}</p>
       )}
+
+      {/* Über den Anzeigen, weil eine Vorlage der Anfang einer Anzeige ist -
+          und weil der Abschnitt verschwindet, sobald es keine gibt. */}
+      <VorlagenListe
+        profil={aktiv.slug}
+        aufAngewendet={datei => {
+          // Direkt in die neue Anzeige: Titel und Preis stimmen noch nicht,
+          // genau wie beim Duplizieren.
+          void laden();
+          setBearbeitet(datei);
+        }}
+      />
 
       <div className="mb-4 space-y-3">
         <label className="relative block">

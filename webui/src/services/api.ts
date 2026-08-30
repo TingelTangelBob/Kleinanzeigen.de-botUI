@@ -9,7 +9,7 @@
 import type {
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, Kategorie, LogZeile,
   KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
-  Profil, SpeichernAusgabe, Vergleich, Versandpaket, ZugangStatus,
+  Profil, SpeichernAusgabe, Vergleich, Versandpaket, Vorlage, ZugangStatus,
 } from '../types';
 
 /** Fehler mit der deutschen Meldung des Backends. */
@@ -142,6 +142,28 @@ export const api = {
       anfrage<BestandsAnzeige>(`/bestand/duplizieren?profil=${encodeURIComponent(profil)}`, {
         method: 'POST', ...json({ datei }),
       }),
+
+    /** Alle Vorlagen des Profils (AP-3.3). Eigene Liste, kein Teil des Bestands. */
+    vorlagen: (profil: string) =>
+      anfrage<Vorlage[]>(`/bestand/vorlagen?profil=${encodeURIComponent(profil)}`),
+
+    /** Macht aus einer Anzeige eine Vorlage. Die Anzeige bleibt, wie sie ist. */
+    alsVorlage: (profil: string, datei: string) =>
+      anfrage<Vorlage>(`/bestand/vorlagen?profil=${encodeURIComponent(profil)}`, {
+        method: 'POST', ...json({ datei }),
+      }),
+
+    /** Erzeugt aus einer Vorlage eine neue Anzeige. Die Vorlage bleibt liegen. */
+    vorlageAnwenden: (profil: string, datei: string) =>
+      anfrage<BestandsAnzeige>(`/bestand/vorlagen/anwenden?profil=${encodeURIComponent(profil)}`, {
+        method: 'POST', ...json({ datei }),
+      }),
+
+    vorlageEntfernen: (profil: string, datei: string) =>
+      anfrage<void>(
+        `/bestand/vorlagen?profil=${encodeURIComponent(profil)}&datei=${encodeURIComponent(datei)}`,
+        { method: 'DELETE' },
+      ),
 
     /** Liest Anzeigennummern aus eingefügtem Text - ohne etwas zu tun (AP-3.7). */
     linksLesen: (profil: string, text: string) =>

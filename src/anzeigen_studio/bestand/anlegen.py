@@ -100,16 +100,26 @@ def _freier_ordner(ads: Path, stamm: str) -> Path:
     )
 
 
-def anlegen(
+def schreiben(
     profil_wurzel: Path,
     felder: dict[str, Any],
     bilder: list[bytes],
-) -> BestandsAnzeige:
-    """Schreibt eine neue Anzeigendatei samt Bildern und gibt sie zurueck.
+    *,
+    unterordner: str = "ads",
+    praefix: str = "ad",
+) -> str:
+    """Schreibt eine Anzeigendatei samt Bildern und gibt ihren relativen Pfad.
 
     `felder` sind bereits geprueft (Titel, Beschreibung, ggf. Preis und
     Zustand). Was hier dazukommt, ist das Geruest, das jede Anzeigendatei
     braucht.
+
+    `unterordner` und `praefix` gibt es wegen der Vorlagen (AP-3.3). Eine
+    Vorlage ist dateiformatgleich zu einer Anzeige - deshalb schreibt sie
+    dieselbe Funktion -, darf aber vom Bot nicht gefunden werden. Sie landet
+    unter `vorlagen/` und heisst `vorlage_*`. Beides einzeln reicht schon:
+    Der Bot sucht unter `./ads/**/ad_*.{yaml,yml,json}`. Zusammen ueberlebt
+    die Trennung auch, dass jemand den Ordner spaeter woanders hin kopiert.
     """
     titel = str(felder.get("title") or "").strip()
     if not titel:
@@ -120,12 +130,12 @@ def anlegen(
         )
 
     stamm = kurzname(titel)
-    ordner = _freier_ordner(profil_wurzel / "ads", stamm)
+    ordner = _freier_ordner(profil_wurzel / unterordner, stamm)
     ordner.mkdir(parents = True)
 
     bildnamen: list[str] = []
     for nummer, inhalt in enumerate(bilder, start = 1):
-        name = f"ad_{ordner.name}__img{nummer}{_endung(inhalt)}"
+        name = f"{praefix}_{ordner.name}__img{nummer}{_endung(inhalt)}"
         (ordner / name).write_bytes(inhalt)
         bildnamen.append(name)
 
@@ -154,7 +164,7 @@ def anlegen(
     ):
         daten.setdefault(schluessel, vorgabe)
 
-    pfad = ordner / f"ad_{ordner.name}.yaml"
+    pfad = ordner / f"{praefix}_{ordner.name}.yaml"
     yaml = YAML()
     yaml.default_flow_style = False
     yaml.allow_unicode = True
@@ -163,7 +173,20 @@ def anlegen(
         yaml.dump(daten, datei)
 
     relativ = pfad.relative_to(profil_wurzel).as_posix()
-    LOG.info("Neue Anzeige angelegt: %s (%d Bilder)", relativ, len(bildnamen))
+    LOG.info("Datei angelegt: %s (%d Bilder)", relativ, len(bildnamen))
+    return relativ
+
+
+def anlegen(
+    profil_wurzel: Path,
+    felder: dict[str, Any],
+    bilder: list[bytes],
+) -> BestandsAnzeige:
+    """Legt eine neue Anzeige unter `ads/` an und gibt sie zurueck.
+
+    Der Ordner ist `ads/`, nicht `downloaded-ads/` - siehe Kopfkommentar.
+    """
+    relativ = schreiben(profil_wurzel, felder, bilder)
 
     for anzeige in bestand_lesen(profil_wurzel):
         if anzeige.datei == relativ:
@@ -204,6 +227,23 @@ def duplizieren(profil_wurzel: Path, datei: str) -> BestandsAnzeige:
 
     Die Kopie landet wie jeder Entwurf unter `ads/` und ohne Anzeigennummer.
     """
+    felder, bilder, titel = kopierbares_lesen(profil_wurzel, datei)
+    felder["title"] = (titel + KOPIE_ZUSATZ)[:_TITEL_MAX]
+
+    LOG.info("Anzeige %s wird dupliziert (%d Bilder)", datei, len(bilder))
+    return anlegen(profil_wurzel, felder, bilder)
+
+
+def kopierbares_lesen(
+    profil_wurzel: Path, datei: str,
+) -> tuple[dict[str, Any], list[bytes], str]:
+    """Liest aus einer vorhandenen Datei, was in eine Kopie gehoert.
+
+    Gibt Felder, Bildinhalte und den Titel zurueck - ohne alles, was die
+    Anzeige auf der Plattform beschreibt statt den Gegenstand. Gemeinsame
+    Grundlage von `duplizieren` und der Vorlagen (AP-3.3): Beide sind
+    "aus dieser Datei wird eine neue", sie unterscheiden sich nur im Ziel.
+    """
     daten = rohdaten_lesen(profil_wurzel, datei)
 
     titel = str(daten.get("title") or "").strip()
@@ -226,7 +266,4 @@ def duplizieren(profil_wurzel: Path, datei: str) -> BestandsAnzeige:
         if schluessel not in _NICHT_KOPIEREN and schluessel != "images"
     }
     felder.update(_ZURUECKSETZEN)
-    felder["title"] = (titel + KOPIE_ZUSATZ)[:_TITEL_MAX]
-
-    LOG.info("Anzeige %s wird dupliziert (%d Bilder)", datei, len(bilder))
-    return anlegen(profil_wurzel, felder, bilder)
+    return felder, bilder, titel

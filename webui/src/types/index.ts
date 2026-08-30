@@ -234,3 +234,19 @@ export interface KiAnlegenAntwort {
   titel: string;
   bilder: number;
 }
+
+
+/**
+ * Eine Vorlage (AP-3.3). Bewusst KEINE `BestandsAnzeige`: Sie hat weder
+ * Anzeigennummer noch Fälligkeit noch Versandangaben, weil sie nie online
+ * geht. Ein gemeinsamer Typ würde genau das verwischen.
+ */
+export interface Vorlage {
+  datei: string;
+  ordner: string;
+  titel: string;
+  bilder: number;
+  vorschaubild: string | null;
+  erstellt_am: string | null;
+  unlesbar: string | null;
+}

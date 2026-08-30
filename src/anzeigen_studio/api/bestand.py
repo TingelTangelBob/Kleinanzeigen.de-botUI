@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from anzeigen_studio import bestand as bestand_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.bestand import stand as stand_dienst
+from anzeigen_studio.bestand import vorlagen as vorlagen_dienst
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
@@ -461,6 +462,75 @@ def duplizieren(
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
     return _ausgabe(anlegen_dienst.duplizieren(wurzel, daten.datei))
+
+
+class VorlageAusgabe(BaseModel):
+    datei: str
+    ordner: str
+    titel: str
+    bilder: int
+    vorschaubild: str | None
+    erstellt_am: str | None
+    unlesbar: str | None
+
+
+def _vorlage_ausgabe(v: bestand_dienst.Vorlage) -> VorlageAusgabe:
+    return VorlageAusgabe(
+        datei = v.datei, ordner = v.ordner, titel = v.titel, bilder = v.bilder,
+        vorschaubild = v.vorschaubild, erstellt_am = v.erstellt_am, unlesbar = v.unlesbar,
+    )
+
+
+class VorlageEingabe(BaseModel):
+    datei: str = Field(max_length = 400)
+
+
+@router.get("/vorlagen", response_model = list[VorlageAusgabe])
+def vorlagen_auflisten(
+    profil: str, conn: Verbindung, cfg: Konfiguration,
+) -> list[VorlageAusgabe]:
+    """Alle Vorlagen eines Profils (AP-3.3).
+
+    Eigene Liste, nicht Teil des Bestands: Eine Vorlage ist keine Anzeige und
+    hat auf der Plattform nichts verloren.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return [_vorlage_ausgabe(v) for v in vorlagen_dienst.lesen(wurzel)]
+
+
+@router.post("/vorlagen", response_model = VorlageAusgabe, status_code = 201)
+def vorlage_anlegen(
+    profil: str, daten: VorlageEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> VorlageAusgabe:
+    """Macht aus einer vorhandenen Anzeige eine Vorlage (AP-3.3).
+
+    Die Anzeige bleibt, wie sie ist. Kopiert wird, nicht markiert - eine
+    Markierung laege weiter unter `ads/`, wo der Bot sie faende.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return _vorlage_ausgabe(vorlagen_dienst.aus_anzeige(wurzel, daten.datei))
+
+
+@router.post("/vorlagen/anwenden", response_model = AnzeigeAusgabe, status_code = 201)
+def vorlage_anwenden(
+    profil: str, daten: VorlageEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> AnzeigeAusgabe:
+    """Erzeugt aus einer Vorlage eine neue Anzeige (AP-3.3).
+
+    Nur lokal, ohne Anzeigennummer. Die Vorlage bleibt liegen und laesst sich
+    erneut anwenden - sie wird benutzt, nicht verbraucht.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return _ausgabe(vorlagen_dienst.anwenden(wurzel, daten.datei))
+
+
+@router.delete("/vorlagen", status_code = 204)
+def vorlage_entfernen(
+    profil: str, datei: str, conn: Verbindung, cfg: Konfiguration,
+) -> None:
+    """Loescht eine Vorlage samt Bildern. Anzeigen bleiben unberuehrt."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    vorlagen_dienst.entfernen(wurzel, datei)
 
 
 @router.post("/links-lesen", response_model = LinksAusgabe)

@@ -14,7 +14,7 @@
 // Veröffentlichen im Weg steht.
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowUpFromLine, Check, Copy, Info, Save } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, Copy, Info, Save } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
 import { BilderVerwaltung } from './BilderVerwaltung';
@@ -74,6 +74,8 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
   const [schmutzig, setSchmutzig] = useState(false);
   const [fragtHochladen, setFragtHochladen] = useState(false);
   const [dupliziert, setDupliziert] = useState(false);
+  const [wirdVorlage, setWirdVorlage] = useState(false);
+  const [vorlageAngelegt, setVorlageAngelegt] = useState(false);
   const [laedtHoch, setLaedtHoch] = useState(false);
   const [eingereiht, setEingereiht] = useState<number | null>(null);
 
@@ -167,6 +169,25 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
       setDupliziert(false);
+    }
+  };
+
+  // Wie beim Duplizieren wird der GESPEICHERTE Stand genommen, nicht der im
+  // Formular - deshalb dieselbe Sperre bei ungespeicherten Aenderungen.
+  //
+  // Anders als beim Duplizieren wird hier NICHT gewechselt: Eine Vorlage ist
+  // nichts, was man anschliessend bearbeitet, sondern etwas, das man spaeter
+  // anwendet. Die Anzeige bleibt offen, ein Hinweis bestaetigt den Vorgang.
+  const alsVorlage = async () => {
+    if (!profil) return;
+    setWirdVorlage(true);
+    try {
+      await api.bestand.alsVorlage(profil, datei);
+      setVorlageAngelegt(true);
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setWirdVorlage(false);
     }
   };
 
@@ -469,7 +490,12 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
           Länge sonst zu weit weg von dem, was man gerade getippt hat. */}
       <div className="safe-unten fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-3xl items-center justify-end gap-3">
-          {gespeichert && !schmutzig && (
+          {vorlageAngelegt && (
+            <span className="flex items-center gap-1 text-sm text-gray-600">
+              <Check className="h-4 w-4" aria-hidden /> Als Vorlage gesichert
+            </span>
+          )}
+          {gespeichert && !schmutzig && !vorlageAngelegt && (
             <span className="flex items-center gap-1 text-sm text-gray-600">
               <Check className="h-4 w-4" aria-hidden /> Gespeichert
             </span>
@@ -486,6 +512,20 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
           >
             <Copy className="h-4 w-4" aria-hidden />
             {dupliziert ? 'Wird kopiert …' : 'Duplizieren'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void alsVorlage()}
+            disabled={speichert || wirdVorlage || schmutzig}
+            title={schmutzig
+              ? 'Erst speichern - übernommen wird der gespeicherte Stand.'
+              : 'Legt eine Vorlage an. Sie geht nie online und lässt sich beliebig oft anwenden.'}
+            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
+                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <BookmarkPlus className="h-4 w-4" aria-hidden />
+            {wirdVorlage ? 'Wird angelegt …' : 'Als Vorlage'}
           </button>
 
           <button

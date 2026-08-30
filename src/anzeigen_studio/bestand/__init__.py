@@ -26,6 +26,7 @@ from anzeigen_studio.bestand.lesen import (
     lokal_geaenderte,
 )
 from anzeigen_studio.bestand.links import Fund, nummern_lesen
+from anzeigen_studio.bestand.vorlagen import Vorlage
 
 __all__ = [
     "AENDERBAR",
@@ -34,6 +35,7 @@ __all__ = [
     "MAX_BYTES",
     "BestandsAnzeige",
     "Fund",
+    "Vorlage",
     "bestand_lesen",
     "bild_entfernen",
     "bild_hinzufuegen",

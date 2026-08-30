@@ -184,14 +184,25 @@ export interface KiVersandVorschlag {
   preis: number | null;
 }
 
+export interface KiEigenerPreis {
+  titel: string;
+  preis: number;
+}
+
 export interface KiEntwurf {
   titel: string;
   beschreibung: string;
   zustand: string | null;
   zustand_text: string | null;
   kategorie: string | null;
-  preis_euro: number | null;
+  /** Grobe Schätzung als Spanne (AP-4.5) - keine Marktrecherche. */
+  preis_von_euro: number | null;
+  preis_bis_euro: number | null;
   preis_begruendung: string | null;
+  /** Nur gefüllt, wenn ein Mensch die Zahl bestätigt hat. */
+  preis_euro: number | null;
+  /** Eigene frühere Preise für Ähnliches - der einzige belastbare Anker. */
+  eigene_preise: KiEigenerPreis[];
   sicherheit: 'hoch' | 'mittel' | 'niedrig';
   fragen: KiFrage[];
   /** Gegen den echten Katalog abgeglichen (AP-4.5) - was hier steht, gibt es. */

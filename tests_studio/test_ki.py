@@ -105,7 +105,8 @@ def _antwort(**abweichungen: Any) -> dict[str, Any]:
         "beschreibung": "Akkuschrauber mit Ladegerät. Gebrauchsspuren am Gehäuse.",
         "zustand": "gut",
         "kategorie": "Heimwerken > Werkzeug",
-        "preis_euro": 35.0,
+        "preis_von_euro": 30.0,
+        "preis_bis_euro": 45.0,
         "preis_begruendung": "Vergleichbare Geräte liegen bei 30 bis 45 Euro.",
         "sicherheit": "hoch",
         "fragen": [],
@@ -118,7 +119,18 @@ def test_entwurf_wird_gelesen() -> None:
     e = entwurf_dienst.aus_antwort(_antwort())
     assert e.titel.startswith("Bosch")
     assert e.zustand == "gut"
-    assert e.preis_euro == 35.0
+    assert (e.preis_von_euro, e.preis_bis_euro) == (30.0, 45.0)
+
+
+def test_die_schaetzung_ist_kein_preis() -> None:
+    """Der Kern von AP-4.5: Was das Modell raet, ist noch keine Angabe.
+
+    `preis_euro` bleibt leer, bis ein Mensch eine Zahl bestaetigt. Vorher stand
+    dort der geratene Wert - und landete ungefragt in der Anzeigendatei.
+    """
+    e = entwurf_dienst.aus_antwort(_antwort())
+    assert e.preis_euro is None
+    assert "price" not in entwurf_dienst.als_anzeigenfelder(e)
 
 
 def test_unbekannte_zustandsstufe_wird_verworfen_statt_uebernommen() -> None:
@@ -128,11 +140,25 @@ def test_unbekannte_zustandsstufe_wird_verworfen_statt_uebernommen() -> None:
 
 def test_wahrheitswert_ist_kein_preis() -> None:
     """`isinstance(True, int)` ist wahr - ohne Sonderbehandlung waere das 1 Euro."""
-    assert entwurf_dienst.aus_antwort(_antwort(preis_euro = True)).preis_euro is None
+    e = entwurf_dienst.aus_antwort(_antwort(preis_von_euro = True, preis_bis_euro = True))
+    assert (e.preis_von_euro, e.preis_bis_euro) == (None, None)
 
 
 def test_negativer_preis_wird_verworfen() -> None:
-    assert entwurf_dienst.aus_antwort(_antwort(preis_euro = -5)).preis_euro is None
+    e = entwurf_dienst.aus_antwort(_antwort(preis_von_euro = -5, preis_bis_euro = -1))
+    assert (e.preis_von_euro, e.preis_bis_euro) == (None, None)
+
+
+def test_halbe_spanne_wird_ganz_verworfen() -> None:
+    """Eine einzelne Grenze waere wieder der Punktwert, den AP-4.5 abschafft."""
+    e = entwurf_dienst.aus_antwort(_antwort(preis_bis_euro = None))
+    assert (e.preis_von_euro, e.preis_bis_euro) == (None, None)
+
+
+def test_vertauschte_grenzen_werden_gedreht_statt_verworfen() -> None:
+    """Ein Fluechtigkeitsfehler des Modells - die Spanne selbst bleibt gueltig."""
+    e = entwurf_dienst.aus_antwort(_antwort(preis_von_euro = 45.0, preis_bis_euro = 30.0))
+    assert (e.preis_von_euro, e.preis_bis_euro) == (30.0, 45.0)
 
 
 def test_zu_langer_titel_wird_gekuerzt() -> None:
@@ -223,7 +249,8 @@ def test_frage_mit_unbekanntem_feld_faellt_weg() -> None:
 # ------------------------------------------------------- Antworten anwenden
 
 def _mit_fragen() -> entwurf_dienst.Entwurf:
-    return entwurf_dienst.aus_antwort(_antwort(zustand = None, preis_euro = None, fragen = [
+    return entwurf_dienst.aus_antwort(_antwort(
+        zustand = None, preis_von_euro = None, preis_bis_euro = None, fragen = [
         {"id": "funktion", "frage": "Funktioniert das Gerät?", "feld": "beschreibung",
          "freitext_erlaubt": False,
          "optionen": [{"text": "Ja", "wert": "Das Gerät funktioniert einwandfrei."}]},
@@ -233,7 +260,8 @@ def _mit_fragen() -> entwurf_dienst.Entwurf:
         {"id": "preis", "frage": "Welcher Preis?", "feld": "preis",
          "freitext_erlaubt": True,
          "optionen": [{"text": "35 Euro", "wert": "35"}]},
-    ]))
+        ],
+    ))
 
 
 def test_antworten_werden_ohne_zweiten_aufruf_eingesetzt() -> None:
@@ -246,6 +274,18 @@ def test_antworten_werden_ohne_zweiten_aufruf_eingesetzt() -> None:
     assert "funktioniert einwandfrei" in fertig.beschreibung
     assert fertig.zustand == "gut"
     assert fertig.preis_euro == 42.50
+
+
+def test_ein_beantworteter_preis_erreicht_die_anzeige() -> None:
+    """Die Gegenprobe zu `test_die_schaetzung_ist_kein_preis`.
+
+    Die Schranke sitzt zwischen Schaetzung und Angabe, nicht vor dem Preisfeld
+    ueberhaupt: Was ein Mensch beantwortet hat, wird gesetzt.
+    """
+    fertig = entwurf_dienst.anwenden(_mit_fragen(), {"preis": "42,50 €"})
+    felder = entwurf_dienst.als_anzeigenfelder(fertig)
+    assert felder["price"] == 42.50
+    assert felder["price_type"] == "NEGOTIABLE"
 
 
 def test_unbekannte_kennung_wird_uebergangen() -> None:

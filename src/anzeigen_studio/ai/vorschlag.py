@@ -23,9 +23,14 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from anzeigen_studio.katalog import daten as katalog
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from anzeigen_studio.bestand.lesen import BestandsAnzeige
 
 #: Wie viele Kategorievorschlaege hoechstens angeboten werden. Drei ist die
 #: Zahl, bei der eine Auswahl noch schneller ist als ein Suchfeld.
@@ -64,11 +69,31 @@ GROESSE_ZU_GRUPPE: Final[dict[str, str]] = {
 GROESSEN: Final[tuple[str, ...]] = ("klein", "mittel", "gross", "sperrgut")
 
 
+#: Wie viele eigene Vergleichspreise hoechstens gezeigt werden. Mehr als drei
+#: sind keine Orientierung mehr, sondern eine Tabelle.
+MAX_EIGENE_PREISE: Final[int] = 3
+
+#: Fuer Titel gilt eine hoehere Schwelle als fuer Kategorien. Ein Kategoriepfad
+#: ist kurz und beschreibend, ein Anzeigentitel enthaelt Marke, Modell und
+#: Zustand - zufaellige Ueberschneidungen sind dort viel wahrscheinlicher.
+#: "Schreibtisch Eiche" und "Schreibtischlampe schwarz" teilen sonst ein Wort
+#: und gaelten als vergleichbar.
+_MINDESTGUETE_TITEL: Final[float] = 0.45
+
+
 @dataclass(frozen = True, slots = True)
 class KategorieVorschlag:
     wert: str
     name: str
     guete: float
+
+
+@dataclass(frozen = True, slots = True)
+class EigenerPreis:
+    """Was der Nutzer selbst einmal fuer etwas Aehnliches verlangt hat."""
+
+    titel: str
+    preis: float
 
 
 @dataclass(frozen = True, slots = True)
@@ -133,6 +158,51 @@ def kategorie_treffer(vorschlag: str | None) -> list[KategorieVorschlag]:
 
     bewertet.sort(key = lambda k: (-k.guete, k.name))
     return bewertet[:MAX_KATEGORIEN]
+
+
+def eigene_preise(titel: str | None, anzeigen: Iterable[BestandsAnzeige]) -> list[EigenerPreis]:
+    """Sucht im eigenen Bestand Anzeigen, die zum Titel passen, und nennt deren Preise.
+
+    Das ist der einzige belastbare Preisanker, den dieses Programm hat. Die
+    Spanne des Modells ist geraten; diese Zahlen hat der Nutzer selbst gesetzt,
+    fuer einen Gegenstand, den er kannte, auf demselben Marktplatz.
+
+    NUR ANZEIGEN MIT ANZEIGENNUMMER. Ohne `id` stand die Anzeige nie auf der
+    Plattform - sie kann ein Entwurf aus genau diesem Modul sein. Sonst
+    entstuende dieselbe Rueckkopplung, die schon dem Stilprofil gefaehrlich
+    war (siehe `ai/stil.py`): Das Programm zoege seine eigenen Schaetzungen als
+    Beleg fuer die naechste Schaetzung heran.
+
+    Eine Preisabfrage bei kleinanzeigen.de findet ausdruecklich nicht statt -
+    zusaetzliche Last auf der Plattform fuer einen Nebenzweck (AP-4.5).
+    """
+    if not titel or not titel.strip():
+        return []
+
+    gesucht = _woerter(titel)
+    if not gesucht:
+        return []
+
+    bewertet: list[tuple[float, EigenerPreis]] = []
+    for anzeige in anzeigen:
+        if anzeige.id is None or anzeige.preis is None or anzeige.preis <= 0:
+            continue
+        vorhanden = _woerter(anzeige.titel)
+        if not vorhanden:
+            continue
+        gemeinsam = gesucht & vorhanden
+        if not gemeinsam:
+            continue
+
+        # Dieselbe beidseitige Bewertung wie bei den Kategorien.
+        guete = (len(gemeinsam) / len(gesucht) + len(gemeinsam) / len(vorhanden)) / _RICHTUNGEN
+        if guete >= _MINDESTGUETE_TITEL:
+            bewertet.append((guete, EigenerPreis(
+                titel = anzeige.titel, preis = round(float(anzeige.preis), 2),
+            )))
+
+    bewertet.sort(key = lambda paar: (-paar[0], paar[1].titel.casefold()))
+    return [preis for _, preis in bewertet[:MAX_EIGENE_PREISE]]
 
 
 def versand_treffer(groesse: str | None) -> list[VersandVorschlag]:

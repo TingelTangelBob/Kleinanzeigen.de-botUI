@@ -236,7 +236,11 @@ export const api = {
       entwurf: unknown,
       antworten: Record<string, string>,
       dateien: File[],
-      wahl: { kategorie?: string | null; versandpakete?: string[] } = {},
+      wahl: {
+        kategorie?: string | null;
+        versandpakete?: string[];
+        preis?: number | null;
+      } = {},
     ) => {
       const daten = new FormData();
       daten.append('profil', profil);
@@ -244,6 +248,9 @@ export const api = {
       daten.append('antworten_json', JSON.stringify(antworten));
       // Nur mitschicken, was der Mensch angeklickt hat (AP-4.5/4.6).
       if (wahl.kategorie) daten.append('kategorie', wahl.kategorie);
+      // Die geschätzte Spanne steht bewusst NICHT hier: Sie ist eine
+      // Einordnung, keine Angabe. Was mitgeht, hat jemand ausgewählt.
+      if (wahl.preis != null) daten.append('preis', String(wahl.preis));
       if (wahl.versandpakete?.length) {
         daten.append('versandpakete_json', JSON.stringify(wahl.versandpakete));
       }

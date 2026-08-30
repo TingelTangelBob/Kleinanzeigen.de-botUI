@@ -47,6 +47,9 @@ export function NeueAnzeigeSeite() {
   const [antworten, setAntworten] = useState<Record<string, string>>({});
   const [kategorie, setKategorie] = useState<string | null>(null);
   const [versandpakete, setVersandpakete] = useState<string[]>([]);
+  // Der Preis, den der Mensch bestaetigt hat. Bleibt null, bis jemand
+  // etwas anklickt oder eintippt - die Schaetzung fuellt ihn nicht.
+  const [preis, setPreis] = useState<number | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [angelegt, setAngelegt] = useState<string | null>(null);
 
@@ -95,6 +98,9 @@ export function NeueAnzeigeSeite() {
     setAntworten({});
     setKategorie(null);
     setVersandpakete([]);
+    // Sonst haftet der Preis des vorigen Entwurfs am naechsten - und zwar
+    // unsichtbar, weil die Schaetzung daneben eine andere Zahl zeigt.
+    setPreis(null);
     setAngelegt(null);
   };
 
@@ -135,7 +141,7 @@ export function NeueAnzeigeSeite() {
     setStufe({ art: 'anlegen' });
     try {
       const ergebnis = await api.ki.anlegen(profil, entwurf, antworten, dateien, {
-        kategorie, versandpakete,
+        kategorie, versandpakete, preis,
       });
       setAngelegt(ergebnis.titel);
     } catch (ursache) {
@@ -220,8 +226,10 @@ export function NeueAnzeigeSeite() {
           aufAnlegen={() => void anlegen()}
           kategorie={kategorie}
           versandpakete={versandpakete}
+          preis={preis}
           setKategorie={setKategorie}
           setVersandpakete={setVersandpakete}
+          setPreis={setPreis}
         />
       )}
 
@@ -413,15 +421,17 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
 
 function Ergebnis({
   entwurf, kosten, antworten, aufAntwort, aufZuruecknehmen, offen, gesperrt, aufAnlegen,
-  kategorie, versandpakete, setKategorie, setVersandpakete,
+  kategorie, versandpakete, preis, setKategorie, setVersandpakete, setPreis,
 }: {
   entwurf: KiEntwurf;
   kosten: KiKosten | null;
   antworten: Record<string, string>;
   kategorie: string | null;
   versandpakete: string[];
+  preis: number | null;
   setKategorie: (wert: string | null) => void;
   setVersandpakete: (werte: string[]) => void;
+  setPreis: (wert: number | null) => void;
   aufAntwort: (id: string, wert: string) => void;
   aufZuruecknehmen: (id: string) => void;
   offen: number;
@@ -449,10 +459,16 @@ function Ergebnis({
           </Zeile>
           <Zeile bezeichnung="Zustand">{entwurf.zustand_text ?? 'nicht erkennbar'}</Zeile>
           <Zeile bezeichnung="Preis">
-            {entwurf.preis_euro !== null ? `${entwurf.preis_euro.toFixed(2).replace('.', ',')} €` : 'kein Vorschlag'}
+            {entwurf.preis_von_euro !== null && entwurf.preis_bis_euro !== null
+              ? `grobe Einordnung: ${euro(entwurf.preis_von_euro)} bis ${euro(entwurf.preis_bis_euro)}`
+              : 'keine Einschätzung'}
             {entwurf.preis_begruendung && (
               <span className="mt-0.5 block text-xs text-gray-500">{entwurf.preis_begruendung}</span>
             )}
+            <span className="mt-0.5 block text-xs text-gray-500">
+              Geschätzt, nicht recherchiert – das Modell kennt keine aktuellen Marktpreise.
+              Der Preis wird unten gesetzt, nicht hier.
+            </span>
           </Zeile>
           <Zeile bezeichnung="Kategorie">
             {entwurf.kategorie ?? 'kein Vorschlag'}
@@ -488,8 +504,10 @@ function Ergebnis({
         entwurf={entwurf}
         kategorie={kategorie}
         versandpakete={versandpakete}
+        preis={preis}
         aufKategorie={setKategorie}
         aufVersand={setVersandpakete}
+        aufPreis={setPreis}
       />
 
       {kosten && (
@@ -526,6 +544,13 @@ function Ergebnis({
     </div>
   );
 }
+
+/** Euro-Betrag in deutscher Schreibweise. An genug Stellen gebraucht, um ihn
+ * einmal zu haben statt viermal `.toFixed(2).replace('.', ',')`. */
+function euro(betrag: number): string {
+  return `${betrag.toFixed(2).replace('.', ',')} €`;
+}
+
 
 function Zeile({ bezeichnung, children }: { bezeichnung: string; children: React.ReactNode }) {
   return (
@@ -617,23 +642,35 @@ function Rueckfrage({
  * existiert damit; ob es *stimmt*, weiß nur der Mensch vor dem Bildschirm.
  */
 function Vorschlaege({
-  entwurf, kategorie, versandpakete, aufKategorie, aufVersand,
+  entwurf, kategorie, versandpakete, preis, aufKategorie, aufVersand, aufPreis,
 }: {
   entwurf: KiEntwurf;
   kategorie: string | null;
   versandpakete: string[];
+  preis: number | null;
   aufKategorie: (wert: string | null) => void;
   aufVersand: (werte: string[]) => void;
+  aufPreis: (wert: number | null) => void;
 }) {
   const hatKategorien = entwurf.kategorie_vorschlaege.length > 0;
   const hatVersand = entwurf.versand_vorschlaege.length > 0;
-  if (!hatKategorien && !hatVersand) return null;
+  const spanne = entwurf.preis_von_euro !== null && entwurf.preis_bis_euro !== null
+    ? { von: entwurf.preis_von_euro, bis: entwurf.preis_bis_euro }
+    : null;
 
   const paketUmschalten = (wert: string) => {
     aufVersand(versandpakete.includes(wert)
       ? versandpakete.filter(p => p !== wert)
       : [...versandpakete, wert]);
   };
+
+  // Schnellwerte: die beiden Grenzen der Schätzung und die eigenen früheren
+  // Preise. Doppelte fallen weg - zwei Knöpfe mit derselben Zahl sind keine
+  // Auswahl, sondern ein Versehen.
+  const schnellwerte = [...new Set([
+    ...(spanne ? [spanne.von, spanne.bis] : []),
+    ...entwurf.eigene_preise.map(p => p.preis),
+  ])].sort((a, b) => a - b);
 
   return (
     <div className="rounded border border-gray-200 bg-white p-4">
@@ -642,6 +679,57 @@ function Vorschlaege({
         Nichts davon wird automatisch gesetzt. Was du hier nicht anklickst, bleibt leer
         und lässt sich später im Editor nachtragen.
       </p>
+
+      <fieldset className="mb-4">
+        <legend className="mb-1 text-sm font-medium text-gray-800">Preis</legend>
+        <p className="mb-2 text-xs text-gray-600">
+          {spanne
+            ? `Grobe Einordnung: ${euro(spanne.von)} bis ${euro(spanne.bis)}.`
+            : 'Das Modell konnte den Preis nicht einschätzen.'}
+          {' '}Geschätzt aus den Fotos, ohne Marktdaten – prüf ihn, bevor du ihn nimmst.
+          Leer lassen ist in Ordnung; dann trägst du ihn später im Editor nach.
+        </p>
+        {entwurf.eigene_preise.length > 0 && (
+          <p className="mb-2 text-xs text-gray-600">
+            Deine früheren Anzeigen:{' '}
+            {entwurf.eigene_preise.map(p => `${p.titel} (${euro(p.preis)})`).join(', ')}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {schnellwerte.map(wert => (
+            <button
+              key={wert}
+              type="button"
+              onClick={() => aufPreis(preis === wert ? null : wert)}
+              aria-pressed={preis === wert}
+              className={`rounded border px-3 py-1.5 text-sm ${
+                preis === wert
+                  ? 'border-primary-custom bg-blue-50 text-gray-900'
+                  : 'border-gray-300 text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              {euro(wert)}
+            </button>
+          ))}
+          <label className="flex items-center gap-2 text-sm text-gray-800">
+            <span className="sr-only">Preis in Euro</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="eigener Preis"
+              value={preis ?? ''}
+              onChange={e => {
+                const zahl = Number.parseFloat(e.target.value);
+                aufPreis(Number.isFinite(zahl) && zahl > 0 ? zahl : null);
+              }}
+              className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
+            />
+            <span className="text-gray-600">€</span>
+          </label>
+        </div>
+      </fieldset>
 
       {hatKategorien && (
         <fieldset className="mb-4">
@@ -690,9 +778,7 @@ function Vorschlaege({
               >
                 {v.wert.replace(/_/g, ' ')}
                 {v.preis !== null && (
-                  <span className="ml-2 text-xs text-gray-500">
-                    {v.preis.toFixed(2).replace('.', ',')} €
-                  </span>
+                  <span className="ml-2 text-xs text-gray-500">{euro(v.preis)}</span>
                 )}
               </button>
             ))}

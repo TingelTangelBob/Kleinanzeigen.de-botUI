@@ -121,7 +121,8 @@ def schema() -> dict[str, Any]:
         "additionalProperties": False,
         "required": [
             "titel", "beschreibung", "zustand", "kategorie",
-            "preis_euro", "preis_begruendung", "versandgroesse", "sicherheit", "fragen",
+            "preis_von_euro", "preis_bis_euro", "preis_begruendung",
+            "versandgroesse", "sicherheit", "fragen",
         ],
         "properties": {
             "titel": {"type": "string", "description": f"hoechstens {TITEL_MAX} Zeichen"},
@@ -135,11 +136,21 @@ def schema() -> dict[str, Any]:
                 "type": ["string", "null"],
                 "description": "Vorschlag im Klartext, z. B. 'Elektronik > Weitere Elektronik'",
             },
-            "preis_euro": {
+            "preis_von_euro": {
                 "type": ["number", "null"],
-                "description": "realistischer Gebrauchtpreis in Euro, null wenn nicht schaetzbar",
+                "description": (
+                    "untere Grenze einer groben Gebrauchtpreisspanne in Euro, "
+                    "null wenn nicht schaetzbar"
+                ),
             },
-            "preis_begruendung": {"type": ["string", "null"], "description": "ein Satz, woraus sich der Preis ergibt"},
+            "preis_bis_euro": {
+                "type": ["number", "null"],
+                "description": (
+                    "obere Grenze derselben Spanne in Euro, groesser als die untere. "
+                    "null wenn nicht schaetzbar"
+                ),
+            },
+            "preis_begruendung": {"type": ["string", "null"], "description": "ein Satz, woraus sich die Spanne ergibt"},
             "versandgroesse": {
                 "type": ["string", "null"],
                 "enum": [*_GROESSEN, None],
@@ -173,7 +184,11 @@ Erzeuge daraus einen Anzeigenentwurf auf Deutsch:
 - Beende die Beschreibung mit genau diesem Satz: "{PRIVATVERKAUF_HINWEIS}"
 - Zustand: eine der Stufen neu, wie_neu, gut, in_ordnung, defekt.
 - Kategorie: ein Vorschlag im Klartext.
-- Preis: ein realistischer Gebrauchtpreis in Euro für einen Privatverkauf.
+- Preis: eine grobe Spanne für einen Privatverkauf, untere und obere Grenze in
+  Euro. Du kennst keine aktuellen Marktpreise und sollst auch nicht so tun -
+  schätze aus dem, was du siehst, und mach die Spanne so weit, wie deine
+  Unsicherheit wirklich ist. Setze beide Grenzen auf null, wenn du den
+  Gegenstand nicht sicher genug erkennst.
 
 Wichtige Regeln:
 
@@ -239,8 +254,17 @@ class Entwurf:
     beschreibung: str
     zustand: str | None
     kategorie: str | None
-    preis_euro: float | None
+    #: Die geschaetzte Spanne (AP-4.5). Eine Einordnung, kein Preis - sie
+    #: wandert nie von selbst in die Anzeige.
+    preis_von_euro: float | None
+    preis_bis_euro: float | None
     preis_begruendung: str | None
+    #: Der Preis, den ein MENSCH bestaetigt hat - durch eine Antwort auf eine
+    #: Preisfrage oder durch Anklicken in der Oberflaeche. Nur dieses Feld
+    #: erreicht die Anzeigendatei. Solange es None ist, bleibt das Preisfeld
+    #: leer, und das ist die richtige Vorgabe: Eine leere Zeile faellt beim
+    #: Durchsehen auf, eine geratene Zahl nicht.
+    preis_euro: float | None = None
     #: Geschaetzte Paketgroesse (AP-4.5). Nur Grundlage fuer einen Vorschlag -
     #: gesetzt wird der Versandweg nie automatisch.
     versandgroesse: str | None = None
@@ -257,6 +281,42 @@ def _text(daten: dict[str, Any], schluessel: str, *, hoechstens: int) -> str:
     return wert.strip()[:hoechstens]
 
 
+def _euro_lesen(wert: Any) -> float | None:
+    """Eine Euro-Angabe aus der Anbieterantwort, oder None.
+
+    `isinstance(True, int)` ist wahr - ohne die bool-Abfrage waere `true` ein
+    Preis von 1,00 Euro.
+    """
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)) or wert <= 0:
+        return None
+    return round(float(wert), 2)
+
+
+def _spanne_lesen(daten: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Liest die geschaetzte Preisspanne - beide Grenzen oder keine.
+
+    EINE HALBE SPANNE WIRD VERWORFEN. Nur eine Grenze ist wieder ein Punktwert,
+    und ein Punktwert ist genau das, was dieses Paket abschafft: Er liest sich
+    wie ein recherchierter Preis, obwohl er geraten ist. Lieber gar kein
+    Vorschlag - dann sucht der Mensch selbst, statt eine Zahl zu uebernehmen,
+    die niemand geprueft hat.
+    """
+    von = _euro_lesen(daten.get("preis_von_euro"))
+    bis = _euro_lesen(daten.get("preis_bis_euro"))
+
+    if von is None or bis is None:
+        if von is not None or bis is not None:
+            LOG.info("Halbe Preisspanne vom Anbieter verworfen: von=%r bis=%r", von, bis)
+        return None, None
+
+    # Vertauschte Grenzen sind ein Fluechtigkeitsfehler des Modells, kein
+    # Grund, den Vorschlag wegzuwerfen - die Spanne bleibt dieselbe.
+    if von > bis:
+        LOG.info("Vertauschte Preisspanne vom Anbieter gedreht: %r > %r", von, bis)
+        von, bis = bis, von
+    return von, bis
+
+
 def aus_antwort(daten: dict[str, Any]) -> Entwurf:
     """Macht aus der Anbieterantwort einen geprueften Entwurf.
 
@@ -269,12 +329,7 @@ def aus_antwort(daten: dict[str, Any]) -> Entwurf:
         LOG.info("Unbekannte Zustandsstufe vom Anbieter verworfen: %r", zustand)
         zustand = None
 
-    # `isinstance(True, int)` ist wahr - ohne die bool-Abfrage waere `true`
-    # ein Preis von 1,00 Euro.
-    roh_preis = daten.get("preis_euro")
-    preis: float | None = None
-    if not isinstance(roh_preis, bool) and isinstance(roh_preis, (int, float)) and roh_preis > 0:
-        preis = round(float(roh_preis), 2)
+    von, bis = _spanne_lesen(daten)
 
     sicherheit = daten.get("sicherheit")
     if sicherheit not in {"hoch", "mittel", "niedrig"}:
@@ -295,8 +350,11 @@ def aus_antwort(daten: dict[str, Any]) -> Entwurf:
         beschreibung = _mit_privatverkauf_hinweis(beschreibung),
         zustand = zustand,
         kategorie = (daten.get("kategorie") or None),
-        preis_euro = preis,
+        preis_von_euro = von,
+        preis_bis_euro = bis,
         preis_begruendung = (daten.get("preis_begruendung") or None),
+        # Bewusst kein Preis: Was hier entsteht, hat noch niemand gesehen.
+        preis_euro = None,
         versandgroesse = groesse,
         sicherheit = sicherheit,
         fragen = fragen,
@@ -487,8 +545,12 @@ def anwenden(entwurf: Entwurf, antworten: dict[str, str]) -> Entwurf:
         beschreibung = beschreibung,
         zustand = zustand,
         kategorie = entwurf.kategorie,
-        preis_euro = preis,
+        preis_von_euro = entwurf.preis_von_euro,
+        preis_bis_euro = entwurf.preis_bis_euro,
         preis_begruendung = entwurf.preis_begruendung,
+        # Eine beantwortete Preisfrage ist eine Entscheidung des Menschen und
+        # darf deshalb setzen, was die Schaetzung nicht darf.
+        preis_euro = preis,
         versandgroesse = entwurf.versandgroesse,
         sicherheit = entwurf.sicherheit,
         fragen = entwurf.fragen,
@@ -514,6 +576,14 @@ def als_anzeigenfelder(entwurf: Entwurf) -> dict[str, Any]:
     braucht einen Pfad aus dem Katalog, nicht den Klartextvorschlag des
     Anbieters - ein geratener Pfad liesse den Lauf spaeter im Kategoriedialog
     stehenbleiben. Der Vorschlag wandert stattdessen sichtbar in die Oberflaeche.
+
+    DASSELBE GILT SEIT AP-4.5 FUER DEN PREIS. Uebernommen wird nur
+    `preis_euro`, und das steht ausschliesslich dann, wenn ein Mensch die Zahl
+    bestaetigt hat. Die geschaetzte Spanne bleibt aussen vor. Bis dahin schrieb
+    dieses Modul den geratenen Wert des Modells ungefragt ins Preisfeld - der
+    Fehler war nicht die Schaetzung, sondern dass sie am Menschen vorbei zur
+    Angabe wurde. Ein falscher Kategoriepfad kostet einen abgebrochenen Lauf,
+    ein falscher Preis kostet Geld.
     """
     felder: dict[str, Any] = {
         "title": entwurf.titel,

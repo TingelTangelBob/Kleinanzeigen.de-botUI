@@ -169,14 +169,27 @@ class VersandVorschlagAusgabe(BaseModel):
     preis: float | None
 
 
+class EigenerPreisAusgabe(BaseModel):
+    titel: str
+    preis: float
+
+
 class EntwurfAusgabe(BaseModel):
     titel: str
     beschreibung: str
     zustand: str | None
     zustand_text: str | None
     kategorie: str | None
-    preis_euro: float | None
+    #: Die geschaetzte Spanne (AP-4.5) - eine Einordnung, kein Preis.
+    preis_von_euro: float | None
+    preis_bis_euro: float | None
     preis_begruendung: str | None
+    #: Nur gefuellt, wenn ein Mensch die Zahl bestaetigt hat. Sonst null, und
+    #: dann bleibt das Preisfeld der Anzeige leer.
+    preis_euro: float | None = None
+    #: Eigene frueher verlangte Preise fuer Aehnliches. Der einzige belastbare
+    #: Anker neben der Schaetzung.
+    eigene_preise: list[EigenerPreisAusgabe] = []
     sicherheit: str
     fragen: list[FrageAusgabe]
     #: Gegen den echten Katalog abgeglichene Vorschlaege (AP-4.5). Was hier
@@ -206,15 +219,24 @@ class EntwurfAntwort(BaseModel):
     kosten: KostenAusgabe
 
 
-def _als_ausgabe(e: entwurf_dienst.Entwurf) -> EntwurfAusgabe:
+def _als_ausgabe(
+    e: entwurf_dienst.Entwurf,
+    bestand: list[bestand_dienst.BestandsAnzeige] | None = None,
+) -> EntwurfAusgabe:
     return EntwurfAusgabe(
         titel = e.titel,
         beschreibung = e.beschreibung,
         zustand = e.zustand,
         zustand_text = entwurf_dienst.ZUSTAND_BESCHRIFTUNG.get(e.zustand or ""),
         kategorie = e.kategorie,
-        preis_euro = e.preis_euro,
+        preis_von_euro = e.preis_von_euro,
+        preis_bis_euro = e.preis_bis_euro,
         preis_begruendung = e.preis_begruendung,
+        preis_euro = e.preis_euro,
+        eigene_preise = [
+            EigenerPreisAusgabe(titel = p.titel, preis = p.preis)
+            for p in vorschlag_dienst.eigene_preise(e.titel, bestand or [])
+        ],
         sicherheit = e.sicherheit,
         versandgroesse = e.versandgroesse,
         kategorie_vorschlaege = [
@@ -327,7 +349,9 @@ async def entwurf_erzeugen(
     )
 
     return EntwurfAntwort(
-        entwurf = _als_ausgabe(ergebnis),
+        # Der Bestand wird erst hier gelesen, nicht vor dem Anbieteraufruf:
+        # Ohne brauchbaren Titel gaebe es nichts zu vergleichen.
+        entwurf = _als_ausgabe(ergebnis, bestand_dienst.bestand_lesen(wurzel)),
         kosten = KostenAusgabe(
             modell = antwort.modell,
             token_eingabe = antwort.token_eingabe,
@@ -393,6 +417,7 @@ async def anzeige_anlegen(
     bilder: Annotated[list[UploadFile], File()],
     kategorie: Annotated[str | None, Form()] = None,
     versandpakete_json: Annotated[str | None, Form()] = None,
+    preis: Annotated[float | None, Form()] = None,
 ) -> AnlegenAntwort:
     """Legt die Anzeige lokal an. Ohne Anbieter, ohne Kosten, ohne Veroeffentlichen.
 
@@ -430,6 +455,17 @@ async def anzeige_anlegen(
                 "Diese Kategorie steht nicht im Katalog.", status = 422, feld = "kategorie",
             )
         felder["category"] = kategorie
+
+    # Ein Preis kommt nur ueber diesen Weg in die Anzeige - angeklickt oder
+    # eingetippt, nie aus der Schaetzung. `als_anzeigenfelder` laesst das Feld
+    # sonst leer, siehe die Begruendung dort.
+    if preis is not None:
+        if preis <= 0:
+            raise FachlicherFehler(
+                "Ein Preis muss groesser als null sein.", status = 422, feld = "preis",
+            )
+        felder["price"] = round(preis, 2)
+        felder["price_type"] = "NEGOTIABLE"
 
     pakete = _pakete_lesen(versandpakete_json)
     if pakete:

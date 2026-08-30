@@ -14,12 +14,21 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { fireEvent } from '@testing-library/dom';
 import { NeueAnzeigeSeite } from './NeueAnzeigeSeite';
+import type { KiEntwurf } from '../types';
 
 const status = vi.fn();
+const entwurfAbrufen = vi.fn();
+const anlegen = vi.fn();
 let objektUrlNummer = 0;
 
 vi.mock('../services/api', () => ({
-  api: { ki: { status: () => status() } },
+  api: {
+    ki: {
+      status: () => status(),
+      entwurf: (...args: unknown[]) => entwurfAbrufen(...args),
+      anlegen: (...args: unknown[]) => anlegen(...args),
+    },
+  },
   ApiFehler: class extends Error {},
 }));
 
@@ -69,6 +78,8 @@ function auswaehlen(feld: HTMLInputElement, dateien: File[]) {
 
 beforeEach(() => {
   status.mockReset();
+  entwurfAbrufen.mockReset();
+  anlegen.mockReset();
   objektUrlNummer = 0;
   status.mockResolvedValue({
     hinterlegt: true, endet_auf: 'TR0A', geaendert_am: null,
@@ -165,5 +176,99 @@ describe('Erkennen-Knopf', () => {
     await waitFor(() => {
       expect(screen.getByText(/ließ sich nicht laden/)).toBeDefined();
     });
+  });
+});
+
+
+// --------------------------------------------------------------- Preis (AP-4.5)
+//
+// Der Nachweis des Arbeitspakets lautet woertlich: "Preisvorschlaege erscheinen
+// als Spanne mit sichtbarem Vorbehalt." Davor stand hier ein auf zwei
+// Nachkommastellen genau formatierter Punktwert - eine geratene Zahl, die sich
+// wie eine Marktrecherche las - und er wanderte ungefragt ins Preisfeld der
+// Anzeige.
+
+const ENTWURF: KiEntwurf = {
+  titel: 'Bosch Akkuschrauber PSR 18',
+  beschreibung: 'Akkuschrauber mit Ladegerät.',
+  zustand: 'gut',
+  zustand_text: 'Gut',
+  kategorie: null,
+  preis_von_euro: 30,
+  preis_bis_euro: 45,
+  preis_begruendung: 'Vergleichbare Geräte liegen bei 30 bis 45 Euro.',
+  preis_euro: null,
+  eigene_preise: [{ titel: 'Bosch Akkuschrauber PSR 14', preis: 40 }],
+  sicherheit: 'hoch',
+  fragen: [],
+  kategorie_vorschlaege: [],
+  versandgroesse: null,
+  versand_vorschlaege: [],
+};
+
+async function bisZumEntwurf(entwurf = ENTWURF) {
+  entwurfAbrufen.mockResolvedValue({
+    entwurf,
+    kosten: {
+      modell: 'gpt-5.6-luna', token_eingabe: 1, token_ausgabe: 1, usd: 0.001,
+      bilder_gesendet: 1, bytes_gesendet: 1024, stil_eigene_texte: 0,
+      verbrauch_usd: 0.001, budget_usd: 5,
+    },
+  });
+  anlegen.mockResolvedValue({ datei: 'ads/a.yaml', titel: entwurf.titel, bilder: 1 });
+
+  const gerendert = render(<NeueAnzeigeSeite />);
+  const feld = gerendert.container.querySelector('input[type=file]') as HTMLInputElement;
+  auswaehlen(feld, [foto('schrauber.jpg')]);
+  await waitFor(() => { expect(screen.getByText(/1 von 4 Fotos/)).toBeDefined(); });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Erkennen lassen' }));
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: /Anzeige anlegen/ })).toBeDefined();
+  });
+  return gerendert;
+}
+
+describe('Preisvorschlag', () => {
+  it('zeigt eine Spanne mit Vorbehalt statt eines genauen Betrags', async () => {
+    await bisZumEntwurf();
+
+    // Zweimal absichtlich: in der Übersicht des Entwurfs und über dem Preisfeld.
+    expect(screen.getAllByText(/30,00 € bis 45,00 €/)).toHaveLength(2);
+    expect(screen.getByText(/Geschätzt, nicht recherchiert/)).toBeDefined();
+    // Der alte Punktwert stand als einzelne Zahl da, ohne Spannenkontext.
+    expect(screen.queryByText(/^37,50 €$/)).toBeNull();
+  });
+
+  it('nennt die eigenen früheren Preise als Anker', async () => {
+    await bisZumEntwurf();
+    expect(screen.getByText(/Bosch Akkuschrauber PSR 14 \(40,00 €\)/)).toBeDefined();
+  });
+
+  it('legt ohne Klick keinen Preis an', async () => {
+    await bisZumEntwurf();
+
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
+
+    // Der Kern: Die Schätzung allein setzt nichts.
+    expect(anlegen.mock.calls[0][4]).toMatchObject({ preis: null });
+  });
+
+  it('übernimmt einen angeklickten Preis', async () => {
+    await bisZumEntwurf();
+
+    fireEvent.click(screen.getByRole('button', { name: '30,00 €' }));
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
+
+    expect(anlegen.mock.calls[0][4]).toMatchObject({ preis: 30 });
+  });
+
+  it('sagt es, wenn das Modell nichts einschätzen konnte', async () => {
+    await bisZumEntwurf({
+      ...ENTWURF, preis_von_euro: null, preis_bis_euro: null, eigene_preise: [],
+    });
+    expect(screen.getByText(/konnte den Preis nicht einschätzen/)).toBeDefined();
   });
 });

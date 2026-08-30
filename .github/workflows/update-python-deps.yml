@@ -31,6 +31,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # Anzeigen-Studio-Fork, 2026-08-30: repository_owner-Bedingung ergaenzt.
+    # Ohne sie laeuft die taegliche Abhaengigkeitsaktualisierung in jedem Fork
+    # mit und scheitert sofort am Schritt "Generate GitHub Access Token": der
+    # verlangt DEPS_UPDATER_CLIENT_ID und DEPS_UPDATER_PRIVATE_KEY, also die
+    # GitHub-App der Organisation Second-Hand-Friends. Ein Fork hat sie nicht
+    # und bekommt sie nicht - der Lauf kann hier nicht gelingen, er kann nur
+    # jeden Tag um 10 Uhr fehlschlagen.
+    #
+    # Belegt an drei Laeufen am 28., 29. und 30.08.2026, alle mit demselben
+    # Muster: Token fehlgeschlagen, jeder folgende Schritt uebersprungen.
+    #
+    # Abgeschaltet statt geloescht, damit die Datei bei einem Upstream-Merge
+    # nicht kollidiert - dieselbe Loesung wie am Job publish-release in
+    # build.yml. Taeglich rote Laeufe, die niemand beheben kann, stumpfen
+    # gegen echtes Rot ab; das ist der eigentliche Schaden.
+    if: github.repository_owner == 'Second-Hand-Friends'
+
     steps:
     - name: "Show: GitHub context"
       env:

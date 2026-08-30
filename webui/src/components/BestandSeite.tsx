@@ -120,7 +120,12 @@ export function BestandSeite() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
+      {/* Auf schmalen Schirmen untereinander. Vorher stand hier nur
+          `items-center justify-between`: Die beiden Knöpfe brachen bei 375 px
+          in zwei Zeilen um, und die Überschrift wurde gegen diesen zweizeiligen
+          Stapel mittig gesetzt - Titel und Knöpfe liefen sichtbar ineinander.
+          Ein `flex-wrap` am äußeren Element allein hätte das nicht behoben. */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Anzeigen</h1>
         <div className="flex flex-wrap gap-2">
           <button

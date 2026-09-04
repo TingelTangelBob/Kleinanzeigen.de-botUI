@@ -135,4 +135,17 @@ describe('UebersichtSeite – Letzte Läufe (AP-2.29)', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Herunterladen/ }));
     expect(aufZiel).toHaveBeenCalledWith('warteschlange');
   });
+
+  it('öffnet eine fällige Anzeige über die Iconaktion', async () => {
+    const aufZiel = vi.fn();
+    bestandListe.mockResolvedValue([anzeige({ faellig: true })]);
+
+    render(<UebersichtSeite aufZiel={aufZiel} />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Roter Sessel.*öffnen/ }));
+
+    expect(aufZiel).toHaveBeenCalledWith(
+      'anzeigen/eigene?datei=downloaded-ads%2Fad_4711%2Fad_4711.yaml',
+    );
+  });
 });

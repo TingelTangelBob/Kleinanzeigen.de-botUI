@@ -209,7 +209,10 @@ const ENTWURF: KiEntwurf = {
   versand_vorschlaege: [],
 };
 
-async function bisZumEntwurf(entwurf = ENTWURF) {
+async function bisZumEntwurf(
+  entwurf = ENTWURF,
+  aufZiel?: (ziel: string) => void,
+) {
   entwurfAbrufen.mockResolvedValue({
     entwurf,
     kosten: {
@@ -220,7 +223,7 @@ async function bisZumEntwurf(entwurf = ENTWURF) {
   });
   anlegen.mockResolvedValue({ datei: 'ads/a.yaml', titel: entwurf.titel, bilder: 1 });
 
-  const gerendert = render(<NeueAnzeigeSeite />);
+  const gerendert = render(<NeueAnzeigeSeite aufZiel={aufZiel} />);
   const feld = gerendert.container.querySelector('input[type=file]') as HTMLInputElement;
   auswaehlen(feld, [foto('schrauber.jpg')]);
   await waitFor(() => { expect(screen.getByText(/1 von 4 Fotos/)).toBeDefined(); });
@@ -258,6 +261,14 @@ describe('Preisvorschlag', () => {
     expect(anlegen.mock.calls[0][4]).toMatchObject({ preis: null });
   });
 
+  it('öffnet die angelegte Anzeige direkt im gemeinsamen Editor', async () => {
+    const aufZiel = vi.fn();
+    await bisZumEntwurf(ENTWURF, aufZiel);
+
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    await waitFor(() => { expect(aufZiel).toHaveBeenCalledWith('anzeigen/eigene?datei=ads%2Fa.yaml&bearbeiten=1'); });
+  });
+
   it('übernimmt einen angeklickten Preis', async () => {
     await bisZumEntwurf();
 
@@ -273,5 +284,25 @@ describe('Preisvorschlag', () => {
       ...ENTWURF, preis_von_euro: null, preis_bis_euro: null, eigene_preise: [],
     });
     expect(screen.getByText(/konnte den Preis nicht einschätzen/)).toBeDefined();
+  });
+});
+
+describe('Kategorievorschlag', () => {
+  it('wählt die beste gegen den Katalog geprüfte Kategorie automatisch vor', async () => {
+    const entwurf = {
+      ...ENTWURF,
+      kategorie: 'Elektronik',
+      kategorie_vorschlaege: [{ wert: '161/278', name: 'Elektronik > Weitere Elektronik' }],
+    };
+    await bisZumEntwurf(entwurf);
+
+    const kategorie = screen.getByRole('button', {
+      name: 'Elektronik > Weitere Elektronik',
+    });
+    expect(kategorie.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
+    expect(anlegen.mock.calls[0][4]).toMatchObject({ kategorie: '161/278' });
   });
 });

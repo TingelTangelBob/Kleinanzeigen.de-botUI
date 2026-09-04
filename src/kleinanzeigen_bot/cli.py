@@ -135,6 +135,7 @@ def help_text(*, executable:str | None = None, language:str | None = None) -> st
               update   - Aktualisiert bestehende Anzeigen
               extend   - Verlängert Anzeigen im 8-Tage-Zeitfenster (behält Beobachter/Interessenten bei und zählt nicht zum monatlichen Anzeigenkontingent)
               download - Lädt eine oder mehrere Anzeigen herunter
+              sync-order - Liest nur die Reihenfolge des eigenen Kontos ein
               update-check - Prüft auf verfügbare Updates
               update-content-hash - Berechnet den content_hash aller Anzeigen anhand der aktuellen ad_defaults neu;
                                     nach Änderungen an den config.yaml/ad_defaults verhindert es, dass alle Anzeigen als
@@ -193,6 +194,7 @@ def help_text(*, executable:str | None = None, language:str | None = None) -> st
           update   - updates published ads
           extend   - extends ads within the 8-day window before expiry (keeps watchers/savers and does not count towards the monthly ad quota)
           download - downloads one or multiple ads
+          sync-order - reads only the order of the account's own ads
           update-check - checks for available updates
           update-content-hash – recalculates each ad's content_hash based on the current ad_defaults;
                                 use this after changing config.yaml/ad_defaults to avoid every ad being marked "changed" and republished

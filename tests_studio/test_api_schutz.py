@@ -35,6 +35,7 @@ GESCHUETZT = [
     ("POST", "/api/jobs"),
     ("GET", "/api/jobs/1"),
     ("GET", "/api/jobs/1/log"),
+    ("POST", "/api/bestand/online-loeschen"),
     ("GET", "/api/profile/x/zugang"),
     ("PUT", "/api/profile/x/zugang"),
     ("GET", "/api/auth/pruefen"),

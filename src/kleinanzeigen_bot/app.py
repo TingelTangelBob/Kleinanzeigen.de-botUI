@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 
 import certifi
 
-from . import ad_loading, ad_status, delete_flow, download_flow, extend_flow
+from . import ad_loading, ad_status, delete_flow, download_flow, extend_flow, order_flow
 from . import login_flow as _login_flow
 from . import publishing_workflow as _publishing_workflow
 from . import runtime_config as _runtime_config
@@ -148,6 +148,8 @@ class KleinanzeigenBot(WebScrapingMixin):  # noqa: PLR0904
                     await self._handle_extend()
                 case "download":
                     await self._handle_download()
+                case "sync-order":
+                    await self._handle_sync_order()
                 case _:
                     LOG.error("Unknown command: %s", self.command)
                     sys.exit(2)
@@ -358,6 +360,16 @@ class KleinanzeigenBot(WebScrapingMixin):  # noqa: PLR0904
             ads_selector = self.ads_selector,
             load_ads_func = self.load_ads,
             root_url = self.root_url,
+        )
+
+    async def _handle_sync_order(self) -> None:
+        """Synchronize only the account order; never open an ad detail page."""
+        self._bootstrap_runtime()
+        await self._open_logged_in_browser()
+        await order_flow.synchronisieren(
+            web = self,
+            root_url = self.root_url,
+            datei = order_flow.datei_fuer(self.config_file_path),
         )
 
     def load_ads(self, *, ignore_inactive:bool = True, exclude_ads_with_id:bool = True) -> list[tuple[str, Ad, dict[str, Any]]]:

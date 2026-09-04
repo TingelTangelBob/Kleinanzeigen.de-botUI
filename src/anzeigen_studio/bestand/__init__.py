@@ -4,6 +4,7 @@
 #
 # Der lokale Anzeigenbestand (AP-3.2).
 
+from anzeigen_studio.bestand import plattform_reihenfolge
 from anzeigen_studio.bestand.bearbeiten import (
     AENDERBAR,
     GEMISCHTE_GROESSEN_MELDUNG,
@@ -48,6 +49,7 @@ __all__ = [
     "lokal_geaenderte",
     "mehrere_entfernen",
     "nummern_lesen",
+    "plattform_reihenfolge",
     "pruefen_zum_veroeffentlichen",
     "reihenfolge_pruefen",
     "rohdaten_lesen",

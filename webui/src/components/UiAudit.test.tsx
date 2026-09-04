@@ -8,7 +8,8 @@
 // zurückkommen: Es sind lauter Kleinigkeiten, die einzeln niemand vermisst.
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent } from '@testing-library/dom';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { UebersichtSeite } from './UebersichtSeite';
 import { AnzeigenEditor } from './AnzeigenEditor';
 import { MeldungenProvider } from '../context/MeldungenContext';
@@ -18,12 +19,16 @@ const bestandListe = vi.fn();
 const jobsListe = vi.fn();
 const zugang = vi.fn();
 const anzeigeLesen = vi.fn();
+const lokalLoeschen = vi.fn();
+const onlineLoeschen = vi.fn();
 
 vi.mock('../services/api', () => ({
   api: {
     bestand: {
       liste: (...a: unknown[]) => bestandListe(...a),
       anzeige: (...a: unknown[]) => anzeigeLesen(...a),
+      loeschen: (...a: unknown[]) => lokalLoeschen(...a),
+      onlineLoeschen: (...a: unknown[]) => onlineLoeschen(...a),
       bildUrl: () => '',
       vergleich: vi.fn().mockResolvedValue({ stand_von: null, quelle: null, unterschiede: [] }),
     },
@@ -63,9 +68,12 @@ function job(id: number, zustand: string): Job {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   zugang.mockResolvedValue({ benutzername: 'a@b.c', passwort_hinterlegt: true, geaendert_am: '' });
   jobsListe.mockResolvedValue([]);
   bestandListe.mockResolvedValue([]);
+  lokalLoeschen.mockResolvedValue({});
+  onlineLoeschen.mockResolvedValue({ job_id: 44, anzeige: anzeige('Test', 'eigene'), befehl: 'delete' });
 });
 
 describe('Kachelzahlen zählen nur eigene Anzeigen', () => {
@@ -147,7 +155,7 @@ describe('Zu langer Titel führt nicht mehr in den 422', () => {
     await waitFor(() => expect(screen.getByText(/77 von 65 Zeichen/)).toBeTruthy());
     expect(screen.getByText(/12 zu viel/)).toBeTruthy();
 
-    const knopf = screen.getByRole('button', { name: /Aktualisieren/ });
+    const knopf = screen.getByRole('button', { name: 'Aktualisieren' });
     expect((knopf as HTMLButtonElement).disabled).toBe(true);
 
     const feld = document.querySelector('input[type=text]');
@@ -169,7 +177,7 @@ describe('Zu langer Titel führt nicht mehr in den 422', () => {
     );
 
     await waitFor(() => expect(screen.getByText(/23 von 65 Zeichen/)).toBeTruthy());
-    const knopf = screen.getByRole('button', { name: /Aktualisieren/ });
+    const knopf = screen.getByRole('button', { name: 'Aktualisieren' });
     expect((knopf as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -207,5 +215,129 @@ describe('Fehlende Kategorie sperrt das Veröffentlichen (AP-2.37)', () => {
 
     const knopf = await screen.findByRole('button', { name: /Veröffentlichen/ });
     expect((knopf as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('Anzeige ansehen und lokale Entwürfe', () => {
+  it('öffnet über das Plattformmenü die Originalanzeige', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Original', 'eigene'), titel: 'Originalanzeige', id: 4711 },
+      felder: { title: 'Originalanzeige', description: 'Text', category: '161/225', images: [] },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor profil="test" datei="a.yaml" aufZurueck={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    const menueKnopf = await screen.findByRole('button', { name: 'Originalanzeige öffnen' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(menueKnopf);
+    const menue = await screen.findByRole('menu', { name: 'Anzeige öffnen in' });
+    const link = within(menue).getByRole('menuitem', { name: 'Kleinanzeigen' });
+    expect(link.getAttribute('href')).toBe('https://www.kleinanzeigen.de/s-anzeige/4711');
+  });
+
+  it('zeigt dieselbe Oberfläche schreibgeschützt mit Bearbeiten-Aktion', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Ansicht', 'eigene'), titel: 'Ansicht einer Anzeige', id: 4711 },
+      felder: {
+        title: 'Ansicht einer Anzeige',
+        description: 'Nur lesen',
+        category: '161/225',
+        images: [],
+      },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    const aufBearbeiten = vi.fn();
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor
+          profil="test"
+          datei="a.yaml"
+          bearbeitbar={false}
+          aufBearbeiten={aufBearbeiten}
+          aufZurueck={vi.fn()}
+        />
+      </MeldungenProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Ansicht einer Anzeige' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Anzeige bearbeiten' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull();
+    expect((screen.getByDisplayValue('Ansicht einer Anzeige') as HTMLInputElement).readOnly).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Anzeige bearbeiten' }));
+    expect(aufBearbeiten).toHaveBeenCalledOnce();
+  });
+
+  it('stellt ungespeicherte Eingaben nach einem Neuladen wieder her', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Entwurf', 'eigene'), titel: 'Alter Titel', id: 4711 },
+      felder: {
+        title: 'Alter Titel',
+        description: 'Text',
+        category: '161/225',
+        images: [],
+      },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    const ersteAnsicht = render(
+      <MeldungenProvider>
+        <AnzeigenEditor profil="test" datei="a.yaml" aufZurueck={vi.fn()} />
+      </MeldungenProvider>,
+    );
+    const titel = await screen.findByDisplayValue('Alter Titel');
+    fireEvent.change(titel, { target: { value: 'Neuer gespeicherter Titel' } });
+
+    await waitFor(() => {
+      expect(window.localStorage.length).toBe(1);
+      expect(screen.getByText('Ungespeicherte Änderungen')).toBeTruthy();
+    });
+
+    ersteAnsicht.unmount();
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor profil="test" datei="a.yaml" aufZurueck={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    expect(await screen.findByDisplayValue('Neuer gespeicherter Titel')).toBeTruthy();
+    expect(screen.getByText('Ungespeicherte Änderungen')).toBeTruthy();
+  });
+
+  it('bietet Plattform-Delete als Checkbox im normalen Löschdialog an', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Löschen', 'eigene'), titel: 'Anzeige zum Löschen', id: 4711 },
+      felder: {
+        title: 'Anzeige zum Löschen',
+        description: 'Text',
+        category: '161/225',
+        images: [],
+      },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor
+          profil="test"
+          datei="a.yaml"
+          onlineLoeschbar
+          aufZurueck={vi.fn()}
+        />
+      </MeldungenProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Anzeige löschen?' });
+    expect(within(dialog).getByLabelText('Zusätzlich auf kleinanzeigen.de löschen')).toBeTruthy();
+    expect(within(dialog).getByText(/nicht auf kleinanzeigen\.de/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByLabelText('Zusätzlich auf kleinanzeigen.de löschen'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+    await waitFor(() => {
+      expect(onlineLoeschen).toHaveBeenCalledWith('test', 'a.yaml', true);
+      expect(lokalLoeschen).not.toHaveBeenCalled();
+    });
   });
 });

@@ -60,3 +60,6 @@ webui/dist/
 webui/*.tsbuildinfo
 
 .DS_Store
+
+# Vom Deploy-Skript auf dem Testserver geschrieben (siehe scripts/aktualisiere_testserver.sh).
+BUILD_STAND

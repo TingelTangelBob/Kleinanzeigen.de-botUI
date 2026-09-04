@@ -94,44 +94,60 @@ beforeEach(() => {
   });
 });
 
-/**
- * Merkmal der offenen Maske. Nicht die Überschrift: die trägt seit AP-2.15 den
- * Anzeigentitel, und den zeigt die Liste auch. Seit AP-2.30 hat der Editor
- * keinen „Zurück"-Link mehr - der „Speichern"-Knopf in der Fußleiste gibt es
- * dagegen nur dort.
- */
-const maske = () => screen.queryByRole('button', { name: 'Speichern' });
-
-/** Öffnet die Bearbeiten-Maske über die Anzeigenzeile, wie ein Klick es tut. */
-async function maskeOeffnen(titel: string) {
-  fireEvent.click(await screen.findByText(titel));
-  await waitFor(() => { expect(maske()).not.toBeNull(); });
-}
-
 describe('Bestand: Maske folgt der Navigation (AP-2.13)', () => {
-  it('schließt die Bearbeiten-Maske beim Wechsel zu „Von anderen“', async () => {
+  it('öffnet eine Anzeige über den dauerhaften Routenstatus', async () => {
+    const aufZiel = vi.fn();
     const { rerender } = render(
-      <BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle },
+      <BestandSeite herkunft="eigene" aufZiel={aufZiel} />, { wrapper: huelle },
     );
-    await maskeOeffnen('Kinderwagen');
+    fireEvent.click(await screen.findByText('Kinderwagen'));
 
-    // Kein Remount: genau das macht die Seitenleiste auch.
-    rerender(<BestandSeite herkunft="fremde" aufZiel={vi.fn()} />);
+    expect(aufZiel).toHaveBeenCalledWith(
+      'anzeigen/eigene?datei=eigene%2FKinderwagen.yaml',
+    );
 
-    expect(maske()).toBeNull();
-    expect(await screen.findByText('Von anderen')).toBeDefined();
+    // Kein Detailzustand bleibt an der Listeninstanz hängen.
+    rerender(<BestandSeite herkunft="fremde" aufZiel={aufZiel} />);
     expect(await screen.findByText('Bohrmaschine')).toBeDefined();
   });
 
-  it('schließt die Maske auch auf dem Rückweg zu „Meine Anzeigen“', async () => {
-    const { rerender } = render(
-      <BestandSeite herkunft="fremde" aufZiel={vi.fn()} />, { wrapper: huelle },
+  it('öffnet eine Anzeige auch über die Iconaktion rechts in der Zeile', async () => {
+    const aufZiel = vi.fn();
+    render(
+      <BestandSeite herkunft="eigene" aufZiel={aufZiel} />, { wrapper: huelle },
     );
-    await maskeOeffnen('Bohrmaschine');
 
-    rerender(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Kinderwagen.*öffnen/ }));
 
-    expect(maske()).toBeNull();
+    expect(aufZiel).toHaveBeenCalledWith(
+      'anzeigen/eigene?datei=eigene%2FKinderwagen.yaml',
+    );
+  });
+
+  it('zeigt dieselbe Maske zuerst schreibgeschützt', async () => {
+    const aufZiel = vi.fn();
+    const { rerender } = render(
+      <BestandSeite
+        herkunft="eigene"
+        anzeigeDatei={EIGENE.datei}
+        aufZiel={aufZiel}
+      />,
+      { wrapper: huelle },
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Kinderwagen' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Anzeige bearbeiten' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull();
+    expect((screen.getByDisplayValue('Kinderwagen') as HTMLInputElement).readOnly).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anzeige bearbeiten' }));
+    expect(aufZiel).toHaveBeenCalledWith(
+      'anzeigen/eigene?datei=eigene%2FKinderwagen.yaml&bearbeiten=1',
+    );
+
+    // Der Routenwechsel zurück zur Liste ist ebenfalls ein kontrollierter
+    // Zustand und kein flüchtiger Editor-State.
+    rerender(<BestandSeite herkunft="eigene" aufZiel={aufZiel} />);
     expect(await screen.findByText('Meine Anzeigen')).toBeDefined();
   });
 
@@ -161,13 +177,4 @@ describe('Bestand: Maske folgt der Navigation (AP-2.13)', () => {
     expect(await screen.findByText('Bohrmaschine')).toBeDefined();
   });
 
-  it('öffnet den Editor ohne „Zurück"-Link (AP-2.30)', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
-    await maskeOeffnen('Kinderwagen');
-
-    // Mockup v4: die Kopfzeile trägt nur noch Titel und Badge. Zurück führt
-    // die Seitenleiste.
-    expect(screen.queryByRole('button', { name: /Zurück/ })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Kinderwagen' })).toBeDefined();
-  });
 });

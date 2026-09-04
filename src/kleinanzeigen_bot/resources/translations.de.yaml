@@ -225,6 +225,12 @@ kleinanzeigen_bot/publishing_workflow.py:
     "ad": "Anzeige"
 
 #################################################
+kleinanzeigen_bot/order_flow.py:
+#################################################
+  synchronisieren:
+    "Saved platform order for %s ads.": "Plattform-Reihenfolge für %s Anzeigen gespeichert."
+
+#################################################
 kleinanzeigen_bot/published_ads.py:
 #################################################
   fetch_published_ads:

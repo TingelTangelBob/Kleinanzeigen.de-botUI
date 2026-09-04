@@ -7,7 +7,7 @@
 // das Bild das, woran man seine Anzeige erkennt - nicht der Titel, den man
 // selbst getippt hat und der bei drei Webcams dreimal ähnlich klingt.
 
-import { AlertTriangle, ImageOff, Pencil, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Eye, ImageOff, Pencil, RefreshCw } from 'lucide-react';
 import type { BestandsAnzeige } from '../types';
 import { api } from '../services/api';
 import { titelFuerAnzeige } from '../titel';
@@ -83,6 +83,8 @@ interface Props {
   anzeige: BestandsAnzeige;
   profil: string;
   aufKlick?: (anzeige: BestandsAnzeige) => void;
+  aufOeffnen?: (anzeige: BestandsAnzeige) => void;
+  aufAktualisieren?: (anzeige: BestandsAnzeige) => void;
 }
 
 interface MerkmalDaten {
@@ -132,7 +134,9 @@ function merkmaleVon(anzeige: BestandsAnzeige): MerkmalDaten[] {
   return liste;
 }
 
-export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
+export function AnzeigenZeile({
+  anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren,
+}: Props) {
   const bildUrl = anzeige.vorschaubild
     ? api.bestand.bildUrl(profil, anzeige.datei, anzeige.vorschaubild)
     : null;
@@ -142,7 +146,7 @@ export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
   const versteckt = merkmale.slice(MERKMALE_SICHTBAR);
   const titel = titelFuerAnzeige(anzeige.titel);
 
-  const inhalt = (
+  const zeilenInhalt = (
     <>
       <div
         className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28"
@@ -203,17 +207,45 @@ export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
     </>
   );
 
-  if (!aufKlick) {
-    return <div className="zeile">{inhalt}</div>;
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => aufKlick(anzeige)}
-      className="zeile"
-    >
-      {inhalt}
-    </button>
+    <div className="zeile">
+      {aufKlick ? (
+        <button
+          type="button"
+          onClick={() => aufKlick(anzeige)}
+          className="zeile-inhalt zeile-klick"
+        >
+          {zeilenInhalt}
+        </button>
+      ) : (
+        <div className="zeile-inhalt">{zeilenInhalt}</div>
+      )}
+      {(aufOeffnen || aufAktualisieren) && (
+        <div className="zeile-aktionen">
+          {aufAktualisieren && (
+            <button
+              type="button"
+              onClick={() => aufAktualisieren(anzeige)}
+              aria-label={'„' + titel + '“ aktualisieren'}
+              title="Anzeige aktualisieren"
+              className="btn-icon zeile-aktualisieren"
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+          {aufOeffnen && (
+            <button
+              type="button"
+              onClick={() => aufOeffnen(anzeige)}
+              aria-label={'„' + titel + '“ öffnen'}
+              title="Anzeige öffnen"
+              className="btn-icon zeile-oeffnen"
+            >
+              <Eye className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

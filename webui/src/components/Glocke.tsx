@@ -10,7 +10,9 @@
 //     Farbe und Symbol nach Schwere; Tipps und Hinweise lassen sich wegklicken
 //     und bleiben weg, eine Warnung kommt wieder, sobald die Seite sie erneut
 //     meldet.
-//   * Läufe: „eingereiht", „läuft", „fertig" - mit Link auf die Warteschlange.
+//   * Läufe: Vorgangs-Icon, kurzer Anzeigenbezug und Zeit - mit Link auf die
+//     Warteschlange. Der Zustand bleibt am Punkt für Screenreader, aber nicht
+//     als zusätzliche Textspalte.
 //
 // Was hier NICHT passiert: Ein Lauf, der den Menschen braucht
 // (`braucht_eingabe`), bleibt zusätzlich als sichtbare Pille daneben stehen -
@@ -21,10 +23,10 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Bell, Info, Lightbulb, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../services/api';
-import { befehlText } from '../jobText';
+import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useMeldungen } from '../context/useMeldungen';
 import type { MeldungTon } from '../context/meldungenKontext';
-import type { Job, JobZustand } from '../types';
+import type { BestandsAnzeige, Job, JobZustand } from '../types';
 
 const AKTIV = new Set<JobZustand>(['wartet', 'laeuft', 'braucht_eingabe']);
 
@@ -72,6 +74,7 @@ function zeitText(iso: string | null): string {
 
 export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [anzeigen, setAnzeigen] = useState<BestandsAnzeige[]>([]);
   const [offen, setOffen] = useState(false);
   const [puls, setPuls] = useState(false);
   const huelle = useRef<HTMLDivElement>(null);
@@ -83,8 +86,24 @@ export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
       try {
         const liste = await api.jobs.liste();
         if (!tot) setJobs(liste);
+
+        // Der Job trägt nur Profil und Dateigrenze/ID. Die Titel kommen aus
+        // dem Bestand. Pro Profil getrennt laden, damit die Glocke auch bei
+        // mehreren Konten denselben Bezug wie die Warteschlange zeigt.
+        const profile = [...new Set(liste.map(job => job.profil_slug))];
+        const bestaende = (await Promise.all(profile.map(async profil => {
+          try {
+            return await api.bestand.liste(profil);
+          } catch {
+            return [];
+          }
+        }))).flat();
+        if (!tot) setAnzeigen(bestaende);
       } catch {
-        if (!tot) setJobs([]);
+        if (!tot) {
+          setJobs([]);
+          setAnzeigen([]);
+        }
       }
     };
     void laden();
@@ -172,8 +191,6 @@ export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
 
       {offen && (
         <div className="glocke-panel" role="menu" aria-label="Benachrichtigungen">
-          <p className="glocke-kopf">Benachrichtigungen</p>
-
           {meldungen.length > 0 && (
             <div className="glocke-meldungen">
               {meldungen.map(m => {
@@ -199,23 +216,36 @@ export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
             </div>
           )}
 
-          <p className="glocke-kopf glocke-kopf-zwischen">Läufe</p>
           {juengste.length === 0 ? (
             <p className="glocke-leer">Noch kein Lauf.</p>
           ) : (
             juengste.map(job => (
-              <button
-                key={job.id}
-                type="button"
-                onClick={zumProtokoll}
-                className="glocke-zeile"
-                role="menuitem"
-              >
-                <span className={`status-punkt ${ZUSTAND_PUNKT[job.zustand]}`} />
-                <span className="min-w-0 flex-1 truncate text-stark">{befehlText(job.befehl)}</span>
-                <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
-                <span className="flex-shrink-0 text-xs text-normal">{ZUSTAND_TEXT[job.zustand]}</span>
-              </button>
+              (() => {
+                const bezug = anzeigeBezug(job, anzeigen);
+                const titel = (bezug ?? befehlText(job.befehl)).replace(/ · #\d+$/, '');
+                const Icon = befehlIcon(job.befehl);
+                const istAktiv = AKTIV.has(job.zustand);
+                return (
+                  <button
+                    key={job.id}
+                    type="button"
+                    onClick={zumProtokoll}
+                    className={`glocke-zeile ${job.zustand === 'fertig' ? 'glocke-zeile-fertig' : ''}`}
+                    role="menuitem"
+                    aria-label={`${titel}, ${befehlText(job.befehl)}, ${ZUSTAND_TEXT[job.zustand]}`}
+                    title={`${befehlText(job.befehl)}${bezug ? ` · ${bezug}` : ''} · ${ZUSTAND_TEXT[job.zustand]}`}
+                  >
+                    <span
+                      className={`status-punkt ${ZUSTAND_PUNKT[job.zustand]} ${istAktiv ? 'status-punkt-aktiv' : ''}`}
+                      role="img"
+                      aria-label={ZUSTAND_TEXT[job.zustand]}
+                    />
+                    <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
+                    <span className="glocke-zeile-titel min-w-0 flex-1 truncate text-stark">{titel}</span>
+                    <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
+                  </button>
+                );
+              })()
             ))
           )}
           <button type="button" onClick={zumProtokoll} className="glocke-fuss" role="menuitem">

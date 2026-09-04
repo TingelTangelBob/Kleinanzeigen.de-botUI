@@ -17,8 +17,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from anzeigen_studio.core import db
-from anzeigen_studio.core import nutzerconfig
+from anzeigen_studio.core import db, nutzerconfig
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.core.settings import Settings

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Kategorie suchen statt Nummernpfad tippen (AP-2.7).
+// UI-Anpassung 2026-09-04: Suchfeld für die kompakte Editorzeile verdichtet.
+// UI-Anpassung 2026-09-05: Suche als Symbol im Kategoriefeld.
 //
 // Die Liste kommt vollständig aus `categories.yaml` des Bots und wird hier
 // gefiltert. Rund 520 Einträge sind für den Browser nichts, und jeder
@@ -28,9 +30,11 @@ const MAX_TREFFER = 40;
 interface Props {
   wert: string;
   aufAenderung: (wert: string) => void;
+  bearbeitbar?: boolean;
+  kompakt?: boolean;
 }
 
-export function KategorieWahl({ wert, aufAenderung }: Props) {
+export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt = false }: Props) {
   const [alle, setAlle] = useState<Kategorie[]>([]);
   const [suche, setSuche] = useState('');
   const [offen, setOffen] = useState(false);
@@ -75,6 +79,27 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
   // derselbe Fall wie ein gescheiterter Aufruf.
   const ohneListe = geladen && alle.length === 0;
 
+  if (!bearbeitbar) {
+    return (
+      <div>
+        <span className="beschriftung">Kategorie</span>
+        <div className="feld feld-lesbar mt-1">
+          {bekannt ? (
+            <span className="block break-words text-sm text-stark">{bekannt.name}</span>
+          ) : wert ? (
+            <span className="flex items-start gap-1.5 text-sm text-normal">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">{wert}</span>
+            </span>
+          ) : (
+            <span className="block text-sm text-leise">Keine Kategorie gesetzt</span>
+          )}
+          <span className="mt-0.5 block break-words text-xs text-leise">{wert || '—'}</span>
+        </div>
+      </div>
+    );
+  }
+
   if (ohneListe) {
     return (
       <div>
@@ -100,71 +125,78 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
   }
 
   return (
-    <div ref={huelle} className="relative">
+    <div ref={huelle} className={`relative ${kompakt ? 'kategorie-wahl-kompakt' : ''}`}>
       <span className="text-sm font-medium text-normal">Kategorie</span>
 
-      <div className="feld mt-1">
-        {/* Umbrechen statt abschneiden (AP-2.35). Ein Kategoriepfad wie
-            „Haus & Garten/Möbel/Kommoden & Sideboards" ist länger als das
-            Feld; `truncate` machte daraus „Haus & Garten/Möbel/Komm…" und
-            verschwieg genau das Ende, an dem die Kategorie sich unterscheidet.
-            In der schmalen 35-%-Spalte trifft das fast jeden Pfad. */}
+      <div className="feld kategorie-wert-feld mt-1">
+        {/* Die Kopfzeile bleibt einzeilig (AP-2.35/AP-2.42). Lange Kategorien
+            werden im Feld gekürzt, der vollständige Name bleibt im title
+            sichtbar; der Nummernpfad bleibt daneben als kurze Kennung stehen. */}
+        <span className="kategorie-wert-inhalt">
         {bekannt ? (
-          <span className="block break-words text-sm text-stark">{bekannt.name}</span>
+          <span className="block truncate text-sm text-stark" title={bekannt.name}>{bekannt.name}</span>
         ) : wert ? (
-          <span className="flex items-start gap-1.5 text-sm text-amber-900">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-            <span className="min-w-0">
-              <span className="block break-words">{wert}</span>
-              <span className="block text-xs">
-                Nicht in der Liste. Bleibt so, bis du etwas anderes wählst.
-              </span>
-            </span>
+          <span className="flex min-w-0 items-center gap-1.5 text-sm text-amber-900">
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+            <span className="truncate" title={wert}>{wert}</span>
           </span>
         ) : (
           <span className="block text-sm text-leise">Keine Kategorie gesetzt</span>
         )}
-        <span className="mt-0.5 block break-words text-xs text-leise">{wert || '—'}</span>
+        </span>
+        {wert && <span className="kategorie-wert-pfad">{wert}</span>}
+        <button
+          type="button"
+          className="kategorie-suche-knopf"
+          aria-label="Kategorie suchen"
+          title="Kategorie suchen"
+          aria-expanded={offen}
+          onClick={() => setOffen(vorher => !vorher)}
+        >
+          <Search className="h-4 w-4" aria-hidden />
+        </button>
       </div>
 
-      <label className="relative mt-2 block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
-        <span className="sr-only">Kategorie suchen</span>
-        <input
-          type="search"
-          value={suche}
-          onFocus={() => setOffen(true)}
-          onChange={e => { setSuche(e.target.value); setOffen(true); }}
-          onKeyDown={e => { if (e.key === 'Escape') setOffen(false); }}
-          placeholder="Kategorie suchen …"
-className="feld w-full py-2 pl-9 pr-3"
-        />
-      </label>
+      {offen && (
+        <div className="karte absolute z-20 mt-1 w-full p-2">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
+            <span className="sr-only">Kategorie suchen</span>
+            <input
+              type="search"
+              autoFocus
+              value={suche}
+              onChange={e => setSuche(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') setOffen(false); }}
+              placeholder="Kategorie suchen …"
+              className={`feld w-full py-2 pl-9 pr-3 ${kompakt ? 'kategorie-suche-kompakt' : ''}`}
+            />
+          </label>
 
-      {offen && treffer.length > 0 && (
-        <ul className="karte absolute z-20 mt-1 max-h-64 w-full overflow-y-auto">
-          {treffer.map(k => (
-            <li key={k.wert}>
-              <button
-                type="button"
-                onClick={() => { aufAenderung(k.wert); setSuche(''); setOffen(false); }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm
-                           hover:bg-[var(--primary-light)]"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-stark">{k.name}</span>
-                  <span className="block text-xs text-leise">{k.wert}</span>
-                </span>
-                {k.wert === wert && <Check className="h-4 w-4 flex-shrink-0 text-primary-custom" aria-hidden />}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {offen && suche.trim() !== '' && treffer.length === 0 && (
-        <p className="karte absolute z-20 mt-1 w-full px-3 py-2 text-sm text-leise">
-          Kein Treffer.
-        </p>
+          {treffer.length > 0 && (
+            <ul className="mt-2 max-h-64 overflow-y-auto">
+              {treffer.map(k => (
+                <li key={k.wert}>
+                  <button
+                    type="button"
+                    onClick={() => { aufAenderung(k.wert); setSuche(''); setOffen(false); }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm
+                               hover:bg-[var(--primary-light)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-stark">{k.name}</span>
+                      <span className="block text-xs text-leise">{k.wert}</span>
+                    </span>
+                    {k.wert === wert && <Check className="h-4 w-4 flex-shrink-0 text-primary-custom" aria-hidden />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {suche.trim() !== '' && treffer.length === 0 && (
+            <p className="px-3 py-2 text-sm text-leise">Kein Treffer.</p>
+          )}
+        </div>
       )}
     </div>
   );

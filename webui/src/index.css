@@ -389,6 +389,58 @@ html:has(#app-shell[data-theme='dark']) {
     object-fit: cover;
   }
 
+  .bild-kachel-knopf {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    line-height: 0;
+    cursor: zoom-in;
+  }
+  .bild-kachel-knopf:hover { filter: brightness(0.96); }
+
+  .bild-vorschau-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 0.72);
+    padding: 1.5rem;
+    cursor: zoom-out;
+  }
+  .bild-vorschau-dialog {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: var(--radius-kontrolle);
+    background: var(--karte);
+    padding: 0.35rem;
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.3);
+    cursor: default;
+  }
+  .bild-vorschau {
+    display: block;
+    max-width: calc(100vw - 3rem);
+    max-height: calc(100vh - 3rem);
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: calc(var(--radius-kontrolle) - 3px);
+  }
+  .bild-vorschau-schliessen {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 1;
+    background: var(--karte);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+  }
+
   .karte {
     border-radius: var(--radius-karte);
     border: 1px solid var(--karte-rand);
@@ -458,9 +510,50 @@ html:has(#app-shell[data-theme='dark']) {
     border-radius: 0;
     transition: background 0.12s ease, box-shadow 0.12s ease;
   }
-  button.zeile { cursor: pointer; }
-  button.zeile:hover {
+  .zeile-inhalt {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: flex-start;
+    gap: 1rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    text-align: left;
+    color: inherit;
+  }
+  button.zeile-klick {
+    cursor: pointer;
+    border-radius: var(--radius-kontrolle);
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  button.zeile-klick:hover {
     background: var(--primary-light);
+  }
+  .zeile-aktionen {
+    display: flex;
+    flex-shrink: 0;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+  .btn-icon {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    color: var(--text);
+  }
+  .btn-icon:hover {
+    background: var(--primary-light);
+    color: var(--primary-color);
+  }
+  .zeile-aktualisieren {
+    align-self: flex-start;
   }
 
   .feld {
@@ -477,6 +570,14 @@ html:has(#app-shell[data-theme='dark']) {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 1px var(--primary-color);
+  }
+  .feld:disabled,
+  .feld[readonly] {
+    cursor: default;
+    opacity: 0.88;
+  }
+  .feld-lesbar {
+    min-height: 44px;
   }
   select.feld { min-height: 44px; }
 
@@ -631,10 +732,10 @@ html:has(#app-shell[data-theme='dark']) {
 
   /*
    * Versandpaket-Auswahl (AP-2.23): ein Chip je Paket, Name und Live-Preis in
-   * einer Zeile. Ausgewählt ist es an Waldgrün-Rand, hellgrüner Fläche und
-   * Häkchen erkennbar – ohne die volle Primärfläche, damit die Karte ruhig
-   * bleibt, auch wenn mehrere Chips derselben Größe aktiv sind. Alle Werte aus
-   * den Tokens, der Dunkelmodus trägt darüber.
+   * einer Zeile. Ausgewählt ist es ausschließlich am stabilen Waldgrün-Rand
+   * und der hellgrünen Fläche erkennbar; ein wechselndes Häkchen würde die
+   * Breite des Chips verändern. Der Dienstleister steht als kompakte
+   * markenbezogene Kennung rechts im Chip.
    */
   .vp-chip {
     display: inline-flex;
@@ -660,9 +761,28 @@ html:has(#app-shell[data-theme='dark']) {
     color: var(--text-stark);
     font-weight: 550;
   }
-  .vp-chip svg { align-self: center; color: var(--primary-color); }
   .vp-chip-preis { color: var(--text-schwach); font-variant-numeric: tabular-nums; }
   .vp-chip-aktiv .vp-chip-preis { color: var(--primary-color); }
+  .vp-anbieter-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.7rem;
+    min-height: 1.45rem;
+    border-radius: 0.35rem;
+    padding: 0.08rem 0.35rem;
+    background: var(--karte-rand);
+    color: var(--text-stark);
+    font-size: 0.64rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .vp-anbieter-logo[data-anbieter='Hermes'] { background: #0795cf; color: white; }
+  .vp-anbieter-logo[data-anbieter='DHL'] { background: #ffcc00; color: #d40511; }
+  .vp-anbieter-logo[data-anbieter='DPD'] { background: #dc0032; color: white; }
+  .vp-anbieter-logo[data-anbieter='GLS'] { background: #ffcf00; color: #123c7b; }
+  .vp-anbieter-logo[data-anbieter='UPS'] { background: #351c15; color: #ffbe00; }
 
   .hinweis {
     border-radius: 12px;
@@ -727,10 +847,17 @@ html:has(#app-shell[data-theme='dark']) {
     border-radius: var(--radius-pille);
     background: var(--status-neutral);
   }
-  .status-punkt-gruen { background: var(--status-erfolg); }
-  .status-punkt-gelb { background: var(--status-warnung); }
-  .status-punkt-rot { background: var(--status-fehler); }
-  .status-punkt-grau { background: var(--status-neutral); }
+  .status-punkt-gruen { background: var(--status-erfolg); color: var(--status-erfolg); }
+  .status-punkt-gelb { background: var(--status-warnung); color: var(--status-warnung); }
+  .status-punkt-rot { background: var(--status-fehler); color: var(--status-fehler); }
+  .status-punkt-grau { background: var(--status-neutral); color: var(--status-neutral); }
+
+  /* Aktive Läufe atmen langsam, damit „arbeitet gerade“ nicht nur an einer
+     statischen Farbe hängt. Die Animation verändert Helligkeit und Leuchten,
+     nicht die Position des Punkts - dadurch bleibt die Zeile ruhig. */
+  .status-punkt-aktiv {
+    animation: status-punkt-atmen 2.4s ease-in-out infinite;
+  }
 
   .dialog {
     max-height: 85vh;
@@ -904,6 +1031,7 @@ html:has(#app-shell[data-theme='dark']) {
     background: transparent;
     border: 0;
   }
+  .glocke-zeile-fertig .glocke-zeile-titel { color: var(--text); }
   .glocke-zeile:hover { background: var(--primary-light); }
   .glocke-zeile + .glocke-zeile { border-top: 1px solid var(--karte-rand); }
   .glocke-fuss {
@@ -987,8 +1115,18 @@ html:has(#app-shell[data-theme='dark']) {
     60% { transform: scale(0.96); }
     100% { transform: scale(1); }
   }
+  @keyframes status-punkt-atmen {
+    0%, 100% {
+      opacity: 0.55;
+      box-shadow: 0 0 0 currentColor;
+    }
+    50% {
+      opacity: 1;
+      box-shadow: 0 0 0.45rem currentColor;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .glocke-meldung, .glocke-knopf-puls { animation: none; }
+    .glocke-meldung, .glocke-knopf-puls, .status-punkt-aktiv { animation: none; }
   }
 
   /*
@@ -1003,21 +1141,218 @@ html:has(#app-shell[data-theme='dark']) {
   .editor-kopf {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
-    margin-bottom: 1.25rem;
+    gap: 0.1rem;
+    margin-bottom: 0.85rem;
+  }
+  .editor-kopf .seite-beschrieb { margin-top: 0; }
+  .editor-kopf-oberzeile {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .editor-aktionsgruppe {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .plattform-menue {
+    position: relative;
+  }
+  .plattform-menue-panel {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    min-width: 13rem;
+    padding: 0.35rem;
+    border: 1px solid var(--karte-rand);
+    border-radius: 0.75rem;
+    background: var(--karte);
+    box-shadow: 0 0.65rem 1.5rem rgb(20 35 28 / 0.14);
+  }
+  .plattform-menue-panel a {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.5rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: 0.5rem;
+    color: var(--text);
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+  .plattform-menue-panel a:hover,
+  .plattform-menue-panel a:focus-visible {
+    background: var(--canvas);
+    outline: none;
+  }
+  .editor-raster {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .editor-hauptspalte,
+  .editor-bilder-rail {
+    min-width: 0;
+  }
+  .editor-hauptspalte {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .editor-bilder-rail {
+    display: flex;
+    flex-direction: column;
+    order: -1;
+    gap: 1rem;
+  }
+  .editor-karte {
+    padding: 1rem;
+  }
+  .editor-bilder-karte {
+    min-width: 0;
+  }
+  .editor-trenner {
+    margin-block: 1rem;
+    border-top: 1px solid var(--karte-rand);
+  }
+
+  /*
+   * Allgemeine Felder (2026-09-04): Der Titel steht zuerst. Ab sm folgen
+   * Art und Kategorie gemeinsam in der nächsten Zeile; auf großen Flächen
+   * liegen alle drei Felder in einer Zeile. So bleibt die Reihenfolge auch
+   * auf dem Telefon eindeutig und die Beschreibung beginnt erst danach.
+   */
+  .editor-allgemein-kopf {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem 1rem;
+    align-items: start;
+  }
+  .editor-titel-feld,
+  .editor-art-feld,
+  .kategorie-wahl-kompakt,
+  .editor-versandfeld {
+    min-width: 0;
+  }
+  .editor-preis-versand {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(10rem, 12rem);
+    gap: 1rem 1.5rem;
+    align-items: start;
+  }
+  .kategorie-wert-feld {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 0.5rem;
+    padding-block: 0.45rem;
+  }
+  .kategorie-wert-inhalt {
+    min-width: 0;
+    flex: 1;
+  }
+  .kategorie-wert-pfad {
+    flex-shrink: 0;
+    color: var(--text-schwach);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  .kategorie-suche-knopf {
+    display: inline-flex;
+    min-width: 28px;
+    min-height: 28px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0.45rem;
+    background: transparent;
+    color: var(--text-schwach);
+  }
+  .kategorie-suche-knopf:hover,
+  .kategorie-suche-knopf:focus-visible {
+    background: var(--primary-light);
+    color: var(--primary-color);
+    outline: none;
+  }
+  .kategorie-suche-kompakt {
+    min-height: 36px;
+    padding-block: 0.35rem;
+    font-size: 0.8125rem;
   }
 
   .bild-spalte {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 0.5rem;
+    /* Die Bildfläche bleibt beim Wechsel auf zwei Spalten gleich groß. Nur
+       die quadratischen Kacheln werden durch die kleinere Spaltenbreite
+       kleiner; mehrere Zeilen laufen innerhalb dieser Fläche weiter. */
+    aspect-ratio: 1 / 1;
     max-height: min(60vh, 34rem);
     overflow-y: auto;
     padding-right: 0.15rem;
   }
+  .bild-spalte-zweispaltig {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-  @media (min-width: 768px) {
-    .editor-bilder {
+  @media (min-width: 640px) {
+    .editor-allgemein-kopf {
+      grid-template-columns: minmax(8rem, 0.65fr) minmax(13rem, 1fr);
+    }
+    .editor-titel-feld { grid-column: 1 / -1; }
+  }
+
+  @media (min-width: 1024px) {
+    .editor-raster {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+      align-items: start;
+      gap: 1rem;
+    }
+    .editor-bilder-rail {
+      position: sticky;
+      top: calc(var(--topbar-hoehe) + 1rem);
+      order: initial;
+    }
+    .editor-bilder-rail .bild-spalte {
+      /* Der Preis-Container bleibt unter dem Bildstreifen im Sichtbereich.
+         Mehr Bilder scrollen innerhalb der Spalte statt die ganze rechte
+         Seite nach unten zu schieben. */
+      max-height: min(42vh, 28rem, max(8rem, calc(100vh - var(--topbar-hoehe) - 20rem)));
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .editor-bilder-rail .bild-spalte {
+      max-height: min(50vh, 28rem);
+    }
+  }
+
+  @media (max-width: 639px) {
+    .editor-preis-versand { grid-template-columns: 1fr; }
+    .editor-kopf-oberzeile {
+      flex-direction: column;
+    }
+    .editor-aktionsgruppe {
+      justify-content: flex-start;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .editor-allgemein-kopf {
+      grid-template-columns: minmax(0, 1.7fr) minmax(8rem, 0.65fr) minmax(13rem, 1.15fr);
+    }
+    .editor-titel-feld { grid-column: auto; }
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .editor-bilder-rail {
       position: sticky;
       top: calc(var(--topbar-hoehe) + 1rem);
     }

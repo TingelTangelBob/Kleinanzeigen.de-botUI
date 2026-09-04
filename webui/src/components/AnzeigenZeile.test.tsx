@@ -9,6 +9,7 @@
 // „Gelöscht" - eine bloß inaktive fremde Anzeige das neutrale „Inaktiv".
 
 import { describe, expect, it, vi } from 'vitest';
+import { fireEvent } from '@testing-library/dom';
 import { render, screen } from '@testing-library/react';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import type { BestandsAnzeige } from '../types';
@@ -84,5 +85,38 @@ describe('AnzeigenZeile: „Gelöscht"-Badge (AP-3.10)', () => {
 
     expect(screen.getByText('Amazon Fire TV Stick')).toBeDefined();
     expect(screen.queryByText('Gelöscht • Amazon Fire TV Stick')).toBeNull();
+  });
+
+  it('bietet für eigene Online-Anzeigen eine Aktualisieren-Iconaktion an', () => {
+    const aufAktualisieren = vi.fn();
+    const daten = anzeige({});
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufAktualisieren={aufAktualisieren}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Amazon Fire TV Stick.*aktualisieren/ }));
+    expect(aufAktualisieren).toHaveBeenCalledWith(daten);
+  });
+
+  it('bietet eine eigenständige Iconaktion zum Öffnen an', () => {
+    const aufOeffnen = vi.fn();
+    const daten = anzeige({});
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufOeffnen={aufOeffnen}
+      />,
+    );
+
+    const oeffnen = screen.getByRole('button', { name: /Amazon Fire TV Stick.*öffnen/ });
+    fireEvent.click(oeffnen);
+
+    expect(aufOeffnen).toHaveBeenCalledWith(daten);
+    expect(oeffnen.querySelector('svg')).not.toBeNull();
   });
 });

@@ -73,6 +73,11 @@ class Job:
     #: diese Dateien ein - gedacht fuer das Hochladen einer einzelnen Anzeige.
     anzeigen_glob: str | None = None
 
+    #: Bei einem gezielten Plattform-Delete wird die lokale Kopie erst nach
+    #: erfolgreichem Lauf entfernt. None bedeutet: Plattform-Delete lässt die
+    #: lokale Kopie bewusst stehen.
+    lokal_loeschen_datei: str | None = None
+
     #: Woran der Lauf zuletzt war (AP-2.8), als Kennung und als fertiger Text,
     #: dazu seit wann. Reine Anzeige - es haengt keine Entscheidung daran.
     #: Nach dem Ende bleibt der letzte Stand stehen; die Oberflaeche zeigt ihn

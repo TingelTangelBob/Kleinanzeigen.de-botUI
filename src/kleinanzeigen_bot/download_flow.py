@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from . import download_selection as _download_selection
-from . import extract, published_ads
+from . import extract, order_flow, published_ads
 from .model.ad_model import Ad
 from .model.config_model import DEFAULT_DOWNLOAD_DIR, Config
 from .published_ads import PublishedAd
@@ -116,10 +116,13 @@ async def _fetch_published_ads_by_id(
     root_url:str,
     *,
     strict:bool,
+    order_file:Path | None = None,
 ) -> dict[int, PublishedAd]:
     """Fetch published ads from manage-ads API and build a lookup dict."""
     LOG.info("Fetching ad metadata (status, expiry dates)...")
     published_ads_list = await published_ads.fetch_published_ads(web, root_url, strict = strict)
+    if order_file is not None:
+        order_flow.speichern(order_file, published_ads_list)
     published_ads_by_id:dict[int, PublishedAd] = {}
     for published_ad in published_ads_list:
         try:
@@ -272,6 +275,7 @@ async def download_ads(
     # Fetch published ads once and build a lookup dict
     published_ads_by_id = await _fetch_published_ads_by_id(
         web, root_url, strict = is_numeric_selector,
+        order_file = order_flow.datei_fuer(workspace.config_file),
     )
 
     download_dir = resolve_download_dir(config, config_file_path, workspace)

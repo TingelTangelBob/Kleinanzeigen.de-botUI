@@ -20,7 +20,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from ruamel.yaml import YAML
 
@@ -110,7 +110,8 @@ def gesperrte_entfernen(nutzer: dict[str, Any]) -> list[str]:
 def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str,
               chromium: str = "/usr/bin/chromium",
               download_ordner: str | None = None,
-              titelloeschen_sperren: bool = False) -> list[str]:
+              titelloeschen_sperren: bool = False,
+              loeschpolitik: Literal["NONE", "RESET", "DISABLE"] | None = None) -> list[str]:
     """Schreibt die config.yaml. Gibt die verworfenen Felder zurueck.
 
     `download_ordner` setzt `download.dir` fuer genau diesen Lauf - genutzt
@@ -125,6 +126,12 @@ def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str,
     dass eine gleichnamige online verschwindet. Die Einstellung selbst bleibt
     unangetastet; sie gilt weiter fuer Laeufe, die der Mensch von der
     Laufliste aus startet.
+
+    `loeschpolitik` ist nur fuer einen gezielten Delete-Lauf gedacht. Die
+    Oberflaeche laesst die lokale Kopie nach einem erfolgreichen oder bereits
+    erledigten Plattform-Delete als inaktiv stehen (`DISABLE`), damit sie
+    nicht weiter wie online wirkt. Sammellaeufe ohne diesen Wert behalten die
+    Einstellung des Nutzers.
     """
     entwurf = dict(nutzer)
     entfernt = gesperrte_entfernen(entwurf)
@@ -134,6 +141,11 @@ def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str,
         publishing = dict(bisher) if isinstance(bisher, dict) else {}
         publishing["delete_old_ads_by_title"] = False
         vollstaendig["publishing"] = publishing
+    if loeschpolitik is not None:
+        bisher = vollstaendig.get("deleting")
+        deleting = dict(bisher) if isinstance(bisher, dict) else {}
+        deleting["after_delete"] = loeschpolitik
+        vollstaendig["deleting"] = deleting
     if download_ordner:
         bisher = vollstaendig.get("download")
         download = dict(bisher) if isinstance(bisher, dict) else {}

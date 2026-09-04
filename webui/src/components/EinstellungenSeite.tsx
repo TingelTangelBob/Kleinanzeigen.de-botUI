@@ -10,17 +10,18 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  AlertTriangle, Check, ChevronsDownUp, ChevronsUpDown, KeyRound, Monitor, Moon, RotateCcw, Save,
-  Search, Sparkles, Sun,
+  AlertTriangle, CalendarClock, Check, ChevronsDownUp, ChevronsUpDown, KeyRound, Monitor, Moon,
+  RotateCcw, Save, Search, Sparkles, Sun,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { useThema, type ThemaWahl } from '../hooks/useThema';
 import type { EinstellungsAbschnitt } from '../routing';
-import type { EinstellungsFeld, EinstellungsGruppe, ZugangStatus } from '../types';
+import type { AbgleichStand, EinstellungsFeld, EinstellungsGruppe, ZugangStatus } from '../types';
 import { BrowsersichtSeite } from './BrowsersichtSeite';
 import { ProfilSeite } from './ProfilSeite';
+import { SicherungAbschnitt } from './SicherungAbschnitt';
 
 const MIN_PASSWORTLAENGE = 12;
 
@@ -567,6 +568,10 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         </button>
       </section>
 
+      <TaeglicherAbgleich profil={aktiv.slug} />
+
+      <SicherungAbschnitt profil={aktiv.slug} />
+
       {/* Suchzeile über den Gruppen (AP-2.19). Der Bot-Reiter führt gut vier
           Dutzend Felder in zehn Gruppen; wer eine Zeitgrenze sucht, soll nicht
           scrollen, sondern tippen. */}
@@ -655,6 +660,127 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Täglicher Abgleich der eigenen Anzeigen (AP-3.12).
+ *
+ * Der einzige Schalter in dieser Oberfläche, der einen wiederkehrenden Lauf
+ * gegen das echte Konto erlaubt. Deshalb steht hier ausdrücklich, was er tut,
+ * bevor er umgelegt wird – und deshalb ist die Vorgabe „aus".
+ *
+ * Er liegt neben den Zugangsdaten und nicht in den Bot-Gruppen darunter: Die
+ * kommen aus dem Upstream-Schema und werden in `nutzer.yaml` gespeichert;
+ * dieser Schalter gehört dem Studio und liegt in der Datenbank.
+ */
+function TaeglicherAbgleich({ profil }: { profil: string }) {
+  const [stand, setStand] = useState<AbgleichStand | null>(null);
+  const [laedt, setLaedt] = useState(true);
+  const [schaltet, setSchaltet] = useState(false);
+  const [fehler, setFehler] = useState<string | null>(null);
+
+  useEffect(() => {
+    let tot = false;
+    setLaedt(true);
+    api.abgleich.stand(profil)
+      .then(neu => { if (!tot) { setStand(neu); setFehler(null); } })
+      .catch((e: unknown) => {
+        if (!tot) setFehler(e instanceof ApiFehler ? e.message : 'Stand nicht abrufbar.');
+      })
+      .finally(() => { if (!tot) setLaedt(false); });
+    return () => { tot = true; };
+  }, [profil]);
+
+  const schalten = async (an: boolean) => {
+    setSchaltet(true);
+    setFehler(null);
+    try {
+      setStand(await api.abgleich.schalten(profil, an));
+    } catch (e: unknown) {
+      setFehler(e instanceof ApiFehler ? e.message : 'Konnte nicht gespeichert werden.');
+    } finally {
+      setSchaltet(false);
+    }
+  };
+
+  const zeit = (iso: string | null) => {
+    if (!iso) return null;
+    const wann = new Date(iso);
+    return Number.isNaN(wann.getTime()) ? null : wann.toLocaleString('de-DE');
+  };
+  const zuletzt = zeit(stand?.letzter_lauf_am ?? null);
+
+  return (
+    <section className="karte mb-4 p-4">
+      <h2 className="flex items-center gap-2 font-medium text-stark">
+        <CalendarClock className="h-5 w-5 text-primary-custom" />
+        Täglicher Abgleich
+      </h2>
+      <p className="lesebreite mt-1 text-sm text-leise">
+        Holt einmal am Tag den Stand der eigenen Anzeigen vom Konto und meldet in der
+        Glocke, was sich geändert hat – etwa eine Anzeige, die auf kleinanzeigen.de
+        nicht mehr online ist. Ohne Änderung kommt keine Meldung.
+      </p>
+
+      {laedt ? (
+        <p className="mt-3 text-sm text-leise">Wird geladen …</p>
+      ) : (
+        <>
+          <label htmlFor="abgleich-an" className="lesebreite mt-3 flex items-start gap-3">
+            <input
+              id="abgleich-an"
+              type="checkbox"
+              checked={stand?.eingeschaltet === true}
+              disabled={schaltet}
+              onChange={e => void schalten(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span>
+              <span className="block text-sm font-medium text-stark">
+                Einmal täglich selbstständig abgleichen
+              </span>
+              <span className="lesebreite mt-0.5 block text-xs text-leise">
+                Das ist ein wiederkehrender Lauf gegen das echte Konto: Der Browser meldet
+                sich an und lädt die eigenen Anzeigen. Er reiht sich in dieselbe
+                Warteschlange wie jeder andere Lauf ein und lässt sich dort abbrechen.
+              </span>
+            </span>
+          </label>
+
+          {stand?.eingeschaltet && !stand.zugang_vorhanden && (
+            <p role="alert" className="hinweis hinweis-warn lesebreite mt-3">
+              <AlertTriangle className="mb-1 inline h-4 w-4" aria-hidden /> Für dieses Profil
+              ist kein Passwort hinterlegt. Der Abgleich startet deshalb gar nicht erst.
+            </p>
+          )}
+
+          <dl className="mt-3 space-y-1 text-sm">
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-leise">Zuletzt gestartet:</dt>
+              <dd className="text-normal">{zuletzt ?? 'noch nie'}</dd>
+            </div>
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-leise">Ergebnis:</dt>
+              <dd className="text-normal">
+                {stand?.laeuft
+                  ? 'Der Lauf von heute läuft noch.'
+                  : stand?.letztes_ergebnis ?? '—'}
+              </dd>
+            </div>
+            {stand?.eingeschaltet && stand.heute_gelaufen && !stand.laeuft && (
+              <div className="text-xs text-leise">
+                Für heute ist der Abgleich erledigt – ein zweiter Lauf kommt nicht.
+              </div>
+            )}
+          </dl>
+        </>
+      )}
+
+      {fehler && (
+        <p role="alert" className="hinweis hinweis-fehler lesebreite mt-3">{fehler}</p>
+      )}
+    </section>
   );
 }
 

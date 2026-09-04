@@ -240,6 +240,83 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         CREATE INDEX idx_ki_verbrauch_zeit ON ki_verbrauch(zeitpunkt);
         """,
     ),
+    (
+        10,
+        "taeglicher-abgleich",
+        """
+        -- Taeglicher Abgleich der eigenen Anzeigen (AP-3.12).
+        --
+        -- Ein Zeitgeber reiht einmal am Tag je Profil einen `download` ein und
+        -- vergleicht danach, was aus den eigenen Anzeigen geworden ist. Das
+        -- ist ein WIEDERKEHRENDER LAUF GEGEN DAS ECHTE KONTO - deshalb steht
+        -- `eingeschaltet` auf 0 und muss unter Einstellungen bewusst gesetzt
+        -- werden (EXPECTATIONS.md Paragraph 7).
+        --
+        -- `letzter_tag` ist der lokale Kalendertag (YYYY-MM-DD), an dem
+        -- zuletzt eingereiht wurde. Er steht in der Datenbank und nicht im
+        -- Speicher des Prozesses, damit ein Neustart am selben Tag nicht ein
+        -- zweites Mal laeuft.
+        --
+        -- `vorher` haelt den Zustand VOR dem Lauf als JSON fest. Ohne ihn
+        -- waere nach dem Lauf nicht mehr feststellbar, was sich geaendert hat -
+        -- der Bot ueberschreibt die Dateien mit dem Stand der Plattform.
+        CREATE TABLE abgleich (
+            profil_id        INTEGER PRIMARY KEY REFERENCES profil(id) ON DELETE CASCADE,
+            eingeschaltet    INTEGER NOT NULL DEFAULT 0,
+            letzter_tag      TEXT,
+            letzter_lauf_am  TEXT,
+            letztes_ergebnis TEXT,
+            job_id           INTEGER,
+            vorher           TEXT
+        );
+
+        -- Was der Abgleich gefunden hat, fuer die Glocke. Eigene Tabelle statt
+        -- eines Felds in `abgleich`: Ein Befund darf nicht verloren gehen,
+        -- nur weil am naechsten Tag der naechste Lauf kommt.
+        --
+        -- Ohne Aenderung wird hier NICHTS geschrieben. Ein taegliches "nichts
+        -- passiert" waere Laerm, und Laerm in einer Glocke heisst, dass die
+        -- Glocke bald niemand mehr aufmacht.
+        CREATE TABLE abgleich_meldung (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            profil_id INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            zeitpunkt TEXT    NOT NULL,
+            art       TEXT    NOT NULL,
+            titel     TEXT    NOT NULL,
+            text      TEXT    NOT NULL
+        );
+
+        CREATE INDEX idx_abgleich_meldung_zeit ON abgleich_meldung(zeitpunkt);
+        """,
+    ),
+    (
+        11,
+        "lokale-loeschung-nach-plattformlauf",
+        """
+        -- Bei der kombinierten Löschung darf die lokale Anzeige erst nach
+        -- einem erfolgreichen Plattform-Lauf verschwinden. Die Datei wird
+        -- deshalb als Jobziel gespeichert und nicht vom HTTP-Aufruf sofort
+        -- entfernt. So überlebt die Zusage auch einen Backend-Neustart.
+        ALTER TABLE job ADD COLUMN lokal_loeschen_datei TEXT;
+        """,
+    ),
+    (
+        12,
+        "plattform-reihenfolge",
+        """
+        -- Die kurze, schreibgeschützte Kontoabfrage liefert die Reihenfolge
+        -- der eigenen Anzeigen. Die Datenbank hält nur IDs und Zeitpunkte,
+        -- niemals Titel oder Zugangsdaten.
+        CREATE TABLE plattform_reihenfolge (
+            profil_id    INTEGER PRIMARY KEY REFERENCES profil(id) ON DELETE CASCADE,
+            reihenfolge  TEXT NOT NULL,
+            geprueft_am  TEXT NOT NULL,
+            geaendert_am TEXT
+        );
+        ALTER TABLE abgleich ADD COLUMN reihenfolge_job_id INTEGER;
+        ALTER TABLE abgleich ADD COLUMN reihenfolge_letzter_lauf_am TEXT;
+        """,
+    ),
 ]
 
 

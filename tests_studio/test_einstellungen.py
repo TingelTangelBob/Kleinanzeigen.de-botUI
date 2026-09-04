@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,10 +36,11 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         yield c
 
 
-def _get(client: TestClient) -> dict:
+def _get(client: TestClient) -> dict[str, Any]:
     antwort = client.get(f"/api/einstellungen?profil={PROFIL}")
     assert antwort.status_code == 200, antwort.text
-    return antwort.json()
+    gelesen: dict[str, Any] = antwort.json()
+    return gelesen
 
 
 class TestLesenUndSpeichern:
@@ -78,7 +79,9 @@ class TestSperrfelder:
         {"browser": {"arguments": ["--load-extension=/tmp"]}},
         {"login": {"username": "x", "password": "GEHEIM"}},
     ])
-    def test_gesperrte_werden_abgewiesen(self, client: TestClient, werte: dict, tmp_path: Path) -> None:
+    def test_gesperrte_werden_abgewiesen(
+        self, client: TestClient, werte: dict[str, Any], tmp_path: Path,
+    ) -> None:
         antwort = client.put(f"/api/einstellungen?profil={PROFIL}", json = {"werte": werte})
         assert antwort.status_code == 400, antwort.text
         meldung = antwort.json()["fehler"]["meldung"]

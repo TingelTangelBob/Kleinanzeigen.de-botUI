@@ -12,6 +12,7 @@ import { ArrowRight, KeyRound } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useProfil } from '../context/useProfil';
+import { hashFuerAnzeige } from '../routing';
 import type { BestandsAnzeige, Job, ZugangStatus } from '../types';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { InfoTip } from './InfoTip';
@@ -304,7 +305,11 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
             <ul className="liste">
               {faellige.slice(0, 5).map(a => (
                 <li key={a.datei}>
-                  <AnzeigenZeile anzeige={a} profil={aktiv.slug} />
+                  <AnzeigenZeile
+                    anzeige={a}
+                    profil={aktiv.slug}
+                    aufOeffnen={() => aufZiel(hashFuerAnzeige('eigene', a.datei))}
+                  />
                 </li>
               ))}
             </ul>

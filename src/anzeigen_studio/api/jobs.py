@@ -85,6 +85,10 @@ class JobAusgabe(BaseModel):
     #: (AP-2.29) nutzt es, um den Lauf einer Anzeige zuzuordnen.
     anzeigen_glob: str | None = None
 
+    #: Bei der kombinierten Löschung wird die lokale Datei erst nach einem
+    #: erfolgreichen Plattformlauf entfernt.
+    lokal_loeschen_datei: str | None = None
+
     #: Woran der Lauf gerade ist (AP-2.8). Reine Anzeige.
     phase: str | None = None
     phase_text: str | None = None
@@ -110,6 +114,7 @@ def _ausgabe(job: Job) -> JobAusgabe:
         aufmerksamkeit = job.aufmerksamkeit, eingriff = job.eingriff, meldung = job.meldung,
         wartet_bis = job.wartet_bis, wartegrund = job.wartegrund,
         anzeigen_glob = job.anzeigen_glob,
+        lokal_loeschen_datei = job.lokal_loeschen_datei,
         phase = job.phase, phase_text = job.phase_text, phase_seit = job.phase_seit,
     )
 

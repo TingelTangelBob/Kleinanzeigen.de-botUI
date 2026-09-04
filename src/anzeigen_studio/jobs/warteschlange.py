@@ -16,9 +16,11 @@ import contextlib
 import logging
 import re
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
-from anzeigen_studio.bestand import stand
+from anzeigen_studio import bestand as bestand_dienst
+from anzeigen_studio.bestand import loeschen as lokal_loeschen
+from anzeigen_studio.bestand import plattform_reihenfolge, stand, tagesabgleich
 from anzeigen_studio.botbridge import konfiguration
 from anzeigen_studio.botbridge.events import Phase
 from anzeigen_studio.botbridge.runner import BotLauf, LaufAuftrag
@@ -62,6 +64,14 @@ _NICHTS_GELADEN_MUSTER: Final[re.Pattern[str]] = re.compile(
     r"\b0 Anzeigen geladen\b|\bLoaded 0 ads\b", re.IGNORECASE,
 )
 
+# Ein 404 ist beim Upstream ein regulärer Ablauf mit Rückgabecode 0. Für die
+# kombinierte Löschung ist das aber keine Bestätigung, dass diese Anzeige
+# gelöscht wurde: Die Nummer kann bereits weg sein oder das Ziel kann sich
+# geändert haben. In diesem Fall bleibt die lokale Kopie zur Prüfung liegen.
+_DELETE_NICHT_GEFUNDEN_MUSTER: Final[re.Pattern[str]] = re.compile(
+    r"\bnot found\b|\bnicht gefunden\b", re.IGNORECASE,
+)
+
 
 class Warteschlange:
     """Nimmt Jobs entgegen und arbeitet sie ab.
@@ -90,31 +100,81 @@ class Warteschlange:
         self._lauf_fabrik = lauf_fabrik or BotLauf
         self._laeuft: dict[int, BotLauf] = {}
         self._aufgaben: set[asyncio.Task[None]] = set()
+        #: Aufgabe je Job - auch solange er nur wartet. Ohne diese Zuordnung
+        #: liesse sich ein wartender Lauf nicht abbrechen: `_laeuft` fuellt
+        #: sich erst, wenn der Bot tatsaechlich startet, und bis dahin kann ein
+        #: Job hinter der Profilsperre oder in der Taktung Minuten haengen.
+        self._job_aufgaben: dict[int, asyncio.Task[None]] = {}
         self._profil_sperren: dict[int, asyncio.Lock] = {}
 
     # -- oeffentlich ---------------------------------------------------------
 
     async def einreihen(self, conn: sqlite3.Connection, profil_id: int, befehl: str,
                         argumente: list[str], *, profil_verzeichnis: Path,
-                        anzeigen_glob: str | None = None) -> int:
+                        anzeigen_glob: str | None = None,
+                        lokal_loeschen_datei: str | None = None) -> int:
+        if lokal_loeschen_datei is not None and befehl != "delete":
+            raise FachlicherFehler(
+                "Eine lokale Löschung danach ist nur für einen Plattform-Delete zulässig.",
+                status = 400,
+            )
         # Bewusst async: asyncio.create_task braucht eine laufende
         # Ereignisschleife. Ein synchroner FastAPI-Endpunkt laeuft im
         # Threadpool, dort gibt es keine - genau daran ist der erste Lauf
         # gescheitert.
         with db.transaction(conn):
-            job_id = speicher.einreihen(conn, profil_id, befehl, argumente, anzeigen_glob = anzeigen_glob)
+            job_id = speicher.einreihen(
+                conn, profil_id, befehl, argumente,
+                anzeigen_glob = anzeigen_glob,
+                lokal_loeschen_datei = lokal_loeschen_datei,
+            )
         aufgabe = asyncio.create_task(self._abarbeiten(job_id, profil_id, profil_verzeichnis))
         # Referenz halten, sonst kann der Garbage Collector die Aufgabe
         # einsammeln, bevor sie fertig ist.
         self._aufgaben.add(aufgabe)
+        self._job_aufgaben[job_id] = aufgabe
         aufgabe.add_done_callback(self._aufgaben.discard)
+        aufgabe.add_done_callback(lambda _: self._job_aufgaben.pop(job_id, None))
         return job_id
 
     async def abbrechen(self, job_id: int) -> None:
+        """Bricht einen Lauf ab - auch einen, der noch gar nicht gestartet ist.
+
+        Zwei Faelle, und der zweite fehlte bis 2026-09-05:
+
+        * **Der Bot laeuft.** Dann gibt es einen `BotLauf`, der sein eigenes
+          Abbruchverfahren mitbringt (Unterprozess beenden, aufraeumen).
+        * **Der Lauf wartet noch.** Hinter der Profilsperre, hinter dem
+          Semaphor oder in der Taktung (AP-1.12) - dort kann er Minuten
+          stehen. `_laeuft` ist dann leer, und der Abbruchknopf meldete
+          "Dieser Lauf läuft nicht mehr", obwohl er sehr wohl noch kommt.
+          Der Job blieb, und der Mensch konnte nichts dagegen tun.
+
+        Im zweiten Fall wird der Zustand hier gesetzt und nicht der abbrechenden
+        Aufgabe ueberlassen: Wird sie waehrend `_takt_abwarten` abgeraeumt,
+        laeuft ihr eigener CancelledError-Zweig gar nicht erst an - der Job
+        bliebe auf "wartet" stehen.
+        """
         lauf = self._laeuft.get(job_id)
-        if lauf is None:
-            raise FachlicherFehler("Dieser Lauf läuft nicht mehr.", status = 409)
-        await lauf.abbrechen()
+        if lauf is not None:
+            await lauf.abbrechen()
+            return
+
+        aufgabe = self._job_aufgaben.get(job_id)
+        conn = db.connect(self._settings.database_path)
+        try:
+            job = speicher.holen(conn, job_id)
+            if job is None or not job.laeuft_noch:
+                raise FachlicherFehler("Dieser Lauf läuft nicht mehr.", status = 409)
+            with db.transaction(conn):
+                speicher.zustand_setzen(
+                    conn, job_id, JobZustand.ABGEBROCHEN,
+                    meldung = "Abgebrochen, bevor der Lauf gestartet ist.",
+                )
+        finally:
+            conn.close()
+        if aufgabe is not None:
+            aufgabe.cancel()
 
     async def eingabe_senden(self, job_id: int, text: str = "") -> None:
         lauf = self._laeuft.get(job_id)
@@ -247,7 +307,10 @@ class Warteschlange:
                     LOG.exception("Aufraeumen nach Job %d ist gescheitert", job_id)
                 conn.close()
 
-    async def _lauf_durchfuehren(self, conn: sqlite3.Connection, job_id: int,
+    # Die Reihenfolge bildet die Zustandsmaschine aus Botlauf, Prüfung und
+    # optionaler lokaler Folgeaktion ab; getrennte Hilfsmethoden würden diese
+    # sicherheitsrelevanten Übergänge unnötig auseinanderziehen.
+    async def _lauf_durchfuehren(self, conn: sqlite3.Connection, job_id: int,  # noqa: PLR0915
                                  profil_id: int, profil_verzeichnis: Path) -> None:
         job = speicher.holen(conn, job_id)
         if job is None or job.zustand is not JobZustand.WARTET:
@@ -271,6 +334,7 @@ class Warteschlange:
             job.befehl == "download"
             and any(a.startswith("--ads=") for a in job.argumente)
         )
+        einzelne_datei = bool(job.anzeigen_glob) and "*" not in (job.anzeigen_glob or "")
         # Ein `publish`-Lauf auf genau eine Datei kommt aus der Oberflaeche und
         # meint eine Anzeige OHNE Nummer (AP-3.8). Fuer die wuerde
         # `delete_old_ads_by_title` in den veroeffentlichten Anzeigen nach
@@ -278,8 +342,13 @@ class Warteschlange:
         # wuerde stillschweigend "eine andere Anzeige ersetzen". Hier gesperrt,
         # nicht in der Einstellung: Von der Laufliste aus gestartete Laeufe
         # sollen weiter tun, was der Mensch dort eingestellt hat.
-        einzelne_datei = bool(job.anzeigen_glob) and "*" not in (job.anzeigen_glob or "")
         neue_anzeige = job.befehl == "publish" and einzelne_datei
+        # Ein gezieltes Delete aus der Anzeige soll die lokale Kopie behalten,
+        # aber als nicht mehr online markieren. Ein profilweiter Delete aus
+        # der Warteschlange behaelt dagegen die Nutzereinstellung.
+        loeschpolitik: Literal["DISABLE"] | None = (
+            "DISABLE" if job.befehl == "delete" and einzelne_datei else None
+        )
 
         verworfen = konfiguration.schreiben(
             profil_verzeichnis / "config.yaml",
@@ -288,6 +357,7 @@ class Warteschlange:
             chromium = self._settings.chromium,
             download_ordner = "fremde-ads" if nachladen else None,
             titelloeschen_sperren = neue_anzeige,
+            loeschpolitik = loeschpolitik,
         )
         if verworfen:
             LOG.warning("Gesperrte Konfigurationsfelder verworfen: %s", ", ".join(verworfen))
@@ -326,6 +396,7 @@ class Warteschlange:
         # "nichts eingestellt, nur uebersprungen" - auch bei einem Sammellauf.
         skip_gesehen = False
         nichts_geladen = False
+        delete_nicht_gefunden = False
 
         await lauf.starten()
         async for ereignis in lauf.ereignisse():
@@ -335,6 +406,8 @@ class Warteschlange:
                 skip_gesehen = True
             if _NICHTS_GELADEN_MUSTER.search(ereignis.text):
                 nichts_geladen = True
+            if job.befehl == "delete" and _DELETE_NICHT_GEFUNDEN_MUSTER.search(ereignis.text):
+                delete_nicht_gefunden = True
             with db.transaction(conn):
                 speicher.log_anhaengen(conn, job_id, ereignis)
                 # Woran der Lauf gerade ist (AP-2.8). Sagt die Zeile nichts
@@ -434,6 +507,55 @@ class Warteschlange:
             zustand = JobZustand.GESCHEITERT
             meldung = f"Der Bot endete mit Rückgabecode {ergebnis.rueckgabecode}."
 
+        if (
+            zustand is JobZustand.FERTIG
+            and job.befehl == "delete"
+            and einzelne_datei
+            and delete_nicht_gefunden
+        ):
+            zustand = JobZustand.PRUEFEN
+            meldung = (
+                "Die Plattform-Löschung wurde nicht bestätigt (Kleinanzeigen meldete, "
+                "dass die Anzeige nicht gefunden wurde). Die lokale Kopie bleibt zur "
+                "Prüfung erhalten."
+            )
+
+        # Bei der kombinierten Löschung bleibt die lokale Datei bis hierhin
+        # liegen. Erst wenn der Plattformlauf wirklich als FERTIG feststeht,
+        # darf sie verschwinden. So kann ein fehlgeschlagener oder abgebrochener
+        # Lauf später geprüft oder erneut ausgeführt werden.
+        if zustand is JobZustand.FERTIG and job.lokal_loeschen_datei is not None:
+            try:
+                ziel_id = next(
+                (int(argument[6:]) for argument in job.argumente
+                 if argument.startswith("--ads=") and argument[6:].isdigit()),
+                    None,
+                )
+                aktuelle_daten = bestand_dienst.rohdaten_lesen(
+                    profil_verzeichnis, job.lokal_loeschen_datei,
+                )
+                if ziel_id is None or aktuelle_daten.get("id") != ziel_id:
+                    zustand = JobZustand.PRUEFEN
+                    meldung = (
+                        "Die Plattform-Löschung war erfolgreich, aber die lokale Datei "
+                        "passt nicht mehr zur gelöschten Anzeigennummer. Sie bleibt zur "
+                        "Prüfung erhalten."
+                    )
+                else:
+                    lokal_loeschen.entfernen(profil_verzeichnis, job.lokal_loeschen_datei)
+                    meldung = "Plattform-Löschung erfolgreich; lokale Kopie entfernt."
+            except Exception as fehler:  # noqa: BLE001 - Plattform ist schon gelöscht; Prüfung erzwingen
+                LOG.exception(
+                    "Job %d: Plattform-Anzeige gelöscht, lokale Kopie konnte nicht entfernt werden",
+                    job_id,
+                )
+                zustand = JobZustand.PRUEFEN
+                meldung = (
+                    "Die Anzeige wurde auf kleinanzeigen.de gelöscht, aber die lokale Kopie "
+                    "konnte nicht entfernt werden. Bitte den lokalen Bestand prüfen. "
+                    f"Grund: {type(fehler).__name__}."
+                )
+
         with db.transaction(conn):
             speicher.zustand_setzen(
                 conn, job_id, zustand,
@@ -455,6 +577,22 @@ class Warteschlange:
         if zustand is JobZustand.FERTIG:
             try:
                 with db.transaction(conn):
+                    order_geaendert = plattform_reihenfolge.uebernehmen(
+                        conn, job.profil_id,
+                        profil_verzeichnis / plattform_reihenfolge.DATEINAME,
+                    )
+                if order_geaendert is not None:
+                    LOG.info(
+                        "Job %d: Plattform-Reihenfolge übernommen%s",
+                        job_id, " (geändert)" if order_geaendert else " (unverändert)",
+                    )
+            except Exception:
+                # Der Reihenfolgeindex ist Zusatzinformation. Ein Fehler darf
+                # einen erfolgreichen Plattformlauf nicht nachtraeglich
+                # umdeuten; der Sidecar bleibt fuer den naechsten Lauf liegen.
+                LOG.warning("Job %d: Plattform-Reihenfolge konnte nicht übernommen werden", job_id, exc_info = True)
+            try:
+                with db.transaction(conn):
                     anzahl = stand.abgleich_nach_lauf(
                         conn, job.profil_id, profil_verzeichnis,
                         seit = lauf_start,
@@ -465,3 +603,32 @@ class Warteschlange:
                 # Der Vergleich ist Zusatzauskunft. Ein Fehler hier darf einen
                 # erfolgreichen Lauf nicht nachtraeglich beschaedigen.
                 LOG.warning("Job %d: Abgleich konnte nicht gemerkt werden", job_id, exc_info = True)
+
+            # Nach einer bewusst ausgelösten Plattformänderung ist eine
+            # zusätzliche Detailabfrage unnötig: eine einzige geordnete JSON-
+            # Liste reicht, um die Studio-Liste wieder an Kleinanzeigen
+            # anzugleichen. Der Folgejob bleibt in derselben Warteschlange und
+            # damit unter derselben Profilsperre/Taktung.
+            if job.befehl in {"publish", "update", "delete", "extend"}:
+                try:
+                    abgleich = tagesabgleich.lesen(conn, job.profil_id)
+                    if abgleich.reihenfolge_job_id is not None:
+                        LOG.debug(
+                            "Nach Plattformänderung existiert bereits Reihenfolge-Lauf %d",
+                            abgleich.reihenfolge_job_id,
+                        )
+                        return
+                    order_job_id = await self.einreihen(
+                        conn, job.profil_id, "sync-order", [],
+                        profil_verzeichnis = profil_verzeichnis,
+                    )
+                    with db.transaction(conn):
+                        tagesabgleich.reihenfolge_lauf_vermerken(
+                            conn, job.profil_id, job_id = order_job_id,
+                        )
+                    LOG.info("Nach Plattformänderung Reihenfolge-Lauf %d eingereiht", order_job_id)
+                except Exception:
+                    LOG.warning(
+                        "Job %d: Folgeprüfung der Plattform-Reihenfolge konnte nicht eingereiht werden",
+                        job_id, exc_info = True,
+                    )

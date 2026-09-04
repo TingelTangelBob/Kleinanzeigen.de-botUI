@@ -45,6 +45,7 @@ def _zu_job(row: sqlite3.Row) -> Job:
         wartet_bis = row["wartet_bis"],
         wartegrund = row["wartegrund"],
         anzeigen_glob = row["anzeigen_glob"],
+        lokal_loeschen_datei = row["lokal_loeschen_datei"],
         phase = row["phase"],
         phase_text = row["phase_text"],
         phase_seit = row["phase_seit"],
@@ -78,11 +79,15 @@ def einreihen(
     argumente: list[str],
     *,
     anzeigen_glob: str | None = None,
+    lokal_loeschen_datei: str | None = None,
 ) -> int:
     cursor = conn.execute(
-        "INSERT INTO job (profil_id, befehl, argumente, zustand, eingereicht_am, anzeigen_glob) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (profil_id, befehl, json.dumps(argumente), JobZustand.WARTET, _jetzt(), anzeigen_glob),
+        "INSERT INTO job (profil_id, befehl, argumente, zustand, eingereicht_am, "
+        "anzeigen_glob, lokal_loeschen_datei) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            profil_id, befehl, json.dumps(argumente), JobZustand.WARTET, _jetzt(),
+            anzeigen_glob, lokal_loeschen_datei,
+        ),
     )
     return int(cursor.lastrowid or 0)
 

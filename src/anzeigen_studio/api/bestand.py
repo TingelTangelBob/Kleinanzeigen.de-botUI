@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from anzeigen_studio import bestand as bestand_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
+from anzeigen_studio.bestand import plattform_reihenfolge
 from anzeigen_studio.bestand import stand as stand_dienst
 from anzeigen_studio.bestand import vorlagen as vorlagen_dienst
 from anzeigen_studio.core import db
@@ -83,6 +84,9 @@ class AnzeigeAusgabe(BaseModel):
     #: Eigene, einst online gestellte Anzeige, die die Plattform nicht mehr als
     #: aktiv fuehrt (AP-3.10). Regel in `bestand.lesen.BestandsAnzeige.geloescht`.
     geloescht: bool
+    #: Rang der aktiven eigenen Anzeige in der letzten Plattformabfrage.
+    #: Entwürfe, fremde und noch nicht abgeglichene Anzeigen haben keinen Rang.
+    plattform_rang: int | None = None
 
 
 def _profil_wurzel(conn: sqlite3.Connection, cfg: Settings, slug: str) -> Path:
@@ -92,7 +96,14 @@ def _profil_wurzel(conn: sqlite3.Connection, cfg: Settings, slug: str) -> Path:
     return profile_dienst.pfade_fuer(cfg.profiles_dir, p.slug).wurzel
 
 
-def _ausgabe(a: bestand_dienst.BestandsAnzeige) -> AnzeigeAusgabe:
+def _profil(conn: sqlite3.Connection, slug: str) -> profile_dienst.Profil:
+    p = profile_dienst.nach_slug(conn, slug)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+    return p
+
+
+def _ausgabe(a: bestand_dienst.BestandsAnzeige, *, plattform_rang: int | None = None) -> AnzeigeAusgabe:
     return AnzeigeAusgabe(
         datei = a.datei, ordner = a.ordner, titel = a.titel, id = a.id, art = a.art,
         aktiv = a.aktiv, kategorie = a.kategorie, preis = a.preis, preistyp = a.preistyp,
@@ -102,14 +113,40 @@ def _ausgabe(a: bestand_dienst.BestandsAnzeige) -> AnzeigeAusgabe:
         aktualisiert_am = a.aktualisiert_am, neueinstellung_am = a.neueinstellung_am,
         faellig = a.faellig, lokal_geaendert = a.lokal_geaendert, hinweise = a.hinweise,
         unlesbar = a.unlesbar, herkunft = a.herkunft, geloescht = a.geloescht,
+        plattform_rang = plattform_rang,
     )
+
+
+def _sortieren(
+    conn: sqlite3.Connection, profil_id: int,
+    anzeigen: list[bestand_dienst.BestandsAnzeige],
+) -> list[bestand_dienst.BestandsAnzeige]:
+    """Put own ads in the last ``sort=DEFAULT`` platform order.
+
+    Local drafts and ads not present in the cache remain below the platform
+    order and keep the deterministic local fallback from ``bestand_lesen``.
+    """
+    rang, _, _ = plattform_reihenfolge.laden(conn, profil_id)
+    position = {id(anzeige): index for index, anzeige in enumerate(anzeigen)}
+
+    def schluessel(anzeige: bestand_dienst.BestandsAnzeige) -> tuple[int, int, int]:
+        if anzeige.herkunft == "eigene" and anzeige.id in rang:
+            return (0, rang[anzeige.id], position[id(anzeige)])
+        return (1, 0, position[id(anzeige)])
+
+    return sorted(anzeigen, key = schluessel)
 
 
 @router.get("", response_model = list[AnzeigeAusgabe])
 def auflisten(profil: str, conn: Verbindung, cfg: Konfiguration) -> list[AnzeigeAusgabe]:
     """Alle Anzeigen eines Profils, so wie sie auf der Platte liegen."""
     wurzel = _profil_wurzel(conn, cfg, profil)
-    return [_ausgabe(a) for a in bestand_dienst.bestand_lesen(wurzel)]
+    p = _profil(conn, profil)
+    rang, _, _ = plattform_reihenfolge.laden(conn, p.id)
+    return [
+        _ausgabe(a, plattform_rang = rang.get(a.id) if a.id is not None else None)
+        for a in _sortieren(conn, p.id, bestand_dienst.bestand_lesen(wurzel))
+    ]
 
 
 @router.get("/lokale-aenderungen", response_model = list[AnzeigeAusgabe])
@@ -440,6 +477,71 @@ async def hochladen(
         raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
 
     return HochladenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige), befehl = befehl)
+
+
+class OnlineLoeschenAusgabe(BaseModel):
+    job_id: int
+    anzeige: AnzeigeAusgabe
+    befehl: str = "delete"
+
+
+class OnlineLoeschenEingabe(BaseModel):
+    datei: str = Field(min_length = 1, max_length = 400)
+    #: Bei True wird die lokale Kopie erst nach erfolgreichem Plattformlauf
+    #: vom Worker entfernt. False lässt sie bewusst lokal liegen.
+    lokal_loeschen: bool = False
+
+
+@router.post("/online-loeschen", response_model = OnlineLoeschenAusgabe, status_code = 202)
+async def online_loeschen(
+    profil: str,
+    daten: OnlineLoeschenEingabe,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    ws: Schlange,
+) -> OnlineLoeschenAusgabe:
+    """Reiht das Löschen genau einer eigenen Anzeige auf der Plattform ein.
+
+    Die Anzeigennummer ist der einzige Zielschlüssel. Titelabgleich und
+    profilweite Delete-Läufe sind hier bewusst ausgeschlossen: Ein Tippfehler
+    darf niemals eine gleichnamige oder andere Anzeige treffen.
+    """
+    p = profile_dienst.nach_slug(conn, profil)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+    wurzel = profile_dienst.pfade_fuer(cfg.profiles_dir, p.slug).wurzel
+
+    # Die Datei wird vor dem Einreihen gelesen. So wird ein verschwundener oder
+    # unlesbarer Datensatz sofort als verständlicher Fehler gemeldet und nicht
+    # erst nach dem Browserstart.
+    bestand_dienst.rohdaten_lesen(wurzel, daten.datei)
+    anzeige = next(
+        (a for a in bestand_dienst.bestand_lesen(wurzel) if a.datei == daten.datei), None,
+    )
+    if anzeige is None:
+        raise FachlicherFehler("Anzeige nicht gefunden.", status = 404)
+    if anzeige.herkunft != "eigene":
+        raise FachlicherFehler(
+            "Nur eigene Anzeigen aus dem Konto können auf kleinanzeigen.de gelöscht werden.",
+            status = 422, feld = "datei",
+        )
+    if anzeige.unlesbar:
+        raise FachlicherFehler("Diese Anzeige ist nicht lesbar.", status = 422, feld = "datei")
+    if anzeige.id is None:
+        raise FachlicherFehler(
+            "Diese Anzeige hat noch keine Anzeigennummer und kann nicht auf kleinanzeigen.de gelöscht werden.",
+            status = 422, feld = "datei",
+        )
+
+    job_id = await ws.einreihen(
+        conn, p.id, "delete", [f"--ads={anzeige.id}"],
+        profil_verzeichnis = wurzel,
+        anzeigen_glob = f"./{daten.datei}",
+        lokal_loeschen_datei = daten.datei if daten.lokal_loeschen else None,
+    )
+    if speicher.holen(conn, job_id) is None:  # pragma: no cover - Schutz gegen stille Fehlschlaege
+        raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
+    return OnlineLoeschenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige))
 
 
 class LinksEingabe(BaseModel):

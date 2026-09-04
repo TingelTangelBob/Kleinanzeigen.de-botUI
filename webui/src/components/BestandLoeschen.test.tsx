@@ -73,12 +73,12 @@ function kaestchen(titel: string): HTMLElement {
 }
 
 /**
- * Der Knopf im Dialog, nicht der in der Sammelleiste: Beide heißen „Lokal
- * löschen", und der Dialog steht im DOM vor der Leiste.
+ * Der Knopf im Dialog, nicht der in der Sammelleiste: Bei einer einzelnen
+ * Anzeige heißt er „Löschen", bei mehreren „Lokal löschen".
  */
 function bestaetigen() {
   const dialog = screen.getByRole('dialog');
-  fireEvent.click(within(dialog).getByRole('button', { name: /Lokal löschen/ }));
+  fireEvent.click(within(dialog).getByRole('button', { name: /löschen/i }));
 }
 
 async function geladen() {

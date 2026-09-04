@@ -1,52 +1,77 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Versandpakete auswählen (AP-2.7, Optik AP-2.23).
+// Versandart und Versandpaket auswählen (AP-2.7, AP-2.23, AP-2.40).
 //
-// Mehrfachauswahl, weil die Anzeigendatei eine Liste führt: Kleinanzeigen
-// lässt mehrere Pakete derselben Größe zu, und der Käufer wählt eines davon.
-//
-// „Derselben Größe" ist dabei keine Beschreibung, sondern eine Grenze. Der
-// Upstream wirft beim Veröffentlichen `You can only specify shipping options
-// for one package size!` (publishing_form.py) - und zwar erst im geöffneten
-// Versanddialog, mit halb ausgefülltem Formular. Weder `AdPartial` noch `Ad`
-// prüfen die Regel vorher. Sie wird deshalb hier durchgesetzt, wo die Liste
-// entsteht: Ein Paket aus einer anderen Größe ersetzt die bisherige Auswahl,
-// statt sich dazuzulegen.
-//
-// „Direkt kaufen" steht seit AP-2.23 in derselben Karte: Der Schalter verlangt
-// beim Veröffentlichen ein Paket, gehört also sichtbar zur selben Entscheidung.
-// Die Fachlogik bleibt beim Editor - hier wird nur der bestehende Wert
-// angezeigt und über `aufDirektKaufen` zurückgemeldet.
-//
-// Die Preise stehen dabei, weil sie hier die eigentliche Entscheidungshilfe
-// sind. Genau an ihnen hängt auch der Fehler, den die Verlustanalyse gefunden
-// hat: Wer eigene Versandkosten gesetzt hat, findet hier keinen passenden
-// Eintrag - und sieht am Preis sofort, warum.
-//
-// Woher die Preise kommen (AP-2.22): jeder Preis wird bei jedem Öffnen live von
-// der öffentlichen Preisliste der Plattform geholt - `daten._preise()` ruft
-// `gateway.kleinanzeigen.de/postad/api/v1/shipping-options` ab, `versandpakete()`
-// hängt den Betrag an den Paketnamen des Bots, die Katalog-API reicht ihn als
-// `preis` durch. In dieser Datei steht kein einziger Preiswert. Günstige
-// Hermes-Beträge (0,99 / 1,99 / 2,99 €) sind Aktionspreise der Plattform
-// (`oldPriceInEuroCent`, `fromPrice`) - deshalb gerade nicht festschreiben,
-// sondern live zeigen. Das kurze Label unten sagt das dem Nutzer.
+// Die Oberfläche führt bewusst in zwei Schritten durch die Auswahl: zuerst
+// eine Paketgröße oder Abholung, danach die konkreten Optionen dieser Größe.
+// So ist vor dem Veröffentlichen sichtbar, welche Angabe noch fehlt.
+// Individueller Versand ist kein eigener Weg mehr; die Plattform unterstützt
+// dafür nur noch die vorgegebenen Paketoptionen.
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import type { Versandpaket } from '../types';
 
-const GROESSEN = ['Klein', 'Mittel', 'Groß'];
+const GROESSEN = ['Klein', 'Mittel', 'Groß'] as const;
+type Groesse = typeof GROESSEN[number];
+
+const VERSANDAUSWAHLEN: Array<{ wert: Groesse | 'PICKUP'; label: string }> = [
+  { wert: 'Klein', label: 'Klein' },
+  { wert: 'Mittel', label: 'Mittel' },
+  { wert: 'Groß', label: 'Groß' },
+  { wert: 'PICKUP', label: 'Abholung' },
+];
+
+const GROESSEN_SPEICHER_PREFIX = 'anzeigen-studio:versand-groesse:';
+
+function gespeicherteGroesse(schluessel?: string): Groesse | null {
+  if (!schluessel || typeof window === 'undefined') return null;
+  try {
+    const wert = window.localStorage.getItem(
+      GROESSEN_SPEICHER_PREFIX + encodeURIComponent(schluessel),
+    );
+    return wert && GROESSEN.includes(wert as Groesse) ? wert as Groesse : null;
+  } catch {
+    return null;
+  }
+}
+
+function groesseSpeichern(schluessel: string | undefined, groesse: Groesse | null): void {
+  if (!schluessel || typeof window === 'undefined') return;
+  try {
+    const key = GROESSEN_SPEICHER_PREFIX + encodeURIComponent(schluessel);
+    if (groesse === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, groesse);
+  } catch {
+    // Private Fenster oder volle Speicher dürfen die Auswahl nicht brechen.
+  }
+}
+
+function AnbieterLogo({ anbieter }: { anbieter: string }) {
+  const name = anbieter.trim() || 'Versand';
+  return (
+    <span className="vp-anbieter-logo" data-anbieter={name} aria-hidden="true">
+      {name}
+    </span>
+  );
+}
 
 interface Props {
   gewaehlt: string[];
   versandkosten: number | null;
   direktKaufen: boolean;
+  versandart?: string;
   aufAenderung: (pakete: string[]) => void;
-  /** Optional: wenn gesetzt, steht der „Direkt kaufen"-Schalter in dieser Karte. */
+  bearbeitbar?: boolean;
+  /** Der Schalter gehört fachlich zur Versandentscheidung. */
   aufDirektKaufen?: (wert: boolean) => void;
+  aufVersandart?: (wert: 'SHIPPING' | 'PICKUP') => void;
+  /** Meldet dem Editor, ob die gewählten Optionen aus dem Katalog stammen. */
+  aufGueltigkeit?: (wert: boolean) => void;
+  /** Stabiler Schlüssel der Anzeige für die reine Zwischenwahl der Paketgröße. */
+  speicherSchluessel?: string;
 }
 
 function preisText(preis: number | null): string {
@@ -58,11 +83,29 @@ export function VersandpaketWahl({
   gewaehlt,
   versandkosten,
   direktKaufen,
+  versandart = 'NOT_APPLICABLE',
   aufAenderung,
+  bearbeitbar = true,
   aufDirektKaufen,
+  aufVersandart,
+  aufGueltigkeit,
+  speicherSchluessel,
 }: Props) {
   const [pakete, setPakete] = useState<Versandpaket[]>([]);
   const [geladen, setGeladen] = useState(false);
+  const [versandartLokal, setVersandartLokal] = useState(versandart);
+  const [groesseLokal, setGroesseLokal] = useState<Groesse | null>(
+    () => gespeicherteGroesse(speicherSchluessel),
+  );
+
+  useEffect(() => {
+    setVersandartLokal(versandart);
+    if (versandart !== 'SHIPPING') setGroesseLokal(null);
+  }, [versandart]);
+
+  useEffect(() => {
+    setGroesseLokal(gespeicherteGroesse(speicherSchluessel));
+  }, [speicherSchluessel]);
 
   useEffect(() => {
     void (async () => {
@@ -80,14 +123,61 @@ export function VersandpaketWahl({
   const gruppeVon = (wert: string): string | null =>
     pakete.find(p => p.wert === wert)?.groesse ?? null;
 
+  const ausgewaehlteGroesse = gewaehlt
+    .map(gruppeVon)
+    .find((groesse): groesse is Groesse => GROESSEN.includes(groesse as Groesse))
+    ?? null;
+  const aktiveGroesse = ausgewaehlteGroesse ?? groesseLokal;
+  // Lokal sofort umschalten, damit die Detailstufe nicht auf den nächsten
+  // Parent-Render warten muss. Der Effekt oben übernimmt spätere Änderungen
+  // aus der gespeicherten Anzeige.
+  const aktuelleVersandart = versandartLokal;
+  const bekanntePakete = gewaehlt.filter(paket => gruppeVon(paket) !== null);
+  const versandAuswahlGueltig = aktuelleVersandart !== 'SHIPPING'
+    || (
+      geladen
+      && bekanntePakete.length > 0
+      && bekanntePakete.length === gewaehlt.length
+      && new Set(bekanntePakete.map(gruppeVon)).size === 1
+    );
+
+  useEffect(() => {
+    aufGueltigkeit?.(versandAuswahlGueltig);
+  }, [aufGueltigkeit, versandAuswahlGueltig]);
+
+  const versandartWaehlen = (wert: 'SHIPPING' | 'PICKUP') => {
+    setVersandartLokal(wert);
+    aufVersandart?.(wert);
+  };
+
+  const groesseWaehlen = (groesse: Groesse) => {
+    setGroesseLokal(groesse);
+    groesseSpeichern(speicherSchluessel, groesse);
+    versandartWaehlen('SHIPPING');
+
+    // Eine Größe bleibt aktiv; bereits gewählte Optionen derselben Größe
+    // bleiben erhalten. Unbekannte Werte werden nicht stillschweigend gelöscht,
+    // damit ein manueller YAML-Eintrag nicht durch einen UI-Klick verschwindet.
+    const behalten = gewaehlt.filter(p => {
+      const andere = gruppeVon(p);
+      return andere === null || andere === groesse;
+    });
+    aufAenderung(behalten);
+  };
+
+  const abholungWaehlen = () => {
+    setGroesseLokal(null);
+    groesseSpeichern(speicherSchluessel, null);
+    versandartWaehlen('PICKUP');
+    aufDirektKaufen?.(false);
+    aufAenderung([]);
+  };
+
   const umschalten = (wert: string) => {
     if (gewaehlt.includes(wert)) {
       aufAenderung(gewaehlt.filter(p => p !== wert));
       return;
     }
-    // Unbekannte Namen bleiben stehen: Über sie lässt sich nichts sagen, und
-    // heruntergeladene Anzeigen tragen mitunter welche. Sie stillschweigend zu
-    // löschen wäre der schlechtere von beiden Fehlern.
     const gruppe = gruppeVon(wert);
     const behalten = gewaehlt.filter(p => {
       const andere = gruppeVon(p);
@@ -96,74 +186,142 @@ export function VersandpaketWahl({
     aufAenderung([...behalten, wert]);
   };
 
-  // Aus der Datei kann sehr wohl eine gemischte Auswahl kommen - von einem
-  // Download oder aus einer von Hand bearbeiteten YAML. Verhindern lässt sich
-  // das hier nicht mehr, benennen schon.
-  const gewaehlteGruppen = new Set(
-    gewaehlt.map(gruppeVon).filter((g): g is string => g !== null),
-  );
-  const gemischt = gewaehlteGruppen.size > 1;
-
-  const ohnePreise = geladen && pakete.length > 0 && pakete.every(p => p.preis === null);
-  const mitPreisen = geladen && pakete.some(p => p.preis !== null);
-
   const gruppen = GROESSEN.map(groesse => ({
     groesse,
     liste: pakete.filter(p => p.groesse === groesse),
-  })).filter(g => g.liste.length > 0);
+  }));
+  const detailListe = aktiveGroesse
+    ? gruppen.find(g => g.groesse === aktiveGroesse)?.liste ?? []
+    : [];
+  const pickup = aktuelleVersandart === 'PICKUP';
+  const versandOhneAuswahl = aktuelleVersandart === 'SHIPPING' && gewaehlt.length === 0;
+  const ohnePreise = geladen && pakete.length > 0 && pakete.every(p => p.preis === null);
+  const mitPreisen = geladen && pakete.some(p => p.preis !== null);
 
   return (
-    <fieldset className="karte space-y-3 p-4">
-      <legend className="px-1 text-sm font-medium text-normal">Versandpakete</legend>
+    <section className="space-y-3" aria-label="Versand">
+      <h3 className="mb-1 text-sm font-semibold text-stark">Versand</h3>
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Versandart wählen">
+        {VERSANDAUSWAHLEN.map(auswahl => {
+          const aktiv = auswahl.wert === 'PICKUP'
+            ? pickup
+            : aktuelleVersandart === 'SHIPPING' && aktiveGroesse === auswahl.wert;
+          return (
+            <button
+              key={auswahl.wert}
+              type="button"
+              aria-pressed={aktiv}
+              disabled={!bearbeitbar}
+              onClick={() => auswahl.wert === 'PICKUP'
+                ? abholungWaehlen()
+                : groesseWaehlen(auswahl.wert)}
+              className={`vp-chip ${aktiv ? 'vp-chip-aktiv' : ''}`}
+            >
+              <span>{auswahl.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {aufDirektKaufen && (
-        <label className="flex items-center gap-2 text-sm text-normal">
-          <input
-            type="checkbox"
-            checked={direktKaufen}
-            onChange={e => aufDirektKaufen(e.target.checked)}
-            className="h-4 w-4 flex-shrink-0"
-          />
-          <span>Direkt kaufen</span>
-        </label>
+        <div className="border-t pt-3" style={{ borderColor: 'var(--karte-rand)' }}>
+          <label className="flex items-start gap-2 text-sm text-normal">
+            <input
+              type="checkbox"
+              checked={direktKaufen}
+              disabled={!bearbeitbar || pickup}
+              onChange={e => aufDirektKaufen(e.target.checked)}
+              className="mt-0.5 h-4 w-4 flex-shrink-0"
+            />
+            <span>
+              Direkt kaufen
+              {pickup && <span className="ml-1 text-xs text-leise">(bei Abholung nicht verfügbar)</span>}
+            </span>
+          </label>
+        </div>
       )}
 
-      <div
-        className="space-y-3"
-        style={aufDirektKaufen ? { borderTop: '1px solid var(--karte-rand)', paddingTop: '0.75rem' } : undefined}
-      >
-        {!geladen && <p className="text-sm text-leise">Wird geladen …</p>}
-
-        {geladen && pakete.length === 0 && (
-          <p className="text-sm text-leise">Die Liste ist gerade nicht verfügbar.</p>
-        )}
-
-        {gruppen.map(({ groesse, liste }) => (
-          <div key={groesse}>
-            <p className="mb-1.5 text-xs font-medium text-leise">{groesse}</p>
+      {aktuelleVersandart === 'SHIPPING' && aktiveGroesse && (
+        <div
+          className="space-y-2 rounded-xl border p-3"
+          style={{ borderColor: 'var(--karte-rand)', background: 'var(--canvas)' }}
+        >
+          <p className="text-sm font-medium text-stark">
+            Optionen für {aktiveGroesse}
+          </p>
+          {!geladen && <p className="text-sm text-leise">Wird geladen …</p>}
+          {geladen && detailListe.length === 0 && (
+            <p className="text-sm text-leise">Für diese Größe sind gerade keine Optionen verfügbar.</p>
+          )}
+          {detailListe.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {liste.map(p => {
-                const aktiv = gewaehlt.includes(p.wert);
+              {detailListe.map(paket => {
+                const aktiv = gewaehlt.includes(paket.wert);
                 return (
                   <button
-                    key={p.wert}
+                    key={paket.wert}
                     type="button"
                     aria-pressed={aktiv}
-                    onClick={() => umschalten(p.wert)}
+                    disabled={!bearbeitbar}
+                    onClick={() => umschalten(paket.wert)}
                     className={`vp-chip ${aktiv ? 'vp-chip-aktiv' : ''}`}
                   >
-                    {aktiv && <Check className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />}
-                    <span>{p.wert}</span>
-                    {p.preis !== null && (
-                      <span className="vp-chip-preis">{preisText(p.preis)}</span>
+                    <span>{paket.wert}</span>
+                    {paket.preis !== null && (
+                      <span className="vp-chip-preis">{preisText(paket.preis)}</span>
                     )}
+                    <AnbieterLogo anbieter={paket.anbieter} />
                   </button>
                 );
               })}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
+
+      {aktuelleVersandart === 'SHIPPING' && !aktiveGroesse && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>Wähle zuerst Klein, Mittel oder Groß und danach eine konkrete Versandoption.</span>
+        </p>
+      )}
+
+      {versandOhneAuswahl && aktiveGroesse && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>Wähle jetzt eine Option für {aktiveGroesse}, bevor du die Anzeige online stellst.</span>
+        </p>
+      )}
+
+      {aktuelleVersandart === 'SHIPPING' && geladen && gewaehlt.length > 0
+        && bekanntePakete.length !== gewaehlt.length && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>Mindestens eine gespeicherte Versandoption ist nicht mehr verfügbar. Bitte neu auswählen.</span>
+        </p>
+      )}
+
+      {aktuelleVersandart === 'SHIPPING' && gewaehlt.length === 0 && versandkosten !== null && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>
+            Es sind {preisText(versandkosten)} Versandkosten gesetzt, aber noch keine vorgegebene
+            Option gewählt.
+          </span>
+        </p>
+      )}
+
+      {aktuelleVersandart === 'SHIPPING' && gewaehlt.length === 0 && direktKaufen && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+          <span>„Direkt kaufen“ verlangt beim Veröffentlichen eine konkrete Versandoption.</span>
+        </p>
+      )}
+
+      {geladen && pakete.length === 0 && aktuelleVersandart === 'SHIPPING' && (
+        <p className="text-sm text-leise">Die Versandoptionen sind gerade nicht verfügbar.</p>
+      )}
 
       {ohnePreise && (
         <p className="text-xs text-leise">
@@ -176,35 +334,6 @@ export function VersandpaketWahl({
           Preise live von Kleinanzeigen; günstige Hermes-Preise sind Aktionen.
         </p>
       )}
-
-      {gemischt && (
-        <p className="flex items-start gap-1.5 text-xs text-amber-900">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-          <span>
-            Die Auswahl nennt Pakete aus mehreren Größen ({[...gewaehlteGruppen].join(', ')}).
-            Kleinanzeigen lässt nur eine Größe zu – beim Veröffentlichen bricht der Lauf im
-            Versanddialog ab. Ein Klick auf ein Paket räumt die übrigen Größen weg.
-          </span>
-        </p>
-      )}
-
-      {gewaehlt.length === 0 && versandkosten !== null && (
-        <p className="flex items-start gap-1.5 text-xs text-amber-900">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-          <span>
-            Es sind {preisText(versandkosten)} Versandkosten gesetzt, aber kein Paket gewählt.
-            Der Bot kann im Formular nur vordefinierte Pakete auswählen – so lässt sich die
-            Anzeige nicht hochladen.
-          </span>
-        </p>
-      )}
-
-      {gewaehlt.length === 0 && direktKaufen && (
-        <p className="flex items-start gap-1.5 text-xs text-amber-900">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-          <span>„Direkt kaufen" verlangt beim Veröffentlichen ein Paket.</span>
-        </p>
-      )}
-    </fieldset>
+    </section>
   );
 }

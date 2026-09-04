@@ -71,6 +71,11 @@ Diese Liste wird bei jeder Änderung fortgeschrieben.
 | `.gitignore` | 2026-08-22 | Additiver Abschnitt am Dateiende für die neuen Verzeichnisse `src/anzeigen_studio/` und `webui/` sowie für Laufzeitdaten. Bestehende Regeln unverändert. |
 | `README.md` | 2026-08-22 | Fork-Hinweis am Dateianfang vorangestellt. Übriger Inhalt unverändert. |
 | `src/kleinanzeigen_bot/download_flow.py` | 2026-08-23 | Fehlertoleranz je Anzeige: Eine unlesbare Anzeige wird übersprungen und gezählt, statt den ganzen Lauf zu beenden. Aufgefallen im ersten Lauf gegen ein echtes Konto – ein Validierungsfehler bei Anzeige 7 von 8 kostete den Rest des Bestands. **Erste Änderung an der Bot-Logik.** |
+| `src/kleinanzeigen_bot/app.py` | 2026-09-04 | Neuer schreibgeschützter `sync-order`-Befehl für die kleine authentifizierte Kontoabfrage. |
+| `src/kleinanzeigen_bot/cli.py` | 2026-09-04 | `sync-order` in die CLI-Hilfe aufgenommen. |
+| `src/kleinanzeigen_bot/runtime_config.py` | 2026-09-04 | `sync-order` als erlaubten Befehl registriert. |
+| `src/kleinanzeigen_bot/download_flow.py` | 2026-09-04 | Die beim Download ohnehin gelesene geordnete Kontoliste wird für das Studio als Sidecar zwischengespeichert. |
+| `src/anzeigen_studio/botbridge/runner.py` | 2026-09-04 | Den neuen schreibgeschützten Bot-Befehl für die Warteschlange freigegeben. |
 | `src/kleinanzeigen_bot/model/ad_model.py` | 2026-08-23 | Der Validator `_validate_sell_directly` verlangt kein vordefiniertes `shipping_options` mehr. Belegt an einer echten Anzeige: Kleinanzeigen erlaubt „Direkt kaufen" auch mit frei gesetzten Versandkosten. Die Regel machte eine gültige Anzeige unlesbar. Die Prüfung bleibt beim Veröffentlichen (`publishing_form.py`), wo die Einschränkung tatsächlich gilt. |
 | `src/kleinanzeigen_bot/extract.py` | 2026-08-23 | Warnung, wenn sich der Versandpreis keinem Paket des Plattformkatalogs zuordnen lässt. Vorher blieb `shipping_options` stillschweigend leer – die Anzeige ließ sich später nicht wieder veröffentlichen, ohne dass es beim Herunterladen auffiel. |
 | `src/kleinanzeigen_bot/resources/translations.de.yaml` | 2026-08-23 | Deutsche Fassung der neuen und der am 2026-08-23 ergänzten Fork-Meldungen; die entfallene `sell_directly`-Regel wurde entfernt. Ohne das schlägt der Upstream-Test auf vollständige Übersetzungen fehl. |

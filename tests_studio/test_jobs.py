@@ -17,6 +17,7 @@ from anzeigen_studio.botbridge.events import Aufmerksamkeit, Ereignis, LaufErgeb
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core import zugang
+from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.core.settings import Settings
 from anzeigen_studio.jobs import speicher
 from anzeigen_studio.jobs.modelle import JobZustand
@@ -224,6 +225,110 @@ class TestSpeicher:
 
 
 class TestWarteschlange:
+
+    def _loeschdatei(self, verzeichnis:Path) -> Path:
+        ziel = verzeichnis / "ads" / "ad_loeschen"
+        ziel.mkdir(parents = True)
+        datei = ziel / "ad_loeschen.yaml"
+        datei.write_text("title: Eine Anzeige\nid: 4711\nimages: []\n", encoding = "utf-8")
+        return datei
+
+    @pytest.mark.asyncio
+    async def test_kombinierte_loeschung_entfernt_lokal_erst_nach_erfolg(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        datei = self._loeschdatei(verzeichnis)
+        relativ = datei.relative_to(verzeichnis).as_posix()
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(a))  # type: ignore[arg-type,return-value]
+
+        job_id = await ws.einreihen(
+            conn, profil_id, "delete", ["--ads=4711"], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = f"./{relativ}", lokal_loeschen_datei = relativ,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
+        assert not datei.exists()
+        assert job.meldung == "Plattform-Löschung erfolgreich; lokale Kopie entfernt."
+
+    @pytest.mark.asyncio
+    async def test_kombinierte_loeschung_entfernt_lokal_nicht_bei_404(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        datei = self._loeschdatei(verzeichnis)
+        relativ = datei.relative_to(verzeichnis).as_posix()
+        ws = Warteschlange(
+            cfg, taktung = OHNE_TAKT,
+            lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+                a, zeilen = [_ereignis("Anzeige 4711 nicht gefunden (Status 404)")], code = 0,
+            ),
+        )
+
+        job_id = await ws.einreihen(
+            conn, profil_id, "delete", ["--ads=4711"], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = f"./{relativ}", lokal_loeschen_datei = relativ,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.PRUEFEN
+        assert datei.exists()
+
+    @pytest.mark.asyncio
+    async def test_kombinierte_loeschung_entfernt_lokal_nicht_bei_id_aenderung(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        datei = self._loeschdatei(verzeichnis)
+        relativ = datei.relative_to(verzeichnis).as_posix()
+
+        def lauf_mit_geaenderter_datei(auftrag:LaufAuftrag) -> ErsatzLauf:
+            datei.write_text("title: Eine andere Anzeige\nid: 9999\nimages: []\n", encoding = "utf-8")
+            return ErsatzLauf(auftrag)
+
+        ws = Warteschlange(
+            cfg, taktung = OHNE_TAKT,
+            lauf_fabrik = lauf_mit_geaenderter_datei,  # type: ignore[arg-type]
+        )
+
+        job_id = await ws.einreihen(
+            conn, profil_id, "delete", ["--ads=4711"], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = f"./{relativ}", lokal_loeschen_datei = relativ,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.PRUEFEN
+        assert datei.exists()
+
+    @pytest.mark.asyncio
+    async def test_kombinierte_loeschung_laesst_lokal_bei_fehler_stehen(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        datei = self._loeschdatei(verzeichnis)
+        relativ = datei.relative_to(verzeichnis).as_posix()
+        ws = Warteschlange(
+            cfg, taktung = OHNE_TAKT,
+            lauf_fabrik = lambda a: ErsatzLauf(a, code = 2),  # type: ignore[arg-type,return-value]
+        )
+
+        job_id = await ws.einreihen(
+            conn, profil_id, "delete", ["--ads=4711"], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = f"./{relativ}", lokal_loeschen_datei = relativ,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.GESCHEITERT
+        assert datei.exists()
 
     @pytest.mark.asyncio
     async def test_erfolgreicher_lauf(self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
@@ -566,3 +671,74 @@ class TestAnzeigenGlob:
 
         geschrieben = (verzeichnis / "config.yaml").read_text(encoding = "utf-8")
         assert "fremde-ads" in geschrieben
+
+
+class TestWartendenLaufAbbrechen:
+    """Ein Lauf, der noch nicht gestartet ist, muss abbrechbar sein.
+
+    Bis 2026-09-05 ging das nicht: `abbrechen` sah nur in `self._laeuft`, und
+    das füllt sich erst, wenn der Bot tatsächlich startet. Ein Job hinter der
+    Profilsperre oder in der Taktung (AP-1.12) lieferte deshalb den Fehler
+    „Dieser Lauf läuft nicht mehr" - und blieb stehen. Genau dort steht ein Job
+    aber am längsten.
+    """
+
+    @pytest.mark.asyncio
+    async def test_wartender_lauf_laesst_sich_abbrechen(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        # Eine Taktung, die lange bremst: Der zweite Lauf desselben Profils
+        # wartet, statt zu starten.
+        ws = Warteschlange(
+            cfg, taktung = Taktung(mindestpause_s = 600, fenster_aktiv = False),
+            lauf_fabrik = lambda a: ErsatzLauf(a),  # type: ignore[arg-type,return-value]
+        )
+
+        erster = await ws.einreihen(conn, profil_id, "download", [], profil_verzeichnis = verzeichnis)
+        await asyncio.sleep(0)
+        zweiter = await ws.einreihen(conn, profil_id, "download", [], profil_verzeichnis = verzeichnis)
+        # Dem ersten Lauf Zeit geben, durchzulaufen; der zweite haengt danach
+        # in der Mindestpause.
+        for _ in range(50):
+            await asyncio.sleep(0)
+            if speicher.holen(conn, erster) is not None and not speicher.holen(conn, erster).laeuft_noch:  # type: ignore[union-attr]
+                break
+
+        wartend = speicher.holen(conn, zweiter)
+        assert wartend is not None
+        assert wartend.zustand is JobZustand.WARTET
+
+        await ws.abbrechen(zweiter)
+
+        danach = speicher.holen(conn, zweiter)
+        assert danach is not None
+        assert danach.zustand is JobZustand.ABGEBROCHEN
+        assert danach.meldung is not None
+        assert "bevor der Lauf gestartet ist" in danach.meldung
+        await asyncio.gather(*list(ws._aufgaben), return_exceptions = True)  # noqa: SLF001
+
+    @pytest.mark.asyncio
+    async def test_beendeter_lauf_bleibt_ein_konflikt(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        # Der bisherige Fall darf sich nicht ändern: Was durch ist, ist durch.
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(a))  # type: ignore[arg-type,return-value]
+        job_id = await ws.einreihen(conn, profil_id, "download", [], profil_verzeichnis = verzeichnis)
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        with pytest.raises(FachlicherFehler) as fehler:
+            await ws.abbrechen(job_id)
+        assert fehler.value.status == 409
+
+    @pytest.mark.asyncio
+    async def test_unbekannter_job_bleibt_ein_konflikt(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, _, _, _ = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(a))  # type: ignore[arg-type,return-value]
+
+        with pytest.raises(FachlicherFehler) as fehler:
+            await ws.abbrechen(999_999)
+        assert fehler.value.status == 409

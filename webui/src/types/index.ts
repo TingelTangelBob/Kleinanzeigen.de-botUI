@@ -56,6 +56,8 @@ export interface Job {
    * Das Dashboard (AP-2.29) ordnet damit den Lauf einer Anzeige zu.
    */
   anzeigen_glob: string | null;
+  /** Wird bei der kombinierten Löschung erst nach Erfolg abgearbeitet. */
+  lokal_loeschen_datei?: string | null;
   /**
    * Woran der Lauf gerade ist (AP-2.8) — Kennung, fertiger Text und seit wann.
    * Reine Anzeige. `null` heißt nur, dass noch nichts erkannt wurde.
@@ -113,6 +115,8 @@ export interface BestandsAnzeige {
    * zusammen – siehe docs/RUNDLAUF.md.
    */
   geloescht: boolean;
+  /** Rang der letzten schreibgeschützten Plattformabfrage, falls vorhanden. */
+  plattform_rang?: number | null;
 }
 
 /** Eine Anzeige mit allen Feldern - Grundlage des Editors (AP-2.5). */
@@ -296,3 +300,49 @@ export interface Einstellungen {
   gruppen: EinstellungsGruppe[];
 }
 
+
+// ------------------------------------------------------------------ Täglicher Abgleich (AP-3.12)
+
+export interface AbgleichStand {
+  profil: string;
+  eingeschaltet: boolean;
+  letzter_lauf_am: string | null;
+  letztes_ergebnis: string | null;
+  /** Der Lauf von heute ist eingereiht und noch nicht ausgewertet. */
+  laeuft: boolean;
+  /** Heute wurde schon eingereiht – ein zweiter Lauf kommt nicht. */
+  heute_gelaufen: boolean;
+  /** Ohne hinterlegtes Passwort startet der Abgleich gar nicht erst. */
+  zugang_vorhanden: boolean;
+}
+
+export interface AbgleichMeldung {
+  id: number;
+  profil: string;
+  profil_name: string;
+  zeitpunkt: string;
+  art: 'aenderung' | 'fehlschlag' | string;
+  titel: string;
+  text: string;
+}
+
+// ------------------------------------------------------------------ Sicherung (AP-3.6)
+
+export interface ArchivVorschau {
+  dateien: number;
+  anzeigen: number;
+  bilder: number;
+  neu: string[];
+  /** Dateien, die es lokal schon gibt – Pfad identisch. */
+  doppelt: string[];
+  /** Was nicht durch die Positivliste kam, mit Begründung. */
+  abgewiesen: string[];
+}
+
+export interface ArchivErgebnis {
+  geschrieben: string[];
+  ersetzt: string[];
+  uebersprungen: string[];
+  abgewiesen: string[];
+  zusammenfassung: string;
+}

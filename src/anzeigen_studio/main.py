@@ -17,17 +17,21 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
+from anzeigen_studio.api import abgleich as abgleich_api
+from anzeigen_studio.api import archiv as archiv_api
 from anzeigen_studio.api import auth as auth_api
 from anzeigen_studio.api import bestand as bestand_api
+from anzeigen_studio.api import einstellungen as einstellungen_api
 from anzeigen_studio.api import jobs as jobs_api
 from anzeigen_studio.api import katalog as katalog_api
-from anzeigen_studio.api import einstellungen as einstellungen_api
 from anzeigen_studio.api import ki as ki_api
 from anzeigen_studio.api import profile as profile_api
+from anzeigen_studio.bestand import tagesabgleich
 from anzeigen_studio.core import db, errors, schutz
 from anzeigen_studio.core.settings import Settings
 from anzeigen_studio.jobs import speicher as job_speicher
 from anzeigen_studio.jobs.warteschlange import Warteschlange
+from anzeigen_studio.jobs.zeitgeber import Zeitgeber
 
 LOG = logging.getLogger(__name__)
 
@@ -65,13 +69,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 verwaist = job_speicher.verwaiste_aufraeumen(conn)
             if verwaist:
                 LOG.warning("%d Lauf/Laeufe als abgebrochen markiert (Neustart)", verwaist)
+            # Alte Abgleich-Befunde wegraeumen (AP-3.12). Die Glocke zeigt ein
+            # Fenster von zwei Wochen; was aelter ist, waechst sonst still mit.
+            with db.transaction(conn):
+                alt = tagesabgleich.aufraeumen(conn)
+            if alt:
+                LOG.info("%d alte Abgleich-Meldung(en) entfernt", alt)
         finally:
             conn.close()
 
         _app.state.warteschlange = Warteschlange(cfg)
+        # Der Zeitgeber des taeglichen Abgleichs (AP-3.12). Er laeuft immer mit,
+        # tut aber nichts, solange kein Profil den Schalter gesetzt hat - die
+        # Vorgabe in der Datenbank ist "aus". Ohne diesen Start waere der
+        # Schalter unter Einstellungen eine Einstellung ohne Wirkung.
+        _app.state.zeitgeber = Zeitgeber(cfg, _app.state.warteschlange)
+        _app.state.zeitgeber.starten()
         try:
             yield
         finally:
+            await _app.state.zeitgeber.stillegen()
             await _app.state.warteschlange.stillegen()
 
     app = FastAPI(
@@ -92,6 +109,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bestand_api.router)
     app.include_router(katalog_api.router)
     app.include_router(einstellungen_api.router)
+    app.include_router(abgleich_api.router)
+    app.include_router(archiv_api.router)
 
     missing = cfg.missing_for_production()
     if missing:

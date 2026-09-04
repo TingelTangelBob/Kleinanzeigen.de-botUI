@@ -239,6 +239,7 @@ Commands:
   update   - updates published ads
   extend   - extends ads within the 8-day window before expiry (keeps watchers/savers and does not count towards the monthly ad quota)
   download - downloads one or multiple ads
+  sync-order - reads only the order of the account's own ads
   update-check - checks for available updates
   update-content-hash – recalculates each ad's content_hash based on the current ad_defaults;
                         use this after changing config.yaml/ad_defaults to avoid every ad being marked "changed" and republished

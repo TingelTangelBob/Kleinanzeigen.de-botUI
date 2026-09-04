@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Anzeigeneditor (AP-2.5).
+// UI-Anpassung 2026-09-04: kompakter Feldfluss und optimierte responsive Ordnung.
+// UI-Anpassung 2026-09-05: Plattform-Linkmenü und dichterer Kopfbereich.
 //
 // Die Grenzen kommen aus dem Upstream-Schema (`schemas/ad.schema.json`) und
 // stehen hier als Konstanten: Titel 10 bis 65 Zeichen, die Aufzählungen für
@@ -13,9 +15,10 @@
 // dass ein späterer Download die Änderung überschreibt, und was dem
 // Veröffentlichen im Weg steht.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, ChevronDown, Copy, Save, Trash2,
+  ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, ChevronDown, Copy, ExternalLink, Eye,
+  Pencil, RefreshCw, Save, Trash2,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
@@ -46,13 +49,63 @@ const PREISTYPEN = [
   { wert: 'NOT_APPLICABLE', label: 'Kein Preis' },
 ];
 
-const VERSANDARTEN = [
-  { wert: 'SHIPPING', label: 'Versand möglich' },
-  { wert: 'PICKUP', label: 'Nur Abholung' },
-  { wert: 'NOT_APPLICABLE', label: 'Nicht zutreffend' },
-];
-
 type Felder = Record<string, unknown>;
+
+const ENTWURF_PREFIX = 'anzeigen-studio:anzeige-entwurf:';
+const ENTWURF_GUELTIGKEIT = 30 * 24 * 60 * 60 * 1000;
+
+function entwurfSchluessel(profil: string, datei: string): string {
+  return ENTWURF_PREFIX + encodeURIComponent(profil) + ':' + encodeURIComponent(datei);
+}
+
+function entwurfLesen(profil: string, datei: string): Felder | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const roh = window.localStorage.getItem(entwurfSchluessel(profil, datei));
+    if (!roh) return null;
+    const gespeichert = JSON.parse(roh) as {
+      felder?: unknown;
+      gespeichertAm?: unknown;
+    };
+    if (
+      !gespeichert
+      || typeof gespeichert.felder !== 'object'
+      || gespeichert.felder === null
+      || Array.isArray(gespeichert.felder)
+    ) return null;
+    if (
+      typeof gespeichert.gespeichertAm === 'number'
+      && Date.now() - gespeichert.gespeichertAm > ENTWURF_GUELTIGKEIT
+    ) {
+      window.localStorage.removeItem(entwurfSchluessel(profil, datei));
+      return null;
+    }
+    return { ...(gespeichert.felder as Felder) };
+  } catch {
+    return null;
+  }
+}
+
+function entwurfSchreiben(profil: string, datei: string, felder: Felder): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      entwurfSchluessel(profil, datei),
+      JSON.stringify({ felder, gespeichertAm: Date.now() }),
+    );
+  } catch {
+    // Private Fenster oder volle Speicher dürfen den Editor nicht brechen.
+  }
+}
+
+function entwurfLoeschen(profil: string, datei: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(entwurfSchluessel(profil, datei));
+  } catch {
+    // Das Löschen ist nur Aufräumarbeit.
+  }
+}
 
 function text(wert: unknown): string {
   if (wert === null || wert === undefined) return '';
@@ -69,10 +122,16 @@ interface Props {
   profil: string;
   datei: string;
   aufZurueck: (geaendert: boolean) => void;
+  /** Die Detailansicht bleibt schreibgeschützt, bis jemand sie freigibt. */
+  bearbeitbar?: boolean;
+  aufBearbeiten?: () => void;
+  aufAnsehen?: () => void;
   /** Wird nach dem Duplizieren mit der Datei der Kopie gerufen (AP-3.3). */
   aufKopie?: (datei: string) => void;
-  /** Die Anzeige wurde lokal gelöscht - diese Maske hat kein Ziel mehr (AP-2.20). */
-  aufGeloescht?: () => void;
+  /** Die Anzeige wurde gelöscht - diese Maske hat kein Ziel mehr (AP-2.20/AP-3.13). */
+  aufGeloescht?: (hinweis?: string) => void;
+  /** Darf diese eigene Anzeige auf kleinanzeigen.de gelöscht werden (AP-3.13). */
+  onlineLoeschbar?: boolean;
   /**
    * Ob die Anzeige auf kleinanzeigen.de nicht mehr aktiv ist, lokal aber noch
    * liegt - dann steht im Kopf ein „Gelöscht"-Badge (Mockup v4, AP-3.10). Nur
@@ -83,7 +142,8 @@ interface Props {
 }
 
 export function AnzeigenEditor({
-  profil, datei, aufZurueck, aufKopie, aufGeloescht, geloescht = false,
+  profil, datei, aufZurueck, bearbeitbar = true, aufBearbeiten, aufAnsehen,
+  aufKopie, aufGeloescht, onlineLoeschbar = false, geloescht = false,
 }: Props) {
   const [inhalt, setInhalt] = useState<AnzeigeInhalt | null>(null);
   const [felder, setFelder] = useState<Felder>({});
@@ -103,6 +163,10 @@ export function AnzeigenEditor({
   const [eingereihterBefehl, setEingereihterBefehl] = useState<string | null>(null);
   const [fragtLoeschen, setFragtLoeschen] = useState(false);
   const [loescht, setLoescht] = useState(false);
+  const [onlineGewaehlt, setOnlineGewaehlt] = useState(false);
+  const [plattformMenueOffen, setPlattformMenueOffen] = useState(false);
+  const plattformMenueRef = useRef<HTMLDivElement>(null);
+  const [versandAuswahlGueltig, setVersandAuswahlGueltig] = useState(true);
   // Seltener gebrauchte Felder liegen eingeklappt (Mockup v4): mehr Formular
   // passt so above the fold.
   const [weitereOffen, setWeitereOffen] = useState(false);
@@ -111,30 +175,84 @@ export function AnzeigenEditor({
     setFehler(null);
     try {
       const geladen = await api.bestand.anzeige(profil, datei);
+      const lokalerEntwurf = bearbeitbar ? entwurfLesen(profil, datei) : null;
       setInhalt(geladen);
-      setFelder({ ...geladen.felder });
+      setFelder(lokalerEntwurf ?? { ...geladen.felder });
+      setSchmutzig(lokalerEntwurf !== null);
+      setGespeichert(false);
+      setHinweise([]);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     }
-  }, [profil, datei]);
+  }, [bearbeitbar, datei, profil]);
 
   useEffect(() => {
     void laden();
   }, [laden]);
 
+  // Das Plattformmenü darf bei einem Klick außerhalb oder mit Escape nicht
+  // offen bleiben. Hover bleibt möglich, Tastatur und Touch funktionieren
+  // zusätzlich über denselben Knopf.
+  useEffect(() => {
+    if (!plattformMenueOffen) return undefined;
+    const ausserhalb = (ereignis: MouseEvent) => {
+      if (plattformMenueRef.current && !plattformMenueRef.current.contains(ereignis.target as Node)) {
+        setPlattformMenueOffen(false);
+      }
+    };
+    const escape = (ereignis: KeyboardEvent) => {
+      if (ereignis.key === 'Escape') setPlattformMenueOffen(false);
+    };
+    document.addEventListener('mousedown', ausserhalb);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', ausserhalb);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [plattformMenueOffen]);
+
+  // Der Hash hält die offene Anzeige fest; dieser Entwurf hält zusätzlich die
+  // Eingaben fest. So ist ein Neuladen der Seite auch mitten im Bearbeiten
+  // sicher, ohne die Datei bei jedem Tastendruck zu schreiben.
+  useEffect(() => {
+    if (!inhalt || !bearbeitbar) return;
+    if (schmutzig) entwurfSchreiben(profil, datei, felder);
+    else entwurfLoeschen(profil, datei);
+  }, [bearbeitbar, datei, felder, inhalt, profil, schmutzig]);
+
   /**
-   * Löscht diese Anzeige von der Platte (AP-2.20) - derselbe Endpunkt wie das
-   * Sammellöschen in der Liste, damit die Zusage „nur lokal" nur an einer
-   * Stelle hängt. Danach hat diese Maske kein Ziel mehr und muss zu.
+   * Löscht diese Anzeige. Bei der optionalen Plattform-Löschung übernimmt die
+   * Warteschlange das lokale Entfernen erst nach einem erfolgreichen Lauf; so
+   * kann der asynchrone Bot die Quelldatei sicher lesen.
    */
   const loeschen = async () => {
+    if (onlineGewaehlt && (!inhalt || !onlineLoeschbar || inhalt.kopf.id === null || schmutzig)) {
+      setFehler('Die Plattform-Löschung ist erst nach dem Speichern mit einer gültigen Anzeigennummer möglich.');
+      return;
+    }
     setLoescht(true);
     setFehler(null);
     try {
-      await api.bestand.loeschen(profil, [datei]);
-      setFragtLoeschen(false);
-      if (aufGeloescht) aufGeloescht();
-      else aufZurueck(true);
+      if (onlineGewaehlt) {
+        const ergebnis = await api.bestand.onlineLoeschen(profil, datei, true);
+        entwurfLoeschen(profil, datei);
+        setFragtLoeschen(false);
+        if (aufGeloescht) {
+          aufGeloescht(
+            `Plattform-Löschung als Lauf ${ergebnis.job_id} eingereiht. `
+            + 'Die lokale Kopie wird erst nach erfolgreichem Lauf entfernt.',
+          );
+        } else {
+          setEingereiht(ergebnis.job_id);
+          setEingereihterBefehl('delete');
+        }
+      } else {
+        await api.bestand.loeschen(profil, [datei]);
+        entwurfLoeschen(profil, datei);
+        setFragtLoeschen(false);
+        if (aufGeloescht) aufGeloescht();
+        else aufZurueck(true);
+      }
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
       setFragtLoeschen(false);
@@ -144,6 +262,7 @@ export function AnzeigenEditor({
   };
 
   const setzen = (feld: string, wert: unknown) => {
+    if (!bearbeitbar) return;
     setFelder(vorher => ({ ...vorher, [feld]: wert }));
     setSchmutzig(true);
     setGespeichert(false);
@@ -263,7 +382,7 @@ export function AnzeigenEditor({
   // im Formular. Die Kennung `editor-speichern-lokal` ist dieselbe wie beim
   // früheren Banner - wer ihn schon weggeklickt hatte, sieht ihn nicht wieder.
   const meldungen = useMemo<Meldung[]>(() => {
-    if (!inhalt) return [];
+    if (!inhalt || !bearbeitbar) return [];
     const liste: Meldung[] = [{
       id: 'editor-speichern-lokal',
       ton: 'hinweis',
@@ -283,7 +402,7 @@ export function AnzeigenEditor({
       });
     }
     return liste;
-  }, [inhalt, hinweise]);
+  }, [bearbeitbar, inhalt, hinweise]);
   useMeldungenQuelle('editor', meldungen);
 
   if (fehler && !inhalt) {
@@ -325,16 +444,31 @@ export function AnzeigenEditor({
    * Wegwerf-Anzeige hatte keine, der Knopf war offen, und die Meldung lautete
    * „category: Input should be a valid string". Jetzt steht die Bedingung
    * dort, wo man sie beheben kann - vor dem Klick, nicht danach.
-   */
+  */
   const kategorieFehlt = text(felder.category).trim() === '';
   const titelUngueltig = titelZuKurz || titelZuLang;
-  const nichtUebertragbar = titelUngueltig || kategorieFehlt;
-  const bilder = (felder.images as string[] | null) ?? [];
+  const versandart = text(felder.shipping_type) || 'NOT_APPLICABLE';
+  const versandpakete = Array.isArray(felder.shipping_options)
+    ? felder.shipping_options.filter((paket): paket is string => typeof paket === 'string')
+    : [];
+  const versandOhnePaket = versandart === 'SHIPPING' && versandpakete.length === 0;
+  const direktkaufOhnePaket = Boolean(felder.sell_directly)
+    && text(felder.type) !== 'WANTED'
+    && versandpakete.length === 0;
+  const nichtUebertragbar = titelUngueltig || kategorieFehlt || versandOhnePaket
+    || direktkaufOhnePaket || (versandart === 'SHIPPING' && !versandAuswahlGueltig);
+  // Eine von Hand beschädigte YAML darf die Anzeige nicht mit `.map` oder
+  // `.length` aus dem Editor werfen. Das Backend prüft beim Speichern erneut;
+  // hier bleiben nur echte, eindeutige Bildnamen in der Bedienoberfläche.
+  const bilder = Array.isArray(felder.images)
+    ? felder.images.filter((bild, index, liste): bild is string =>
+      typeof bild === 'string' && liste.indexOf(bild) === index)
+    : [];
   const sonderfelder = (felder.special_attributes as Record<string, unknown> | null) ?? {};
   const kontakt = (felder.contact as Record<string, unknown> | null) ?? {};
 
   return (
-    <div className="seite-breit pb-44 sm:pb-32 lg:pb-24">
+    <div className={bearbeitbar ? 'seite-breit pb-44 sm:pb-32 lg:pb-24' : 'seite-breit'}>
       {/* Eine Kopfzeile (Mockup v4): der Anzeigentitel und - für eine eigene
           Anzeige, die auf der Plattform nicht mehr aktiv ist (AP-3.10) - ein
           „Gelöscht"-Badge. Datenquelle ist `kopf.geloescht`; die Eigenschaft
@@ -344,31 +478,85 @@ export function AnzeigenEditor({
           Tipps, Hinweise und Warnungen dieser Maske (AP-2.30). Alle Aktionen
           stehen in der Leiste unten (AP-2.24). */}
       <div className="editor-kopf">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="seite-titel break-words">
-            {titelAnzeige}
-          </h1>
-          {geloeschtAnzeige && (
-            <span
-              className="merkmal merkmal-rot"
-              title={'Auf kleinanzeigen.de nicht mehr aktiv. Gelöscht, pausiert oder '
-                + 'in Prüfung – das unterscheidet der Download nicht. Die lokale Kopie bleibt.'}
-            >
-              Gelöscht
-            </span>
-          )}
+        <div className="editor-kopf-oberzeile">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="seite-titel break-words">
+              {titelAnzeige}
+            </h1>
+            {geloeschtAnzeige && (
+              <span
+                className="merkmal merkmal-rot"
+                title={'Auf kleinanzeigen.de nicht mehr aktiv. Gelöscht, pausiert oder '
+                  + 'in Prüfung – das unterscheidet der Download nicht. Die lokale Kopie bleibt.'}
+              >
+                Gelöscht
+              </span>
+            )}
+          </div>
+          <div className="editor-aktionsgruppe">
+            {!bearbeitbar && aufBearbeiten && (
+              <button type="button" onClick={aufBearbeiten} className="btn-primaer">
+                <Pencil className="h-4 w-4" aria-hidden />
+                Anzeige bearbeiten
+              </button>
+            )}
+            {bearbeitbar && aufAnsehen && (
+              <button type="button" onClick={aufAnsehen} className="btn-ghost">
+                <Eye className="h-4 w-4" aria-hidden />
+                Anzeige ansehen
+              </button>
+            )}
+            {inhalt.kopf.id !== null && (
+              <button
+                type="button"
+                onClick={() => setFragtHochladen(true)}
+                aria-label="Anzeige aktualisieren"
+                title="Anzeige aktualisieren"
+                className="btn-icon"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+            {inhalt.kopf.id !== null && (
+              <div
+                ref={plattformMenueRef}
+                className="plattform-menue"
+                onMouseEnter={() => setPlattformMenueOffen(true)}
+                onMouseLeave={() => setPlattformMenueOffen(false)}
+              >
+                <button
+                  type="button"
+                  className="btn-icon plattform-menue-knopf"
+                  aria-label="Originalanzeige öffnen"
+                  aria-haspopup="menu"
+                  aria-expanded={plattformMenueOffen}
+                  title="Originalanzeige öffnen"
+                  onFocus={() => setPlattformMenueOffen(true)}
+                  onClick={() => setPlattformMenueOffen(vorher => !vorher)}
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden />
+                </button>
+                {plattformMenueOffen && (
+                  <div className="plattform-menue-panel" role="menu" aria-label="Anzeige öffnen in">
+                    <a
+                      href={`https://www.kleinanzeigen.de/s-anzeige/${inhalt.kopf.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      role="menuitem"
+                      onClick={() => setPlattformMenueOffen(false)}
+                    >
+                      <ExternalLink className="h-4 w-4" aria-hidden />
+                      Kleinanzeigen
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        {/*
-          Nur die Anzeigennummer (AP-2.35). Vorher stand hier der ganze
-          Dateipfad - und der enthält den Ordnernamen, der aus dem Titel
-          gebildet wird: Die Zeile wiederholte damit die Überschrift darüber,
-          über zwei Zeilen umgebrochen. Der Pfad ist Betriebswissen und hängt
-          jetzt als `title` am Element; die Nummer ist das, womit man eine
-          Anzeige auf kleinanzeigen.de wiederfindet.
-        */}
         <p className="seite-beschrieb" title={datei}>
           {inhalt.kopf.id !== null
-            ? `Anzeigennummer ${inhalt.kopf.id}`
+            ? 'Anzeigennummer ' + inhalt.kopf.id
             : 'Noch nicht veröffentlicht – keine Anzeigennummer'}
         </p>
       </div>
@@ -378,27 +566,29 @@ export function AnzeigenEditor({
           anzeigen={[inhalt.kopf]}
           laeuft={loescht}
           aufAbbrechen={() => setFragtLoeschen(false)}
+          onlineLoeschbar={onlineLoeschbar && inhalt.kopf.id !== null}
+          onlineGewaehlt={onlineGewaehlt}
+          aufOnlineGewaehlt={setOnlineGewaehlt}
+          onlineGesperrt={schmutzig}
           aufLoeschen={() => void loeschen()}
         />
       )}
 
       {(fehler || eingereiht !== null) && (
         <div className="mb-4 space-y-2">
-          {/* Kritischer Fehler bleibt im Formular stehen (role=alert). Tipps
-              und „nicht veröffentlichbar"-Warnungen stehen in der Glocke. */}
           {fehler && (
             <p role="alert" className="hinweis hinweis-fehler lesebreite">
               {fehler}
             </p>
           )}
-
-          {/* Der eingereihte Lauf steht in der Glocke (AP-2.25); hier bleibt
-              nur die kurze Bestätigung mit dem Weg dorthin. */}
           {eingereiht !== null && (
             <p className="lesebreite text-sm text-leise">
               {eingereihterBefehl === 'publish'
-                ? `Lauf ${eingereiht} ist eingereiht – die Anzeige wird neu eingestellt.`
-                : `Lauf ${eingereiht} ist eingereiht – die bestehende Anzeige wird bearbeitet.`}
+                ? 'Lauf ' + eingereiht + ' ist eingereiht – die Anzeige wird neu eingestellt.'
+                : eingereihterBefehl === 'delete'
+                  ? 'Lauf ' + eingereiht + ' ist eingereiht – die Anzeige wird auf kleinanzeigen.de gelöscht. '
+                    + 'Prüfe danach den öffentlichen Link mit dem Mini-Skript.'
+                  : 'Lauf ' + eingereiht + ' ist eingereiht – die bestehende Anzeige wird bearbeitet.'}
               {' '}
               <a href="#warteschlange" className="font-medium underline">
                 Zur Warteschlange
@@ -419,118 +609,47 @@ export function AnzeigenEditor({
         />
       )}
 
-      {/* Fotos links, Felder rechts - wie eine Anzeige auf der Plattform auch
-          gelesen wird. Die Fotospalte bleibt ab md stehen und scrollt für sich
-          (Mockup v4). Unterhalb von md stapelt es sich, Fotos zuerst: Auf dem
-          Handy ist das Bild das, woran man die Anzeige wiedererkennt. */}
-      <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)]">
-        <div className="editor-bilder min-w-0">
-          <BilderVerwaltung
-            profil={profil}
-            datei={datei}
-            bilder={bilder}
-            aufAenderung={bilderAktualisiert}
-          />
-        </div>
+      {/* Gemeinsamer Editor für Ansicht und Bearbeitung: links die Felder und
+          Preis/Versand, rechts die Bilder. Auf schmalen Breiten bleibt die
+          Reihenfolge Titel → Art/Kategorie → Beschreibung erhalten. */}
+      <div className="editor-raster">
+        <div className="editor-hauptspalte">
+          <section className="karte editor-karte">
+            <h2 className="karte-kopf">Allgemein</h2>
 
-        <div className="min-w-0 space-y-3">
-          {/*
-            Titel/Beschreibung und Art/Kategorie nebeneinander, 65 zu 35
-            (AP-2.35). Der Text braucht die Breite - die Beschreibung ist das
-            längste Feld der Maske -, die beiden Auswahlfelder daneben nicht.
-            Übereinander gestapelt schob die Kategorie den Preis unter die
-            Falz. Erst ab `lg`: Darunter wäre die schmale Spalte enger als das
-            Kategoriefeld selbst.
-          */}
-          <div className="grid gap-3 lg:grid-cols-[65fr_35fr] lg:items-start">
-          <div className="min-w-0 space-y-3">
-          <section className="karte p-3">
-            <h2 className="karte-kopf">Titel und Beschreibung</h2>
-
-            <label className="block">
-              <span className="beschriftung">Titel</span>
-              <input
-                type="text"
-                value={titel}
-                maxLength={TITEL_MAX}
-                aria-invalid={titelUngueltig || undefined}
-                onChange={e => setzen('title', e.target.value)}
-                className="feld mt-1"
-                style={titelUngueltig
-                  ? { borderColor: 'var(--status-fehler)' }
-                  : undefined}
-              />
-              <span className={`mt-1 block text-xs ${titelUngueltig ? 'text-red-700' : 'text-leise'}`}>
-                {titel.length} von {TITEL_MAX} Zeichen
-                {titelZuKurz ? `, mindestens ${TITEL_MIN}` : ''}
-                {titelZuLang
-                  ? ` – ${titel.length - TITEL_MAX} zu viel. Kürzen, sonst weist kleinanzeigen.de die Anzeige ab.`
-                  : ''}
-              </span>
-            </label>
-
-            <label className="mt-3 block">
-              <span className="beschriftung">Beschreibung</span>
-              <textarea
-                rows={7}
-                maxLength={BESCHREIBUNG_MAX}
-                value={text(felder.description)}
-                onChange={e => setzen('description', e.target.value)}
-                className="feld mt-1"
-              />
-              <span className="mt-1 block text-right text-xs text-leise">
-                {text(felder.description).length.toLocaleString('de-DE')} / {BESCHREIBUNG_MAX.toLocaleString('de-DE')}
-              </span>
-            </label>
-          </section>
-
-          <section className="karte p-3">
-            <h2 className="karte-kopf">Preis und Versand</h2>
-
-            {/* Breite nach Inhalt, nicht nach Spalte (AP-2.35): Ein Preis ist
-                vier bis sechs Zeichen lang und stand vorher in einem Feld über
-                die halbe Karte. `flex-wrap` statt Raster, damit die beiden
-                Felder ihre eigene Breite behalten und auf schmalen Fenstern
-                umbrechen, statt sich zu strecken. */}
-            <div className="flex flex-wrap items-start gap-4">
-              <label className="block">
-                <span className="beschriftung">Preis (€)</span>
+            <div className="editor-allgemein-kopf">
+              <label className="editor-titel-feld block">
+                <span className="beschriftung">Titel</span>
                 <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  inputMode="decimal"
-                  value={text(felder.price)}
-                  onChange={e => setzen('price', zahlOderNull(e.target.value))}
-                  className="feld feld-zahl mt-1"
+                  type="text"
+                  value={titel}
+                  maxLength={TITEL_MAX}
+                  aria-describedby="titel-hinweis"
+                  readOnly={!bearbeitbar}
+                  aria-invalid={titelUngueltig || undefined}
+                  onChange={e => setzen('title', e.target.value)}
+                  className="feld mt-1"
+                  style={titelUngueltig
+                    ? { borderColor: 'var(--status-fehler)' }
+                    : undefined}
                 />
-              </label>
-
-              <label className="block">
-                <span className="beschriftung">Versand</span>
-                <select
-                  value={text(felder.shipping_type) || 'NOT_APPLICABLE'}
-                  onChange={e => setzen('shipping_type', e.target.value)}
-                  className="feld feld-auswahl mt-1"
+                <span
+                  id="titel-hinweis"
+                  className={'mt-1 block text-xs ' + (titelUngueltig ? 'text-red-700' : 'text-leise')}
                 >
-                  {VERSANDARTEN.map(v => <option key={v.wert} value={v.wert}>{v.label}</option>)}
-                </select>
+                  {titel.length} von {TITEL_MAX} Zeichen
+                  {titelZuKurz ? ', mindestens ' + TITEL_MIN : ''}
+                  {titelZuLang
+                    ? ' – ' + (titel.length - TITEL_MAX) + ' zu viel. Kürzen, sonst weist kleinanzeigen.de die Anzeige ab.'
+                    : ''}
+                </span>
               </label>
-            </div>
-          </section>
-          </div>
 
-          <section className="karte p-3">
-            <h2 className="karte-kopf">Art und Kategorie</h2>
-
-            {/* In der schmalen Spalte untereinander: Zwei Auswahlfelder
-                nebeneinander wären hier je gut 8rem breit - zu wenig für einen
-                Kategoriepfad. */}
-            <div className="space-y-3">
-              <label className="block">
+              <label className="editor-art-feld block">
                 <span className="beschriftung">Art</span>
                 <select
                   value={text(felder.type) || 'OFFER'}
+                  disabled={!bearbeitbar}
                   onChange={e => setzen('type', e.target.value)}
                   className="feld feld-auswahl mt-1"
                 >
@@ -538,16 +657,92 @@ export function AnzeigenEditor({
                 </select>
               </label>
 
-              <div>
-                <KategorieWahl
-                  wert={text(felder.category)}
-                  aufAenderung={wert => setzen('category', wert)}
+              <KategorieWahl
+                kompakt
+                wert={text(felder.category)}
+                bearbeitbar={bearbeitbar}
+                aufAenderung={wert => setzen('category', wert)}
+              />
+            </div>
+
+            <label className="mt-4 block">
+              <span className="beschriftung">Beschreibung</span>
+              <textarea
+                rows={6}
+                maxLength={BESCHREIBUNG_MAX}
+                value={text(felder.description)}
+                readOnly={!bearbeitbar}
+                onChange={e => setzen('description', e.target.value)}
+                className="feld editor-beschreibung mt-1"
+              />
+              <span className="mt-1 block text-right text-xs text-leise">
+                {text(felder.description).length.toLocaleString('de-DE')} / {BESCHREIBUNG_MAX.toLocaleString('de-DE')}
+              </span>
+            </label>
+
+            <div className="editor-trenner" />
+
+            <div className="editor-preis-versand">
+              <div className="editor-versandfeld">
+                <VersandpaketWahl
+                  key={datei}
+                  gewaehlt={versandpakete}
+                  versandkosten={typeof felder.shipping_costs === 'number' ? felder.shipping_costs : null}
+                  direktKaufen={Boolean(felder.sell_directly)}
+                  versandart={versandart}
+                  bearbeitbar={bearbeitbar}
+                  speicherSchluessel={`${profil}:${datei}`}
+                  aufVersandart={wert => {
+                    setzen('shipping_type', wert);
+                    // Individuelle Versandkosten sind auf der Plattform nicht
+                    // mehr verfügbar. Eine neue Auswahl räumt einen alten
+                    // Legacy-Wert aus der Datei auf.
+                    setzen('shipping_costs', null);
+                    if (wert === 'PICKUP') {
+                      setzen('shipping_options', null);
+                      setzen('sell_directly', false);
+                    }
+                  }}
+                  aufGueltigkeit={setVersandAuswahlGueltig}
+                  aufAenderung={pakete => setzen('shipping_options', pakete.length > 0 ? pakete : null)}
                 />
+              </div>
+
+              <div className="editor-preisfeld">
+                <h3 className="karte-kopf mb-2">Preis</h3>
+                <label className="block">
+                  <span className="beschriftung">Preis (€)</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    inputMode="decimal"
+                    value={text(felder.price)}
+                    readOnly={!bearbeitbar}
+                    onChange={e => setzen('price', zahlOderNull(e.target.value))}
+                    className="feld feld-zahl mt-1"
+                  />
+                </label>
+                <label className="editor-direktkauf mt-4 flex items-start gap-2 text-sm text-normal">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(felder.sell_directly)}
+                    disabled={!bearbeitbar || versandart === 'PICKUP'}
+                    onChange={e => setzen('sell_directly', e.target.checked)}
+                    className="mt-0.5 h-4 w-4 flex-shrink-0"
+                  />
+                  <span>
+                    Direkt kaufen
+                    {versandart === 'PICKUP' && (
+                      <span className="ml-1 text-xs text-leise">(bei Abholung nicht verfügbar)</span>
+                    )}
+                  </span>
+                </label>
               </div>
             </div>
 
             {Object.keys(sonderfelder).length > 0 && (
-              <div className="mt-3">
+              <div className="mt-4">
                 <p className="beschriftung">Sonderfelder der Kategorie</p>
                 <dl className="mt-1 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                   {Object.entries(sonderfelder).map(([schluessel, wert]) => (
@@ -564,60 +759,37 @@ export function AnzeigenEditor({
             )}
           </section>
 
-          </div>
-
-
-          {/* Weitere Optionen: Preistyp, Versandkosten und -pakete, Kontakt und
-              Neueinstellung liegen eingeklappt (Mockup v4). Alle Felder bleiben
-              erreichbar, nur eben nicht vor dem ersten Scrollen. */}
           <section className="karte">
             <button
               type="button"
               onClick={() => setWeitereOffen(o => !o)}
               aria-expanded={weitereOffen}
-              className="flex w-full items-center justify-between gap-2 p-3 text-left"
+              className="flex w-full items-center justify-between gap-2 p-4 text-left"
             >
               <span className="karte-kopf mb-0">Weitere Optionen</span>
               <ChevronDown
-                className={`h-4 w-4 flex-shrink-0 text-leise transition-transform ${weitereOffen ? 'rotate-180' : ''}`}
+                className={'h-4 w-4 flex-shrink-0 text-leise transition-transform '
+                  + (weitereOffen ? 'rotate-180' : '')}
                 aria-hidden
               />
             </button>
 
             {weitereOffen && (
-              <div className="space-y-4 border-t px-3 pb-3 pt-3" style={{ borderColor: 'var(--karte-rand)' }}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="beschriftung">Preistyp</span>
-                    <select
-                      value={text(felder.price_type) || 'FIXED'}
-                      onChange={e => setzen('price_type', e.target.value)}
-                      className="feld mt-1"
-                    >
-                      {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
-                    </select>
-                  </label>
-
-                  <label className="block">
-                    <span className="beschriftung">Versandkosten (€)</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={text(felder.shipping_costs)}
-                      onChange={e => setzen('shipping_costs', zahlOderNull(e.target.value))}
-                      className="feld mt-1"
-                    />
-                  </label>
-                </div>
-
-                <VersandpaketWahl
-                  gewaehlt={(felder.shipping_options as string[] | null) ?? []}
-                  versandkosten={typeof felder.shipping_costs === 'number' ? felder.shipping_costs : null}
-                  direktKaufen={Boolean(felder.sell_directly)}
-                  aufDirektKaufen={wert => setzen('sell_directly', wert)}
-                  aufAenderung={pakete => setzen('shipping_options', pakete.length > 0 ? pakete : null)}
-                />
+              <div
+                className="space-y-4 border-t px-4 pb-4 pt-4"
+                style={{ borderColor: 'var(--karte-rand)' }}
+              >
+                <label className="block sm:max-w-xs">
+                  <span className="beschriftung">Preistyp</span>
+                  <select
+                    value={text(felder.price_type) || 'FIXED'}
+                    disabled={!bearbeitbar}
+                    onChange={e => setzen('price_type', e.target.value)}
+                    className="feld mt-1"
+                  >
+                    {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
+                  </select>
+                </label>
 
                 <div>
                   <p className="beschriftung mb-1">Kontakt</p>
@@ -627,6 +799,7 @@ export function AnzeigenEditor({
                       <input
                         type="text"
                         value={text(kontakt.name)}
+                        readOnly={!bearbeitbar}
                         onChange={e => kontaktSetzen('name', e.target.value)}
                         className="feld mt-1"
                       />
@@ -636,6 +809,7 @@ export function AnzeigenEditor({
                       <input
                         type="text"
                         value={text(kontakt.zipcode)}
+                        readOnly={!bearbeitbar}
                         onChange={e => kontaktSetzen('zipcode', e.target.value)}
                         className="feld mt-1"
                       />
@@ -645,6 +819,7 @@ export function AnzeigenEditor({
                       <input
                         type="text"
                         value={text(kontakt.location)}
+                        readOnly={!bearbeitbar}
                         onChange={e => kontaktSetzen('location', e.target.value)}
                         className="feld mt-1"
                       />
@@ -657,6 +832,7 @@ export function AnzeigenEditor({
                     <input
                       type="checkbox"
                       checked={Boolean(felder.active)}
+                      disabled={!bearbeitbar}
                       onChange={e => setzen('active', e.target.checked)}
                       className="h-4 w-4"
                     />
@@ -670,6 +846,7 @@ export function AnzeigenEditor({
                       step="1"
                       min="1"
                       value={text(felder.republication_interval)}
+                      readOnly={!bearbeitbar}
                       onChange={e => setzen('republication_interval', zahlOderNull(e.target.value))}
                       className="feld mt-1"
                     />
@@ -678,6 +855,16 @@ export function AnzeigenEditor({
               </div>
             )}
           </section>
+        </div>
+
+        <div className="editor-bilder-rail">
+          <BilderVerwaltung
+            profil={profil}
+            datei={datei}
+            bilder={bilder}
+            bearbeitbar={bearbeitbar}
+            aufAenderung={bilderAktualisiert}
+          />
         </div>
       </div>
 
@@ -689,6 +876,7 @@ export function AnzeigenEditor({
           sich die Leiste sonst über deren unterste Einträge. Innen dieselbe
           `.seite-breit`-Kante und dasselbe Seitenmaß wie im Inhalt, damit die
           Leiste mit der rechten Kante der Karten fluchtet. */}
+      {bearbeitbar && (
       <div className="leiste-fix safe-unten fixed inset-x-0 bottom-0 z-20 px-6 py-3 sm:px-8 lg:left-60">
         <div className="seite-breit flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-leise">
@@ -736,9 +924,9 @@ export function AnzeigenEditor({
                 Knöpfen daneben unterscheiden (AP-2.20). */}
             <button
               type="button"
-              onClick={() => setFragtLoeschen(true)}
+              onClick={() => { setOnlineGewaehlt(false); setFragtLoeschen(true); }}
               disabled={speichert || loescht}
-              title="Löscht die Anzeige von diesem Rechner. Auf kleinanzeigen.de ändert sich nichts."
+              title="Löscht die Anzeige von diesem Rechner; im Dialog kann zusätzlich die Plattform-Löschung gewählt werden."
               className="btn-ghost"
               style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
             >
@@ -757,13 +945,17 @@ export function AnzeigenEditor({
                 ? 'Erst speichern - übertragen wird der gespeicherte Stand.'
                 : kategorieFehlt
                   ? 'Ohne Kategorie weist kleinanzeigen.de die Anzeige ab. Rechts unter „Art und Kategorie" eine wählen.'
+                  : versandOhnePaket
+                    ? 'Wähle unter „Preis und Versand" zuerst eine Paketgröße und danach eine konkrete Versandoption.'
+                    : direktkaufOhnePaket
+                      ? '„Direkt kaufen" braucht eine konkrete Versandoption oder muss ausgeschaltet werden.'
                   : titelZuLang
-                  ? `Der Titel ist ${titel.length - TITEL_MAX} Zeichen zu lang - der Lauf würde abgewiesen.`
-                  : titelZuKurz
-                    ? `Der Titel braucht mindestens ${TITEL_MIN} Zeichen.`
-                    : inhalt.kopf.id === null
-                      ? 'Stellt die Anzeige neu auf kleinanzeigen.de ein.'
-                      : 'Schreibt den gespeicherten Stand in die bestehende Anzeige.'
+                    ? `Der Titel ist ${titel.length - TITEL_MAX} Zeichen zu lang - der Lauf würde abgewiesen.`
+                    : titelZuKurz
+                      ? `Der Titel braucht mindestens ${TITEL_MIN} Zeichen.`
+                      : inhalt.kopf.id === null
+                        ? 'Stellt die Anzeige neu auf kleinanzeigen.de ein.'
+                        : 'Schreibt den gespeicherten Stand in die bestehende Anzeige.'
                 }
               className="btn-ghost"
             >
@@ -784,6 +976,7 @@ export function AnzeigenEditor({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

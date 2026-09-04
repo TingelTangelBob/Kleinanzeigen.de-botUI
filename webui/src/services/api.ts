@@ -7,6 +7,7 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
+  AbgleichMeldung, AbgleichStand, ArchivErgebnis, ArchivVorschau,
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Einstellungen, Gesundheit, Job, Kategorie, LogZeile,
   KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
   Profil, SpeichernAusgabe, Vergleich, Versandpaket, Vorlage, ZugangStatus,
@@ -211,6 +212,13 @@ export const api = {
         { method: 'POST', ...json({ datei }) },
       ),
 
+    /** Reiht das plattformweite Löschen exakt dieser eigenen Anzeige ein. */
+    onlineLoeschen: (profil: string, datei: string, lokalLoeschen = false) =>
+      anfrage<{ job_id: number; anzeige: BestandsAnzeige; befehl: string }>(
+        `/bestand/online-loeschen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json({ datei, lokal_loeschen: lokalLoeschen }) },
+      ),
+
     bildHochladen: async (profil: string, datei: string, bild: File) => {
       const formular = new FormData();
       formular.append('bild', bild);
@@ -326,6 +334,44 @@ export const api = {
         `/einstellungen/browserprofil-zuruecksetzen?profil=${encodeURIComponent(profil)}`,
         { method: 'POST' },
       ),
+  },
+
+  /** Täglicher Abgleich der eigenen Anzeigen (AP-3.12). Vorgabe: aus. */
+  abgleich: {
+    stand: (profil: string) =>
+      anfrage<AbgleichStand>(`/abgleich?profil=${encodeURIComponent(profil)}`),
+    schalten: (profil: string, eingeschaltet: boolean) =>
+      anfrage<AbgleichStand>(`/abgleich?profil=${encodeURIComponent(profil)}`, {
+        method: 'PUT', ...json({ eingeschaltet }),
+      }),
+    /** Befunde aller Profile – die Glocke gehört keinem einzelnen Konto. */
+    meldungen: () => anfrage<AbgleichMeldung[]>('/abgleich/meldungen'),
+  },
+
+  /** Sicherung, Export und Import eines Profils (AP-3.6). */
+  archiv: {
+    /**
+     * Adresse des Downloads. Bewusst als Link und nicht über `fetch`: Der
+     * Browser soll die Datei selbst speichern, mit dem Namen aus dem
+     * Content-Disposition-Kopf. Das Sitzungscookie geht als same-origin mit.
+     */
+    exportUrl: (profil: string) => `/api/archiv/export?profil=${encodeURIComponent(profil)}`,
+    vorschau: (profil: string, datei: File) => {
+      const rumpf = new FormData();
+      rumpf.append('datei', datei);
+      return anfrage<ArchivVorschau>(
+        `/archiv/vorschau?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', body: rumpf },
+      );
+    },
+    einspielen: (profil: string, datei: File, ersetzen: boolean) => {
+      const rumpf = new FormData();
+      rumpf.append('datei', datei);
+      return anfrage<ArchivErgebnis>(
+        `/archiv/import?profil=${encodeURIComponent(profil)}&ersetzen=${ersetzen ? 'true' : 'false'}`,
+        { method: 'POST', body: rumpf },
+      );
+    },
   },
 
   jobs: {

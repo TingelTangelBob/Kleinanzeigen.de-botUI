@@ -192,6 +192,65 @@ class TestBefehlswahl:
         assert "*" not in (job.anzeigen_glob or "")
 
 
+class TestOnlineLoeschen:
+    """Das Plattform-Loeschen bleibt auf die eigene Anzeige mit ID begrenzt."""
+
+    def test_mit_nummer_reiht_exact_id_delete_ein(
+        self, client: TestClient, mit_nummer: str,
+    ) -> None:
+        antwort = client.post(
+            "/api/bestand/online-loeschen", params = {"profil": PROFIL},
+            json = {"datei": mit_nummer},
+        )
+
+        assert antwort.status_code == 202, antwort.text
+        ausgabe = antwort.json()
+        assert ausgabe["befehl"] == "delete"
+        assert ausgabe["anzeige"]["id"] == 3310837392
+
+        job = _job(client, ausgabe["job_id"])
+        assert job["befehl"] == "delete"
+        assert job["argumente"] == ["--ads=3310837392"]
+        assert job["anzeigen_glob"] == f"./{mit_nummer}"
+        assert job["lokal_loeschen_datei"] is None
+
+    def test_kombiniert_entfernt_lokal_erst_nach_erfolgreichem_lauf(
+        self, client: TestClient, mit_nummer: str,
+    ) -> None:
+        antwort = client.post(
+            "/api/bestand/online-loeschen", params = {"profil": PROFIL},
+            json = {"datei": mit_nummer, "lokal_loeschen": True},
+        )
+
+        assert antwort.status_code == 202, antwort.text
+        job = _job(client, antwort.json()["job_id"])
+        assert job["lokal_loeschen_datei"] == mit_nummer
+
+    def test_ohne_nummer_wird_nicht_geloescht(
+        self, client: TestClient, ohne_nummer: str,
+    ) -> None:
+        antwort = client.post(
+            "/api/bestand/online-loeschen", params = {"profil": PROFIL},
+            json = {"datei": ohne_nummer},
+        )
+
+        assert antwort.status_code == 422, antwort.text
+        assert "keine Anzeigennummer" in antwort.json()["fehler"]["meldung"]
+
+    def test_fremde_anzeige_wird_nicht_geloescht(
+        self, client: TestClient, tmp_path: Path,
+    ) -> None:
+        _anlegen(tmp_path, "fremde-ads", "fremd_1", VEROEFFENTLICHT)
+
+        antwort = client.post(
+            "/api/bestand/online-loeschen", params = {"profil": PROFIL},
+            json = {"datei": "fremde-ads/fremd_1/fremd_1.yaml"},
+        )
+
+        assert antwort.status_code == 422, antwort.text
+        assert "Nur eigene Anzeigen" in antwort.json()["fehler"]["meldung"]
+
+
 class TestPruefungBleibt:
     """Was vor AP-3.8 abgewiesen wurde, wird weiter abgewiesen."""
 
@@ -256,3 +315,13 @@ class TestTitelloeschenGesperrt:
         )
         text = ziel.read_text(encoding = "utf-8")
         assert "delete_old_ads_by_title: true" in text.lower()
+
+    def test_gezieltes_plattform_loeschen_markiert_lokale_kopie(self, tmp_path: Path) -> None:
+        ziel = tmp_path / "config.yaml"
+        konfiguration.schreiben(
+            ziel, {"deleting": {"after_delete": "NONE"}},
+            anzeigen_glob = "./downloaded-ads/ad_1/ad_1.yaml",
+            loeschpolitik = "DISABLE",
+        )
+        text = ziel.read_text(encoding = "utf-8")
+        assert "after_delete: DISABLE" in text

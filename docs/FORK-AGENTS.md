@@ -46,7 +46,22 @@ Im Repo selbst: [`../NOTICE.md`](../NOTICE.md), [`RECHTLICHES.md`](RECHTLICHES.m
 Bausteine der Oberfläche stammen aus SoloOffice (AGPL-3.0-or-later, siehe `CONTEXT.md`). Vor jeder
 neuen Komponente dort nachsehen. Übernommene Dateien bekommen einen Herkunftsvermerk im Kopf.
 
-## Prüfen
+## Prüfen und LAN-Testserver aktualisieren
+
+Der ausdrücklich freigegebene Anzeigen-Studio-Teststand wird mit einem
+gebündelten Skript aktualisiert. Es überträgt den Arbeitsstand, baut beide
+Images, führt den LAN-Stack neu hoch und prüft die Startseite:
+
+```bash
+./scripts/aktualisiere_testserver.sh --pruefen
+```
+
+Für schnelle Iterationen ohne die zusätzlichen Backend-Prüfungen genügt
+`./scripts/aktualisiere_testserver.sh`. Details, Standardziele und die
+ausgeschlossenen Geheimnis-/Datenpfade stehen in
+[`TESTSERVER-UPDATE.md`](TESTSERVER-UPDATE.md). Das Skript gilt ausschließlich
+für den freigegebenen LAN-Testserver und ist keine Freigabe für einen Lauf
+gegen ein echtes Konto.
 
 ```bash
 docker compose build                    # enthält Lint und Typprüfung des Frontends

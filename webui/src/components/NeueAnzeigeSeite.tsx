@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Fotos rein, Anzeigenentwurf raus (AP-4.4, AP-4.6).
+// UI-Anpassung 2026-09-04: beste Katalogkategorie nach der Bildanalyse vorauswählen.
 //
 // Der Ablauf ist bewusst dreigeteilt und jeder Teil hat seinen eigenen
 // Zustand: Bilder wählen → erkennen lassen → Rückfragen beantworten und
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
+import { hashFuerAnzeige } from '../routing';
 import type { KiEntwurf, KiKosten, KiStatus } from '../types';
 import { ProfilWarteschlange } from './ProfilWarteschlange';
 
@@ -35,7 +37,11 @@ const MAX_BILDER = 4;
 /** Was der Bot beim Hochladen spaeter wieder lesen kann. HEIC gehoert nicht dazu. */
 const ERLAUBTE_TYPEN = ['image/jpeg', 'image/png', 'image/gif'];
 
-export function NeueAnzeigeSeite() {
+export function NeueAnzeigeSeite({
+  aufZiel,
+}: {
+  aufZiel?: (ziel: string) => void;
+}) {
   const { aktiv } = useProfil();
   const profil = aktiv?.slug ?? '';
 
@@ -127,6 +133,10 @@ export function NeueAnzeigeSeite() {
         }
       });
       setEntwurf(antwort.entwurf);
+      // Die API liefert nur Kategorien, die gegen den echten Katalog abgeglichen
+      // wurden. Die beste davon wird als Entwurf vorausgewählt und kann vor dem
+      // lokalen Anlegen weiterhin geändert oder entfernt werden.
+      setKategorie(antwort.entwurf.kategorie_vorschlaege[0]?.wert ?? null);
       setKosten(antwort.kosten);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
@@ -145,6 +155,9 @@ export function NeueAnzeigeSeite() {
         kategorie, versandpakete, preis,
       });
       setAngelegt(ergebnis.titel);
+      if (aufZiel) {
+        aufZiel(hashFuerAnzeige('eigene', ergebnis.datei, true));
+      }
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
@@ -253,7 +266,7 @@ export function NeueAnzeigeSeite() {
           </p>
           <p className="mt-2 text-sm">
             Sie ist <strong>nicht</strong> veröffentlicht. Unter „Anzeigen“ lässt sie sich
-            bearbeiten – Kategorie und Versand fehlen noch – und von dort aus hochladen.
+            bearbeiten – Versand und weitere Angaben lassen sich dort ergänzen – und von dort aus hochladen.
           </p>
           <a href="#bestand" className="mt-3 inline-block text-sm font-medium underline">
             Zum Bestand
@@ -500,7 +513,7 @@ function Ergebnis({
           <Zeile bezeichnung="Kategorie">
             {entwurf.kategorie ?? 'kein Vorschlag'}
             <span className="lesebreite mt-0.5 block text-xs text-leise">
-              Nur ein Hinweis – die Kategorie wird im Editor gesetzt, nicht hier.
+              Wird als beste Katalogkategorie vorausgewählt und kann unten geändert werden.
             </span>
           </Zeile>
         </dl>
@@ -663,10 +676,10 @@ function Rueckfrage({
 /**
  * Kategorie- und Versandvorschlag (AP-4.5).
  *
- * Angeklickt statt gesetzt: Beide Felder können einen Lauf zum Stehen bringen -
- * ein falscher Kategoriepfad im Kategoriedialog, ein unpassender Versandweg im
- * Versanddialog. Was hier steht, ist gegen den echten Katalog abgeglichen und
- * existiert damit; ob es *stimmt*, weiß nur der Mensch vor dem Bildschirm.
+ * Die Kategorie ist gegen den echten Katalog abgeglichen und wird als bester
+ * Treffer vorausgewählt. Preis und Versand bleiben dagegen bewusst eine
+ * bestätigungspflichtige Auswahl. Ob der Kategorietreffer wirklich passt, weiß
+ * nur der Mensch vor dem Bildschirm.
  */
 function Vorschlaege({
   entwurf, kategorie, versandpakete, preis, aufKategorie, aufVersand, aufPreis,
@@ -703,8 +716,8 @@ function Vorschlaege({
     <div className="karte p-4">
       <h2 className="mb-1 font-medium text-stark">Vorschläge zum Übernehmen</h2>
       <p className="lesebreite mb-3 text-xs text-leise">
-        Nichts davon wird automatisch gesetzt. Was du hier nicht anklickst, bleibt leer
-        und lässt sich später im Editor nachtragen.
+        Die beste Kategorie wird automatisch vorausgewählt. Preis und Versand setzt du
+        weiterhin erst nach eigener Prüfung; alles lässt sich später im Editor ändern.
       </p>
 
       <fieldset className="mb-4">
@@ -756,7 +769,7 @@ function Vorschlaege({
 
       {hatKategorien && (
         <fieldset className="mb-4">
-          <legend className="mb-2 text-sm font-medium text-stark">Kategorie</legend>
+          <legend className="mb-2 text-sm font-medium text-stark">Kategorie (vorausgewählt)</legend>
           <div className="flex flex-wrap gap-2">
             {entwurf.kategorie_vorschlaege.map(k => (
               <button

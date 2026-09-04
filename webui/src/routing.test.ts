@@ -5,7 +5,7 @@
 // Menüpunkt und die Umlenkung der alten Läufe-Hashes.
 
 import { describe, expect, it } from 'vitest';
-import { hashFuer, routeAusHash } from './routing';
+import { hashFuer, hashFuerAnzeige, routeAusHash } from './routing';
 
 describe('routeAusHash', () => {
   it('erkennt #warteschlange', () => {
@@ -33,10 +33,29 @@ describe('routeAusHash', () => {
   it('fällt für Unbekanntes auf die Übersicht zurück', () => {
     expect(routeAusHash('#quatsch').seite).toBe('uebersicht');
   });
+
+  it('merkt sich die offene Anzeige und den Bearbeitungsmodus im Hash', () => {
+    expect(routeAusHash('#anzeigen/eigene?datei=ads%2Fmein-entwurf.yaml&bearbeiten=1')).toMatchObject({
+      seite: 'anzeigen',
+      anzeigen: 'eigene',
+      anzeigeDatei: 'ads/mein-entwurf.yaml',
+      anzeigeBearbeiten: true,
+    });
+    expect(routeAusHash('#anzeigen/fremde?datei=fremde%2Flink.yaml')).toMatchObject({
+      anzeigen: 'fremde',
+      anzeigeDatei: 'fremde/link.yaml',
+      anzeigeBearbeiten: false,
+    });
+  });
 });
 
 describe('hashFuer', () => {
   it('gibt den nackten Seitennamen für die Warteschlange zurück', () => {
     expect(hashFuer('warteschlange')).toBe('warteschlange');
+  });
+
+  it('kodiert den Dateipfad einer offenen Anzeige', () => {
+    expect(hashFuerAnzeige('eigene', 'ads/Mein Entwurf.yaml', true))
+      .toBe('anzeigen/eigene?datei=ads%2FMein+Entwurf.yaml&bearbeiten=1');
   });
 });

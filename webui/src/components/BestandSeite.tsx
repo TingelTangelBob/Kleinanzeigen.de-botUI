@@ -14,10 +14,11 @@ import {
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
-import type { AnzeigenHerkunft } from '../routing';
+import { hashFuer, hashFuerAnzeige, type AnzeigenHerkunft } from '../routing';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
+import { HochladenDialog } from './HochladenDialog';
 import { LoeschDialog } from './LoeschDialog';
 import { NachladenDialog } from './NachladenDialog';
 import { VorlagenListe } from './VorlagenListe';
@@ -69,9 +70,13 @@ function passtZurSuche(anzeige: BestandsAnzeige, suche: string): boolean {
 }
 
 export function BestandSeite({
-  herkunft, aufZiel,
+  herkunft, anzeigeDatei = null, anzeigeBearbeiten = false, aufZiel,
 }: {
   herkunft: AnzeigenHerkunft;
+  /** Die offene Anzeige kommt aus dem Hash, nicht aus flüchtigem React-Zustand. */
+  anzeigeDatei?: string | null;
+  /** Der Hash merkt sich zusätzlich, ob die Detailansicht editierbar ist. */
+  anzeigeBearbeiten?: boolean;
   aufZiel: (ziel: string) => void;
 }) {
   const { aktiv, laedt: profileLaden } = useProfil();
@@ -80,11 +85,13 @@ export function BestandSeite({
   const [fehler, setFehler] = useState<string | null>(null);
   const [suche, setSuche] = useState('');
   const [filter, setFilter] = useState<Filter>(STANDARD_FILTER);
-  const [bearbeitet, setBearbeitet] = useState<string | null>(null);
   const [holtNach, setHoltNach] = useState(false);
   const [warnung, setWarnung] = useState<BestandsAnzeige[] | null>(null);
   const [startetDownload, setStartetDownload] = useState(false);
   const [downloadHinweis, setDownloadHinweis] = useState<number | null>(null);
+  const [aktualisierung, setAktualisierung] = useState<BestandsAnzeige | null>(null);
+  const [laedtAktualisierung, setLaedtAktualisierung] = useState(false);
+  const [aktualisierungsHinweis, setAktualisierungsHinweis] = useState<number | null>(null);
   const [zuletztHerkunft, setZuletztHerkunft] = useState<AnzeigenHerkunft>(herkunft);
   // AP-2.20: Mehrfachauswahl über die Dateipfade - dieselbe Kennung, mit der
   // auch das Backend arbeitet.
@@ -95,8 +102,9 @@ export function BestandSeite({
 
   // App.tsx rendert für #anzeigen/eigene und #anzeigen/fremde dieselbe
   // Komponente; nur `herkunft` wechselt. React unmountet dabei nicht, also
-  // bliebe eine offene Bearbeiten-Maske stehen, während die Seitenleiste
-  // bereits die andere Herkunft markiert (AP-2.13).
+  // müssen Listenfilter und Dialoge beim Herkunftswechsel zurückgesetzt werden
+  // (AP-2.13). Eine offene Anzeige kommt dagegen aus dem Hash und wird vom
+  // Editor kontrolliert.
   //
   // Zurückgesetzt wird während des Renderns statt in einem Effekt: ein Effekt
   // liefe erst nach dem Anzeigen, die alte Maske wäre also einen Frame lang
@@ -104,10 +112,11 @@ export function BestandSeite({
   // Muster, Zustand an geänderte Eigenschaften anzupassen.
   if (zuletztHerkunft !== herkunft) {
     setZuletztHerkunft(herkunft);
-    setBearbeitet(null);
     setHoltNach(false);
     setWarnung(null);
     setDownloadHinweis(null);
+    setAktualisierung(null);
+    setAktualisierungsHinweis(null);
     setFehler(null);
     setSuche('');
     setFilter(STANDARD_FILTER);
@@ -192,6 +201,28 @@ export function BestandSeite({
     }
   };
 
+  /** Öffnet die Rückfrage für eine bestehende Anzeige aus der Listenzeile. */
+  const aktualisieren = (anzeige: BestandsAnzeige) => {
+    if (anzeige.id === null || anzeige.unlesbar !== null) return;
+    setFehler(null);
+    setAktualisierung(anzeige);
+  };
+
+  const aktualisierungStarten = async () => {
+    if (!aktiv || !aktualisierung) return;
+    setLaedtAktualisierung(true);
+    setFehler(null);
+    try {
+      const job = await api.bestand.hochladen(aktiv.slug, aktualisierung.datei);
+      setAktualisierungsHinweis(job.job_id);
+      setAktualisierung(null);
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setLaedtAktualisierung(false);
+    }
+  };
+
   // --- Mehrfachauswahl (AP-2.20) -----------------------------------------
 
   const gewaehlte = useMemo(
@@ -268,34 +299,6 @@ export function BestandSeite({
       + `${bilder === 1 ? 'Bild' : 'Bilder'} von diesem Rechner gelöscht.`;
   });
 
-  if (bearbeitet && aktiv) {
-    return (
-      <AnzeigenEditor
-        profil={aktiv.slug}
-        datei={bearbeitet}
-        // Vorabwert fürs „Gelöscht"-Badge (AP-3.10); der Editor bestätigt es
-        // aus den frisch geladenen Kopfdaten.
-        geloescht={anzeigen.find(a => a.datei === bearbeitet)?.geloescht ?? false}
-        aufZurueck={geaendert => {
-          setBearbeitet(null);
-          if (geaendert) void laden();
-        }}
-        aufKopie={kopie => {
-          void laden();
-          setBearbeitet(kopie);
-        }}
-        // Die Datei ist weg - die Maske darauf wäre eine Maske auf nichts
-        // (AP-2.20).
-        aufGeloescht={() => {
-          setBearbeitet(null);
-          setAuswahl(new Set());
-          setSammelHinweis('Anzeige von diesem Rechner gelöscht.');
-          void laden();
-        }}
-      />
-    );
-  }
-
   if (profileLaden) return <p className="text-sm text-leise">Wird geladen …</p>;
 
   if (!aktiv) {
@@ -303,6 +306,38 @@ export function BestandSeite({
       <p className="hinweis hinweis-warn">
         Zuerst ein Profil anlegen.
       </p>
+    );
+  }
+
+  if (anzeigeDatei) {
+    return (
+      <AnzeigenEditor
+        profil={aktiv.slug}
+        datei={anzeigeDatei}
+        bearbeitbar={anzeigeBearbeiten}
+        onlineLoeschbar={herkunft === 'eigene'}
+        aufBearbeiten={() => aufZiel(hashFuerAnzeige(herkunft, anzeigeDatei, true))}
+        aufAnsehen={() => aufZiel(hashFuerAnzeige(herkunft, anzeigeDatei))}
+        // Vorabwert fürs „Gelöscht"-Badge (AP-3.10); der Editor bestätigt es
+        // aus den frisch geladenen Kopfdaten.
+        geloescht={anzeigen.find(a => a.datei === anzeigeDatei)?.geloescht ?? false}
+        aufZurueck={geaendert => {
+          aufZiel(hashFuer('anzeigen', herkunft));
+          if (geaendert) void laden();
+        }}
+        aufKopie={kopie => {
+          void laden();
+          aufZiel(hashFuerAnzeige(herkunft, kopie, true));
+        }}
+        // Die Datei ist weg - die Maske darauf wäre eine Maske auf nichts
+        // (AP-2.20).
+        aufGeloescht={(hinweis) => {
+          aufZiel(hashFuer('anzeigen', herkunft));
+          setAuswahl(new Set());
+          setSammelHinweis(hinweis ?? 'Anzeige von diesem Rechner gelöscht.');
+          void laden();
+        }}
+      />
     );
   }
 
@@ -375,11 +410,34 @@ export function BestandSeite({
         />
       )}
 
+      {aktualisierung && (
+        <HochladenDialog
+          anzeige={aktualisierung}
+          profil={aktiv.slug}
+          laeuft={laedtAktualisierung}
+          aufAbbrechen={() => setAktualisierung(null)}
+          aufBestaetigen={() => void aktualisierungStarten()}
+        />
+      )}
+
       {/* Kein Vollbreite-Banner mehr (AP-2.25): Der eingereihte Lauf steht in
           der Glocke oben. Hier bleibt die kurze Zeile mit dem Weg dorthin. */}
       {downloadHinweis !== null && (
         <p className="mb-4 text-sm text-leise">
           Lauf {downloadHinweis} ist eingereiht.{' '}
+          <button
+            type="button"
+            onClick={() => aufZiel('warteschlange')}
+            className="font-medium underline"
+          >
+            Zur Warteschlange
+          </button>
+        </p>
+      )}
+
+      {aktualisierungsHinweis !== null && (
+        <p className="mb-4 text-sm text-leise">
+          Lauf {aktualisierungsHinweis} ist eingereiht – die Anzeige wird aktualisiert.{' '}
           <button
             type="button"
             onClick={() => aufZiel('warteschlange')}
@@ -409,7 +467,7 @@ export function BestandSeite({
           profil={aktiv.slug}
           aufAngewendet={datei => {
             void laden();
-            setBearbeitet(datei);
+            aufZiel(hashFuerAnzeige('eigene', datei, true));
           }}
         />
       )}
@@ -512,7 +570,13 @@ export function BestandSeite({
                   <AnzeigenZeile
                     anzeige={a}
                     profil={aktiv.slug}
-                    aufKlick={a.unlesbar ? undefined : () => setBearbeitet(a.datei)}
+                    aufKlick={a.unlesbar ? undefined : () => aufZiel(hashFuerAnzeige(herkunft, a.datei))}
+                    aufOeffnen={() => aufZiel(hashFuerAnzeige(herkunft, a.datei))}
+                    aufAktualisieren={
+                      eigene && a.id !== null && !a.unlesbar
+                        ? () => aktualisieren(a)
+                        : undefined
+                    }
                   />
                 </div>
                 <div className="flex items-center px-3 pb-3 sm:pb-0">

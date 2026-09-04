@@ -9,6 +9,7 @@
 // diese Herkunft benennt, statt die Beträge als feste Wahrheit auszugeben.
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { fireEvent } from '@testing-library/dom';
 import { render, screen } from '@testing-library/react';
 import { VersandpaketWahl } from './VersandpaketWahl';
 
@@ -20,6 +21,7 @@ vi.mock('../services/api', () => ({
 
 beforeEach(() => {
   versandpakete.mockReset();
+  window.localStorage.clear();
 });
 
 const paket = (wert: string, groesse: string, preis: number | null) => ({
@@ -35,9 +37,10 @@ describe('VersandpaketWahl', () => {
 
     render(
       <VersandpaketWahl
-        gewaehlt={[]}
+        gewaehlt={['Hermes_Päckchen']}
         versandkosten={null}
         direktKaufen={false}
+        versandart="SHIPPING"
         aufAenderung={() => {}}
       />,
     );
@@ -56,6 +59,75 @@ describe('VersandpaketWahl', () => {
 
     render(
       <VersandpaketWahl
+        gewaehlt={['Hermes_Päckchen']}
+        versandkosten={null}
+        direktKaufen={false}
+        versandart="SHIPPING"
+        aufAenderung={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText(/Preise gerade nicht abrufbar/)).toBeDefined();
+    expect(screen.queryByText(/Preise live von Kleinanzeigen/)).toBeNull();
+  });
+
+  it('zeigt konkrete Optionen erst nach der Größenwahl', async () => {
+    versandpakete.mockResolvedValue([
+      paket('Hermes_Päckchen', 'Klein', 0.99),
+      paket('DHL_2', 'Klein', 6.19),
+    ]);
+    const aufAenderung = vi.fn();
+    const aufVersandart = vi.fn();
+
+    render(
+      <VersandpaketWahl
+        gewaehlt={[]}
+        versandkosten={null}
+        direktKaufen={false}
+        speicherSchluessel="profil:anzeige.yaml"
+        aufAenderung={aufAenderung}
+        aufVersandart={aufVersandart}
+      />,
+    );
+
+    await screen.findByText(/Preise live von Kleinanzeigen/);
+    expect(screen.queryByText('Hermes_Päckchen')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Klein' }));
+    expect(aufVersandart).toHaveBeenCalledWith('SHIPPING');
+    expect(screen.getByText('Optionen für Klein')).toBeDefined();
+    expect(screen.getByText('Hermes_Päckchen')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /Hermes_Päckchen/ }));
+    expect(aufAenderung).toHaveBeenCalledWith(['Hermes_Päckchen']);
+  });
+
+  it('behält die reine Größenwahl beim erneuten Öffnen der Anzeige', async () => {
+    versandpakete.mockResolvedValue([
+      paket('Hermes_Päckchen', 'Klein', 0.99),
+    ]);
+    const eigenschaften = {
+      gewaehlt: [] as string[],
+      versandkosten: null,
+      direktKaufen: false,
+      versandart: 'NOT_APPLICABLE',
+      speicherSchluessel: 'profil:anzeige.yaml',
+      aufAenderung: () => {},
+    } as const;
+
+    const ersteAnsicht = render(<VersandpaketWahl {...eigenschaften} />);
+    await screen.findByText(/Preise live von Kleinanzeigen/);
+    fireEvent.click(screen.getByRole('button', { name: 'Klein' }));
+    ersteAnsicht.unmount();
+
+    render(<VersandpaketWahl {...eigenschaften} versandart="SHIPPING" />);
+    expect(await screen.findByText('Optionen für Klein')).toBeDefined();
+  });
+
+  it('verändert die Chipbreite nicht durch ein Auswahlhäkchen', async () => {
+    versandpakete.mockResolvedValue([paket('DHL_2', 'Klein', 6.19)]);
+    render(
+      <VersandpaketWahl
         gewaehlt={[]}
         versandkosten={null}
         direktKaufen={false}
@@ -63,7 +135,35 @@ describe('VersandpaketWahl', () => {
       />,
     );
 
-    expect(await screen.findByText(/Preise gerade nicht abrufbar/)).toBeDefined();
-    expect(screen.queryByText(/Preise live von Kleinanzeigen/)).toBeNull();
+    await screen.findByText(/Preise live von Kleinanzeigen/);
+    const klein = screen.getByRole('button', { name: 'Klein' });
+    fireEvent.click(klein);
+    expect(klein.querySelector('svg')).toBeNull();
+    expect(screen.getByRole('button', { name: /DHL_2/ }).querySelector('svg')).toBeNull();
+  });
+
+  it('setzt Abholung und schaltet Direkt kaufen dabei aus', async () => {
+    versandpakete.mockResolvedValue([paket('Hermes_Päckchen', 'Klein', 0.99)]);
+    const aufAenderung = vi.fn();
+    const aufVersandart = vi.fn();
+    const aufDirektKaufen = vi.fn();
+
+    render(
+      <VersandpaketWahl
+        gewaehlt={['Hermes_Päckchen']}
+        versandkosten={null}
+        direktKaufen
+        versandart="SHIPPING"
+        aufAenderung={aufAenderung}
+        aufVersandart={aufVersandart}
+        aufDirektKaufen={aufDirektKaufen}
+      />,
+    );
+
+    await screen.findByText('Hermes_Päckchen');
+    fireEvent.click(screen.getByRole('button', { name: 'Abholung' }));
+    expect(aufVersandart).toHaveBeenCalledWith('PICKUP');
+    expect(aufDirektKaufen).toHaveBeenCalledWith(false);
+    expect(aufAenderung).toHaveBeenCalledWith([]);
   });
 });

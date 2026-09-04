@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Rückfrage vor dem lokalen Löschen (AP-2.20).
+// Rückfrage vor dem lokalen Löschen und optionalen Plattform-Löschen
+// (AP-2.20/AP-3.13).
 //
 // Eigene Datei, weil ihn zwei Stellen brauchen: die Sammelaktion in der Liste
 // und das Einzellöschen im Editor. Der Editor liegt seinerseits in der Liste,
@@ -13,22 +14,31 @@ import type { BestandsAnzeige } from '../types';
 /**
  * Rückfrage vor dem Löschen (AP-2.20).
  *
- * Der Dialog muss zwei Dinge leisten, und das zweite ist das wichtigere:
+ * Der Dialog muss drei Dinge leisten, und das zweite ist das wichtigere:
  * Er zeigt, **welche** Anzeigen gehen, und er sagt unmissverständlich, dass
- * auf kleinanzeigen.de nichts passiert. Wer hier „Löschen" liest und an die
- * Plattform denkt, verliert entweder seine lokale Arbeit oder glaubt, eine
- * Anzeige sei offline, die weiter online steht.
+ * auf kleinanzeigen.de standardmäßig nichts passiert. Nur bei einer einzelnen
+ * eigenen Anzeige kann die Plattform-Löschung ausdrücklich dazugeschaltet
+ * werden. So bleibt „Löschen" ein einziger, nachvollziehbarer Vorgang.
  */
 export function LoeschDialog({
   anzeigen, laeuft, aufAbbrechen, aufLoeschen,
+  onlineLoeschbar = false, onlineGewaehlt = false,
+  aufOnlineGewaehlt, onlineGesperrt = false,
 }: {
   anzeigen: BestandsAnzeige[];
   laeuft: boolean;
   aufAbbrechen: () => void;
   aufLoeschen: () => void;
+  /** Nur bei einer eigenen Anzeige mit bekannter Plattform-ID. */
+  onlineLoeschbar?: boolean;
+  onlineGewaehlt?: boolean;
+  aufOnlineGewaehlt?: (wert: boolean) => void;
+  /** Ungespeicherte Eingaben dürfen nicht als Plattform-Löschung eingereiht werden. */
+  onlineGesperrt?: boolean;
 }) {
   const mehrere = anzeigen.length > 1;
   const bilder = anzeigen.reduce((summe, a) => summe + a.bilder, 0);
+  const loeschtAuchOnline = onlineLoeschbar && onlineGewaehlt && !mehrere;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
@@ -51,20 +61,54 @@ export function LoeschDialog({
           style={{ background: 'var(--canvas)', border: '1px solid var(--karte-rand)' }}
         >
           {anzeigen.map(a => (
-            <li key={a.datei} className="truncate py-0.5 text-stark">{a.titel}</li>
+            <li key={a.datei} className="flex items-baseline justify-between gap-3 py-0.5 text-stark">
+              <span className="min-w-0 truncate">{a.titel}</span>
+              {onlineLoeschbar && a.id !== null && (
+                <span className="flex-shrink-0 text-xs text-leise">#{a.id}</span>
+              )}
+            </li>
           ))}
         </ul>
 
-        <p role="alert" className="hinweis hinweis-warn mb-4 flex items-start gap-2">
+        <p role="alert" className="hinweis hinweis-warn mb-3 flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-          <span>
-            <span className="font-medium">Nur auf diesem Rechner, nicht auf kleinanzeigen.de.</span>{' '}
-            {mehrere ? 'Anzeigen, die dort online stehen, bleiben online' : 'Steht die Anzeige dort online, bleibt sie online'}
-            {' '}– nur die lokale Kopie ist weg. Rückgängig machen lässt sich das nicht;
-            ein erneuter Download holt {mehrere ? 'sie' : 'sie'} zurück, sofern
-            {mehrere ? ' sie noch' : ' sie noch'} auf der Plattform {mehrere ? 'stehen' : 'steht'}.
-          </span>
+          {loeschtAuchOnline ? (
+            <span>
+              <span className="font-medium">Lokal und auf kleinanzeigen.de löschen.</span>{' '}
+              Die lokale Kopie wird entfernt und ein gezielter Lauf mit der Anzeigennummer
+              eingereiht. Das lässt sich nicht rückgängig machen; prüfe den öffentlichen Link
+              danach mit dem Mini-Skript.
+            </span>
+          ) : (
+            <span>
+              <span className="font-medium">Nur auf diesem Rechner, nicht auf kleinanzeigen.de.</span>{' '}
+              {mehrere ? 'Anzeigen, die dort online stehen, bleiben online' : 'Steht die Anzeige dort online, bleibt sie online'}
+              {' '}– nur die lokale Kopie ist weg. Rückgängig machen lässt sich das nicht;
+              ein erneuter Download holt sie zurück, sofern sie noch auf der Plattform steht.
+            </span>
+          )}
         </p>
+
+        {onlineLoeschbar && !mehrere && (
+          <div className="mb-4">
+            <label className="flex items-start gap-2 text-sm text-normal">
+              <input
+                type="checkbox"
+                checked={onlineGewaehlt}
+                disabled={laeuft || onlineGesperrt}
+                onChange={ereignis => aufOnlineGewaehlt?.(ereignis.target.checked)}
+                className="mt-0.5 h-4 w-4 flex-shrink-0"
+              />
+              <span>Zusätzlich auf kleinanzeigen.de löschen</span>
+            </label>
+            {onlineGesperrt && (
+              <p className="mt-1 pl-6 text-xs text-leise">
+                Erst speichern, damit genau der gespeicherte Stand mit seiner Anzeigennummer
+                gelöscht werden kann.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={aufAbbrechen} disabled={laeuft} className="btn-ghost">
@@ -78,7 +122,7 @@ export function LoeschDialog({
             style={{ background: 'var(--status-fehler)', color: '#fff' }}
           >
             <Trash2 className="h-4 w-4" aria-hidden />
-            {laeuft ? 'Löscht …' : 'Lokal löschen'}
+            {laeuft ? 'Löscht …' : mehrere ? 'Lokal löschen' : 'Löschen'}
           </button>
         </div>
       </div>

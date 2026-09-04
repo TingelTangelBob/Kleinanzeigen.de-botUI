@@ -60,6 +60,9 @@ interface LayoutProps {
 function seitenTitel(route: Route): string {
   if (route.seite === 'uebersicht') return 'Übersicht';
   if (route.seite === 'anzeigen') {
+    if (route.anzeigeDatei !== null) {
+      return route.anzeigeBearbeiten ? 'Anzeige bearbeiten' : 'Anzeige ansehen';
+    }
     return route.anzeigen === 'fremde' ? 'Von anderen' : 'Meine Anzeigen';
   }
   if (route.seite === 'neu') return 'Neue Anzeige';

@@ -11,6 +11,7 @@ import { AuthProvider } from './context/AuthContext';
 import { MeldungenProvider } from './context/MeldungenContext';
 import { ProfilProvider } from './context/ProfilContext';
 import { useAuth } from './context/useAuth';
+import { AbgleichMeldungen } from './components/AbgleichMeldungen';
 import { AuthSeite } from './components/AuthSeite';
 import { BestandSeite } from './components/BestandSeite';
 import { EinstellungenSeite } from './components/EinstellungenSeite';
@@ -62,11 +63,20 @@ function Inhalt() {
 
   return (
     <Layout route={route} aufZiel={wechseln}>
+      {/* Rendert nichts - meldet die Befunde des täglichen Abgleichs an die
+          Glocke (AP-3.12). Innerhalb der Anmeldung, damit vor dem Login keine
+          geschützten Endpunkte abgefragt werden. */}
+      <AbgleichMeldungen />
       {route.seite === 'uebersicht' && <UebersichtSeite aufZiel={wechseln} />}
       {route.seite === 'anzeigen' && (
-        <BestandSeite herkunft={route.anzeigen} aufZiel={wechseln} />
+        <BestandSeite
+          herkunft={route.anzeigen}
+          anzeigeDatei={route.anzeigeDatei}
+          anzeigeBearbeiten={route.anzeigeBearbeiten}
+          aufZiel={wechseln}
+        />
       )}
-      {route.seite === 'neu' && <NeueAnzeigeSeite />}
+      {route.seite === 'neu' && <NeueAnzeigeSeite aufZiel={wechseln} />}
       {route.seite === 'warteschlange' && <WarteschlangeSeite />}
       {route.seite === 'einstellungen' && (
         <EinstellungenSeite abschnitt={route.einstellung} aufZiel={wechseln} />

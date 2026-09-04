@@ -30,6 +30,8 @@ const route = (seite: Route['seite'], anzeigen: Route['anzeigen'] = 'eigene'): R
   seite,
   anzeigen,
   einstellung: 'bot',
+  anzeigeDatei: null,
+  anzeigeBearbeiten: false,
 });
 
 describe('Layout: Seitentitel in der Topbar (AP-2.33)', () => {

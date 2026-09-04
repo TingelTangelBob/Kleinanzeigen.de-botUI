@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 #: Befehle, die der Bot kennt. Abgeglichen mit app.py; `help` und `version`
 #: fehlen bewusst - sie haben in der Oberflaeche keinen Zweck.
 ERLAUBTE_BEFEHLE: Final[frozenset[str]] = frozenset({
-    "publish", "verify", "delete", "update", "extend", "download",
+    "publish", "verify", "delete", "update", "extend", "download", "sync-order",
     "status", "diagnose", "update-content-hash", "create-config",
 })
 

@@ -22,7 +22,7 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from ruamel.yaml import YAML
 
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 _yaml = YAML(typ = "safe")
+_MIN_DATEIPFAD_TEILE: Final[int] = 2
 
 
 @dataclass(frozen = True, slots = True)
@@ -71,7 +72,7 @@ def _pfad(profil_wurzel: Path, datei: str) -> Path:
 
     relativ = ziel.relative_to(wurzel).as_posix()
     teile = Path(relativ).parts
-    if len(teile) < 2 or teile[0] not in ANZEIGEN_ORDNER:
+    if len(teile) < _MIN_DATEIPFAD_TEILE or teile[0] not in ANZEIGEN_ORDNER:
         raise FachlicherFehler(
             "Anzeige liegt in keinem Bestandsordner.", status = 400, feld = "datei",
         )

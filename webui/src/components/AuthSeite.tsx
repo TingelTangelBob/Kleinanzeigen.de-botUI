@@ -7,7 +7,7 @@
 // dieses Projekt angepasst.
 
 import { useState, type FormEvent } from 'react';
-import { KeyRound, ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Tag } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { ApiFehler } from '../services/api';
 
@@ -44,56 +44,59 @@ export function AuthSeite({ einrichtung }: { einrichtung: boolean }) {
   const zuKurz = einrichtung && passwort.length > 0 && passwort.length < MIN_PASSWORTLAENGE;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10">
+    <div
+      className="flex min-h-screen items-center justify-center px-4 py-10"
+      style={{
+        background: 'linear-gradient(165deg, var(--sidebar) 0%, #1b3d28 42%, var(--canvas) 42.1%)',
+      }}
+    >
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-custom">
+          <span className="marke h-11 w-11" style={{ height: 44, width: 44, borderRadius: 12 }}>
             {einrichtung
-              ? <ShieldCheck className="h-6 w-6 text-white" />
-              : <KeyRound className="h-6 w-6 text-white" />}
+              ? <ShieldCheck className="h-6 w-6" />
+              : <Tag className="h-6 w-6" />}
           </span>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Anzeigen-Studio</h1>
-            <p className="text-sm text-gray-600">
+            <h1 className="text-xl font-semibold tracking-tight text-white">Anzeigen-Studio</h1>
+            <p className="text-sm" style={{ color: 'var(--sidebar-text)' }}>
               {einrichtung ? 'Erstes Konto anlegen' : 'Anmelden'}
             </p>
           </div>
         </div>
 
-        <form onSubmit={absenden} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <form onSubmit={absenden} className="karte p-6">
           {einrichtung && (
-            <p className="mb-5 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="hinweis hinweis-warn mb-5">
               Dieses Konto schützt die Oberfläche. Die Zugangsdaten für Kleinanzeigen
               werden später je Profil hinterlegt – das sind zwei verschiedene Dinge.
             </p>
           )}
 
           <label className="block">
-            <span className="text-sm font-medium text-gray-700">Benutzername</span>
+            <span className="beschriftung">Benutzername</span>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               autoComplete="username"
               required
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-gray-900
-                         focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+              className="feld mt-1"
             />
           </label>
 
           <label className="mt-4 block">
-            <span className="text-sm font-medium text-gray-700">Passwort</span>
+            <span className="beschriftung">Passwort</span>
             <input
               type="password"
               value={passwort}
               onChange={e => setPasswort(e.target.value)}
               autoComplete={einrichtung ? 'new-password' : 'current-password'}
               required
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-gray-900
-                         focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+              className="feld mt-1"
             />
             {einrichtung && (
-              <span className={`mt-1 block text-xs ${zuKurz ? 'text-red-700' : 'text-gray-500'}`}>
+              <span className={`mt-1 block text-xs ${zuKurz ? 'text-red-700' : 'text-leise'}`}>
                 Mindestens {MIN_PASSWORTLAENGE} Zeichen. Länge zählt mehr als Sonderzeichen.
               </span>
             )}
@@ -101,21 +104,20 @@ export function AuthSeite({ einrichtung }: { einrichtung: boolean }) {
 
           {einrichtung && (
             <label className="mt-4 block">
-              <span className="text-sm font-medium text-gray-700">Passwort wiederholen</span>
+              <span className="beschriftung">Passwort wiederholen</span>
               <input
                 type="password"
                 value={wiederholung}
                 onChange={e => setWiederholung(e.target.value)}
                 autoComplete="new-password"
                 required
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-gray-900
-                           focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+                className="feld mt-1"
               />
             </label>
           )}
 
           {fehler && (
-            <p role="alert" className="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <p role="alert" className="hinweis hinweis-fehler mt-4">
               {fehler}
             </p>
           )}
@@ -123,8 +125,7 @@ export function AuthSeite({ einrichtung }: { einrichtung: boolean }) {
           <button
             type="submit"
             disabled={laeuft || zuKurz}
-            className="mt-6 w-full rounded bg-primary-custom px-4 py-2 font-medium text-white
-                       transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-primaer mt-6 w-full"
           >
             {laeuft ? 'Bitte warten …' : einrichtung ? 'Konto anlegen' : 'Anmelden'}
           </button>

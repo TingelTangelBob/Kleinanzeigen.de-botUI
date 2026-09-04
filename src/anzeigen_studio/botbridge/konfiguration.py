@@ -108,11 +108,37 @@ def gesperrte_entfernen(nutzer: dict[str, Any]) -> list[str]:
 
 
 def schreiben(ziel: Path, nutzer: dict[str, Any], *, anzeigen_glob: str,
-              chromium: str = "/usr/bin/chromium") -> list[str]:
-    """Schreibt die config.yaml. Gibt die verworfenen Felder zurueck."""
+              chromium: str = "/usr/bin/chromium",
+              download_ordner: str | None = None,
+              titelloeschen_sperren: bool = False) -> list[str]:
+    """Schreibt die config.yaml. Gibt die verworfenen Felder zurueck.
+
+    `download_ordner` setzt `download.dir` fuer genau diesen Lauf - genutzt
+    vom Nachladen per Link, das nach fremde-ads/ schreiben soll.
+
+    `titelloeschen_sperren` schaltet `publishing.delete_old_ads_by_title` fuer
+    diesen einen Lauf ab (AP-3.8). Gebraucht beim Veroeffentlichen einer
+    Anzeige **ohne** Nummer: `delete_flow.delete_ad` sucht dann in den
+    veroeffentlichten Anzeigen nach demselben Titel und loescht den Treffer,
+    bevor es neu einstellt (`delete_flow.py:110-124`). Wer im Studio auf
+    "Jetzt veroeffentlichen" drueckt, hat eine neue Anzeige gemeint - nicht,
+    dass eine gleichnamige online verschwindet. Die Einstellung selbst bleibt
+    unangetastet; sie gilt weiter fuer Laeufe, die der Mensch von der
+    Laufliste aus startet.
+    """
     entwurf = dict(nutzer)
     entfernt = gesperrte_entfernen(entwurf)
     vollstaendig = zusammenfuehren(entwurf, _basis(anzeigen_glob, chromium))
+    if titelloeschen_sperren:
+        bisher = vollstaendig.get("publishing")
+        publishing = dict(bisher) if isinstance(bisher, dict) else {}
+        publishing["delete_old_ads_by_title"] = False
+        vollstaendig["publishing"] = publishing
+    if download_ordner:
+        bisher = vollstaendig.get("download")
+        download = dict(bisher) if isinstance(bisher, dict) else {}
+        download["dir"] = download_ordner
+        vollstaendig["download"] = download
 
     ziel.parent.mkdir(parents = True, exist_ok = True)
     yaml = YAML()

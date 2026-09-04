@@ -10,6 +10,7 @@
 import { AlertTriangle, ImageOff, Pencil, RefreshCw } from 'lucide-react';
 import type { BestandsAnzeige } from '../types';
 import { api } from '../services/api';
+import { titelFuerAnzeige } from '../titel';
 
 /** Klartext für die Kennungen aus der Verlustanalyse (docs/RUNDLAUF.md). */
 const HINWEIS_TEXT: Record<string, string> = {
@@ -32,8 +33,16 @@ const HINWEIS_ERKLAERUNG: Record<string, string> = {
 function preisText(anzeige: BestandsAnzeige): string {
   if (anzeige.preistyp === 'GIVE_AWAY') return 'Zu verschenken';
   if (anzeige.preis === null) return '—';
+  // Glatte Beträge ohne Nachkommastellen, krumme mit zweien (AP-2.18). Vorher
+  // stand `minimumFractionDigits: 0` allein da, und 1249,50 € wurde als
+  // „1.249,5 €" ausgegeben - ein Preis, den es in dieser Schreibweise nicht
+  // gibt. Ein Cent-Betrag hat in Euro zwei Stellen oder keine.
+  const glatt = Number.isInteger(anzeige.preis);
   const betrag = anzeige.preis.toLocaleString('de-DE', {
-    style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 2,
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: glatt ? 0 : 2,
+    maximumFractionDigits: glatt ? 0 : 2,
   });
   return anzeige.preistyp === 'NEGOTIABLE' ? `${betrag} VB` : betrag;
 }
@@ -45,19 +54,30 @@ function datumText(iso: string | null): string | null {
   return zeitpunkt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function Merkmal({ text, ton, titel }: { text: string; ton: 'grau' | 'gelb' | 'blau' | 'rot'; titel?: string }) {
-  const toene = {
-    grau: 'bg-gray-100 text-gray-700',
-    gelb: 'bg-amber-100 text-amber-900',
-    blau: 'bg-blue-100 text-blue-800',
-    rot: 'bg-red-100 text-red-800',
-  };
+const SYMBOL = { wiederholen: RefreshCw, stift: Pencil, warnung: AlertTriangle };
+
+function Merkmal({ daten }: { daten: MerkmalDaten }) {
+  const Symbol = daten.symbol ? SYMBOL[daten.symbol] : null;
   return (
-    <span title={titel} className={`rounded px-1.5 py-0.5 text-xs font-medium ${toene[ton]}`}>
-      {text}
+    <span title={daten.titel} className={`merkmal merkmal-${daten.ton}`}>
+      {Symbol && <Symbol className="h-3 w-3" aria-hidden />}
+      {daten.text}
     </span>
   );
 }
+
+/**
+ * So viele Merkmale zeigt eine Zeile; der Rest wandert in ein „+n"-Zeichen
+ * (AP-2.18).
+ *
+ * Ohne Deckel wuchs eine Anzeige mit vier Hinweisen plus „Fällig" und „Lokal
+ * geändert" auf 375 px zu einer 298 px hohen Zeile mit sechs Merkmalzeilen
+ * unter einem 96-px-Bild - die Liste war nicht mehr überfliegbar. Drei ist die
+ * Zahl, bei der ab 768 px noch alles in eine Zeile passt und auf dem Handy
+ * höchstens drei Zeilen entstehen. Verloren geht nichts: Das „+n" trägt die
+ * übrigen im Titel, und die Anzeige selbst zeigt sie vollständig.
+ */
+const MERKMALE_SICHTBAR = 3;
 
 interface Props {
   anzeige: BestandsAnzeige;
@@ -65,14 +85,69 @@ interface Props {
   aufKlick?: (anzeige: BestandsAnzeige) => void;
 }
 
+interface MerkmalDaten {
+  schluessel: string;
+  text: string;
+  ton: 'grau' | 'gelb' | 'blau' | 'rot';
+  titel?: string;
+  symbol?: 'wiederholen' | 'stift' | 'warnung';
+}
+
+/** Alle Merkmale der Anzeige in Anzeigereihenfolge - Dringendes zuerst. */
+function merkmaleVon(anzeige: BestandsAnzeige): MerkmalDaten[] {
+  const liste: MerkmalDaten[] = [];
+  if (anzeige.unlesbar) {
+    liste.push({
+      schluessel: 'unlesbar', text: 'Nicht lesbar', ton: 'rot',
+      titel: anzeige.unlesbar, symbol: 'warnung',
+    });
+  }
+  if (anzeige.art === 'WANTED') liste.push({ schluessel: 'gesuch', text: 'Gesuch', ton: 'blau' });
+  if (anzeige.geloescht) {
+    liste.push({
+      schluessel: 'geloescht', text: 'Gelöscht', ton: 'rot',
+      titel: 'Auf kleinanzeigen.de nicht mehr aktiv. Gelöscht, pausiert oder in '
+        + 'Prüfung – das unterscheidet der Download nicht. Die lokale Kopie bleibt.',
+    });
+  } else if (!anzeige.aktiv) {
+    liste.push({ schluessel: 'inaktiv', text: 'Inaktiv', ton: 'grau' });
+  }
+  if (anzeige.faellig) {
+    liste.push({
+      schluessel: 'faellig', text: 'Fällig', ton: 'blau', symbol: 'wiederholen',
+      titel: 'Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht.',
+    });
+  }
+  if (anzeige.lokal_geaendert) {
+    liste.push({
+      schluessel: 'geaendert', text: 'Lokal geändert', ton: 'gelb', symbol: 'stift',
+      titel: 'Lokal geändert. Ein erneutes Herunterladen würde die Änderung überschreiben.',
+    });
+  }
+  for (const h of anzeige.hinweise) {
+    liste.push({
+      schluessel: h, text: HINWEIS_TEXT[h] ?? h, ton: 'gelb', titel: HINWEIS_ERKLAERUNG[h],
+    });
+  }
+  return liste;
+}
+
 export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
   const bildUrl = anzeige.vorschaubild
     ? api.bestand.bildUrl(profil, anzeige.datei, anzeige.vorschaubild)
     : null;
 
+  const merkmale = merkmaleVon(anzeige);
+  const gezeigt = merkmale.slice(0, MERKMALE_SICHTBAR);
+  const versteckt = merkmale.slice(MERKMALE_SICHTBAR);
+  const titel = titelFuerAnzeige(anzeige.titel);
+
   const inhalt = (
     <>
-      <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50">
+      <div
+        className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28"
+        style={{ background: 'var(--canvas)', border: '1px solid var(--karte-rand)' }}
+      >
         {bildUrl ? (
           <img
             src={bildUrl}
@@ -81,21 +156,28 @@ export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-gray-400">
-            <ImageOff className="h-6 w-6" aria-hidden />
+          <div className="flex h-full w-full items-center justify-center text-leise">
+            <ImageOff className="h-7 w-7" aria-hidden />
           </div>
         )}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <span className="truncate font-medium text-gray-900">{anzeige.titel}</span>
-          <span className="flex-shrink-0 whitespace-nowrap font-semibold text-gray-900">
+          {/* Bis 768 px zwei Zeilen statt einer abgeschnittenen (AP-2.18): auf
+              375 px blieben von „Fahrradanhänger Croozer Kid for 2 mit …" sonst
+              vierzehn Zeichen übrig, und genau der Titel ist das, woran man die
+              Anzeige wiedererkennt. Ab 768 wird abgeschnitten, damit alle
+              Zeilen der Liste gleich hoch bleiben. */}
+          <span className="line-clamp-2 text-[15px] font-semibold tracking-tight text-stark sm:text-base md:line-clamp-none md:truncate">
+            {titel}
+          </span>
+          <span className="flex-shrink-0 whitespace-nowrap text-[15px] font-semibold tracking-tight text-stark sm:text-base">
             {preisText(anzeige)}
           </span>
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-leise">
           {anzeige.id !== null && <span>Nr. {anzeige.id}</span>}
           {anzeige.bilder > 0 && <span>{anzeige.bilder} {anzeige.bilder === 1 ? 'Bild' : 'Bilder'}</span>}
           {datumText(anzeige.erstellt_am) && <span>seit {datumText(anzeige.erstellt_am)}</span>}
@@ -104,58 +186,32 @@ export function AnzeigenZeile({ anzeige, profil, aufKlick }: Props) {
           )}
         </div>
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {anzeige.art === 'WANTED' && <Merkmal text="Gesuch" ton="blau" />}
-          {!anzeige.aktiv && <Merkmal text="Inaktiv" ton="grau" />}
-          {anzeige.faellig && (
-            <span
-              title="Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht."
-              className="inline-flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800"
-            >
-              <RefreshCw className="h-3 w-3" aria-hidden />
-              Fällig
-            </span>
-          )}
-          {anzeige.lokal_geaendert && (
-            <span
-              title="Lokal geändert. Ein erneutes Herunterladen würde die Änderung überschreiben."
-              className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
-            >
-              <Pencil className="h-3 w-3" aria-hidden />
-              Lokal geändert
-            </span>
-          )}
-          {anzeige.hinweise.map(h => (
-            <Merkmal
-              key={h}
-              text={HINWEIS_TEXT[h] ?? h}
-              titel={HINWEIS_ERKLAERUNG[h]}
-              ton="gelb"
-            />
-          ))}
-          {anzeige.unlesbar && (
-            <span
-              title={anzeige.unlesbar}
-              className="inline-flex items-center gap-1 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800"
-            >
-              <AlertTriangle className="h-3 w-3" aria-hidden />
-              Nicht lesbar
-            </span>
-          )}
-        </div>
+        {merkmale.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {gezeigt.map(m => <Merkmal key={m.schluessel} daten={m} />)}
+            {versteckt.length > 0 && (
+              <span
+                className="merkmal merkmal-grau"
+                title={versteckt.map(m => m.text).join(' · ')}
+              >
+                +{versteckt.length}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
 
   if (!aufKlick) {
-    return <div className="flex items-start gap-3 p-3">{inhalt}</div>;
+    return <div className="zeile">{inhalt}</div>;
   }
 
   return (
     <button
       type="button"
       onClick={() => aufKlick(anzeige)}
-      className="flex w-full items-start gap-3 p-3 text-left hover:bg-gray-50"
+      className="zeile"
     >
       {inhalt}
     </button>

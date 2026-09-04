@@ -28,6 +28,9 @@ vi.mock('../services/api', () => ({
       entwurf: (...args: unknown[]) => entwurfAbrufen(...args),
       anlegen: (...args: unknown[]) => anlegen(...args),
     },
+    // Seit AP-2.21 zeigt die Seite die Warteschlange des Profils. Leer, damit
+    // diese Tests weiter nur das Formular prüfen.
+    jobs: { liste: () => Promise.resolve([]) },
   },
   ApiFehler: class extends Error {},
 }));

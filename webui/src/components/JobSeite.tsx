@@ -1,13 +1,20 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Läufe starten und live mitlesen (AP-2.8, AP-1.7).
+// Bausteine für Läufe (AP-2.8, AP-1.7, umgebaut AP-2.31).
+//
+// Hier liegen die wiederverwendbaren Teile: die Lauf-Karte (`JobKarte`) mit
+// Protokoll, Captcha-Übernahme und Abbruch, und der Start-Block (`LaufStarten`)
+// mit den Befehlskacheln. Die Seite selbst ist `WarteschlangeSeite` - sie setzt
+// diese Teile queue-first zusammen. „Neue Anzeige" nutzt `JobKarte` kompakt.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Ban, Hand, Hourglass, Loader2, Play } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
+import { befehlIcon, befehlText } from '../jobText';
 import type { BestandsAnzeige, Job, JobZustand, LogZeile } from '../types';
+import { Hinweis } from './Hinweis';
 
 /** Nur Befehle, die ohne weitere Eingaben sinnvoll sind. */
 const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean }[] = [
@@ -19,57 +26,56 @@ const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean
 ];
 
 const ZUSTAND_TEXT: Record<JobZustand, { text: string; klasse: string }> = {
-  wartet: { text: 'wartet', klasse: 'bg-gray-100 text-gray-700' },
-  laeuft: { text: 'läuft', klasse: 'bg-blue-100 text-blue-800' },
-  braucht_eingabe: { text: 'braucht dich', klasse: 'bg-amber-100 text-amber-900' },
-  fertig: { text: 'fertig', klasse: 'bg-green-100 text-green-800' },
-  pruefen: { text: 'prüfen', klasse: 'bg-orange-100 text-orange-900' },
-  gescheitert: { text: 'gescheitert', klasse: 'bg-red-100 text-red-800' },
-  abgebrochen: { text: 'abgebrochen', klasse: 'bg-gray-200 text-gray-700' },
+  wartet: { text: 'wartet', klasse: 'merkmal merkmal-grau' },
+  laeuft: { text: 'läuft', klasse: 'merkmal merkmal-blau' },
+  braucht_eingabe: { text: 'braucht dich', klasse: 'merkmal merkmal-gelb' },
+  fertig: { text: 'fertig', klasse: 'merkmal merkmal-gruen' },
+  pruefen: { text: 'prüfen', klasse: 'merkmal merkmal-gelb' },
+  gescheitert: { text: 'gescheitert', klasse: 'merkmal merkmal-rot' },
+  abgebrochen: { text: 'abgebrochen', klasse: 'merkmal merkmal-grau' },
 };
 
-export function JobSeite() {
-  // Das Profil kommt jetzt aus der Schale (AP-2.10) - eine Auswahl je Seite
-  // hätte spätestens mit Übersicht und Bestand auseinanderlaufen können.
+/** Farbpunkt statt Badge, wenn die Karte schmal wird (AP-2.32). Gleiche
+ *  Farben wie `status-punkt-*` in Glocke und Dashboard. */
+const ZUSTAND_PUNKT: Record<JobZustand, string> = {
+  wartet: 'status-punkt-grau',
+  laeuft: 'status-punkt-gruen',
+  braucht_eingabe: 'status-punkt-gelb',
+  fertig: 'status-punkt-gruen',
+  pruefen: 'status-punkt-gelb',
+  gescheitert: 'status-punkt-rot',
+  abgebrochen: 'status-punkt-grau',
+};
+
+function kurzZeit(iso: string | null): string {
+  if (!iso) return '';
+  const zeitpunkt = new Date(iso);
+  if (Number.isNaN(zeitpunkt.getTime())) return '';
+  return zeitpunkt.toLocaleString('de-DE', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/**
+ * Der Start-Block: Befehlskacheln, die einen Lauf einreihen (AP-2.31).
+ *
+ * Auf der Warteschlangen-Seite steht er sekundär und eingeklappt - primär ist
+ * die Queue selbst. `aufEingereiht` bekommt die Id des frisch eingereihten
+ * Laufs, damit die Seite ihn gleich aufklappen kann.
+ */
+export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number) => void }) {
   const { profile, aktiv } = useProfil();
   const gewaehlt = aktiv?.slug ?? '';
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [offenerJob, setOffenerJob] = useState<number | null>(null);
+  const [startet, setStartet] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [warnung, setWarnung] = useState<BestandsAnzeige[] | null>(null);
 
-  const jobsLaden = useCallback(async () => {
-    try {
-      setJobs(await api.jobs.liste());
-    } catch (ursache) {
-      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void jobsLaden();
-  }, [jobsLaden]);
-
-  // Solange etwas läuft, regelmäßig nachsehen. Der Log-Strom hängt am
-  // einzelnen Job; die Liste braucht ihren eigenen Takt.
-  useEffect(() => {
-    const aktiv = jobs.some(j => ['wartet', 'laeuft', 'braucht_eingabe'].includes(j.zustand));
-    if (!aktiv) return undefined;
-    const timer = window.setInterval(() => void jobsLaden(), 2000);
-    return () => window.clearInterval(timer);
-  }, [jobs, jobsLaden]);
-
-  const [startet, setStartet] = useState<string | null>(null);
-
   const einreihen = async (befehl: string) => {
     setFehler(null);
-    // Sofortige Rückmeldung: Ohne sie wirkt der Klick folgenlos, bis die Liste
-    // das nächste Mal geladen wird.
     setStartet(befehl);
     try {
       const job = await api.jobs.starten(gewaehlt, befehl);
-      setOffenerJob(job.id);
-      await jobsLaden();
+      aufEingereiht?.(job.id);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
@@ -78,9 +84,7 @@ export function JobSeite() {
   };
 
   // Vor dem Herunterladen nachsehen, ob lokale Änderungen überschrieben würden
-  // (AP-3.1). Der Bot übernimmt beim Download den Stand der Plattform und
-  // erhält nur vier Automatikfelder - siehe docs/RUNDLAUF.md. Wer etwas
-  // geändert hat, soll das vorher erfahren, nicht hinterher.
+  // (AP-3.1). Wer etwas geändert hat, soll das vorher erfahren, nicht hinterher.
   const starten = async (befehl: string) => {
     if (befehl !== 'download' || !gewaehlt) {
       await einreihen(befehl);
@@ -95,76 +99,74 @@ export function JobSeite() {
         return;
       }
     } catch {
-      // Die Prüfung ist eine Vorsichtsmaßnahme, keine Voraussetzung. Wenn sie
-      // scheitert, darf sie den Download nicht verhindern.
+      // Die Prüfung ist eine Vorsichtsmaßnahme, keine Voraussetzung.
     } finally {
       setStartet(null);
     }
     await einreihen(befehl);
   };
 
+  if (profile.length === 0) {
+    return (
+      <p className="hinweis hinweis-warn">
+        Zuerst ein Profil anlegen und Zugangsdaten hinterlegen.
+      </p>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-4xl">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Läufe</h1>
+    <div>
+      <p className="mb-3 text-sm text-normal">
+        Läuft für <span className="font-medium text-stark">{aktiv?.anzeigename}</span>.
+        Umschalten geht links in der Seitenleiste.
+      </p>
 
-      {profile.length === 0 ? (
-        <p className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Zuerst ein Profil anlegen und Zugangsdaten hinterlegen.
+      <p className="mb-3 text-xs text-leise">
+        Läufe desselben Profils werden nacheinander abgearbeitet, mit einem
+        Mindestabstand dazwischen. Ein Lauf kann deshalb ein bis zwei Minuten
+        warten, bevor er startet – das ist Absicht und wird oben angezeigt.
+      </p>
+
+      <Hinweis id="jobseite-alle-oder-keine" ton="warn" className="mb-3 text-xs">
+        <span className="font-medium">Von hier aus gilt: alle oder keine.</span>{' '}
+        „Veröffentlichen" stellt <span className="font-medium">alle</span> lokal
+        angelegten Anzeigen ein, die noch nicht online sind – einzeln geht das im
+        Editor über „Veröffentlichen", und nur dort siehst du vorher, welche es trifft.
+        „Verlängern" findet derzeit gar keine Anzeigen: Heruntergeladene liegen in
+        einem Ordner, den der Lauf nicht durchsucht.
+      </Hinweis>
+
+      {fehler && (
+        <p role="alert" className="mb-3 hinweis hinweis-fehler">
+          {fehler}
         </p>
-      ) : (
-        <div className="mb-6 rounded border border-gray-200 bg-white p-4">
-          <p className="mb-3 text-sm text-gray-700">
-            Läuft für <span className="font-medium text-gray-900">{aktiv?.anzeigename}</span>.
-            Umschalten geht links in der Seitenleiste.
-          </p>
-
-          <p className="mb-3 text-xs text-gray-600">
-            Läufe desselben Profils werden nacheinander abgearbeitet, mit einem
-            Mindestabstand dazwischen. Ein Lauf kann deshalb ein bis zwei Minuten
-            warten, bevor er startet – das ist Absicht und wird unten angezeigt.
-          </p>
-
-          {/* Ehrlicher Hinweis statt einer Schaltfläche, die nichts tut:
-              Der Bot sucht Anzeigen zum Veröffentlichen im Ordner `ads/`,
-              heruntergeladene liegen aber in `downloaded-ads/`. Beides zu
-              verbinden ist AP-3.3 und braucht eigene Rückfragen. */}
-          <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-            <span className="font-medium">Veröffentlichen und Verlängern finden derzeit keine Anzeigen.</span>{' '}
-            Heruntergeladene Anzeigen sind noch nicht mit dem Veröffentlichen verbunden –
-            ein Lauf würde ohne Wirkung durchlaufen. Bearbeitete Anzeigen lassen sich
-            deshalb noch nicht hochladen.
-          </p>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            {BEFEHLE.map(b => (
-              <button
-                key={b.id}
-                type="button"
-                disabled={startet !== null}
-                onClick={() => void starten(b.id)}
-                className={`flex items-start gap-3 rounded border p-3 text-left transition-colors
-                            disabled:cursor-not-allowed disabled:opacity-60
-                            ${b.schreibend
-                              ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
-                              : 'border-gray-300 bg-white hover:bg-gray-50'}`}
-              >
-                <Play className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-custom" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900">
-                    {startet === b.id ? 'Wird eingereiht …' : b.label}
-                    {b.schreibend && (
-                      <span className="ml-2 text-xs font-normal text-amber-800">
-                        verändert etwas auf der Plattform
-                      </span>
-                    )}
-                  </span>
-                  <span className="block text-xs text-gray-600">{b.hinweis}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
       )}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {BEFEHLE.map(b => (
+          <button
+            key={b.id}
+            type="button"
+            disabled={startet !== null}
+            onClick={() => void starten(b.id)}
+            className={`kachel flex items-start gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60
+                        ${b.schreibend ? 'kachel-betont' : ''}`}
+          >
+            <Play className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary-custom" />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-stark">
+                {startet === b.id ? 'Wird eingereiht …' : b.label}
+                {b.schreibend && (
+                  <span className="ml-2 text-xs font-normal text-amber-800">
+                    verändert etwas auf der Plattform
+                  </span>
+                )}
+              </span>
+              <span className="block text-xs text-leise">{b.hinweis}</span>
+            </span>
+          </button>
+        ))}
+      </div>
 
       {warnung && (
         <UeberschreibWarnung
@@ -176,29 +178,6 @@ export function JobSeite() {
           }}
         />
       )}
-
-      {fehler && (
-        <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {fehler}
-        </p>
-      )}
-
-      <div className="space-y-3">
-        {jobs.map(job => (
-          <JobKarte
-            key={job.id}
-            job={job}
-            offen={offenerJob === job.id}
-            aufUmschalten={() => setOffenerJob(offenerJob === job.id ? null : job.id)}
-            aufAenderung={jobsLaden}
-          />
-        ))}
-        {jobs.length === 0 && (
-          <p className="rounded border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
-            Noch keine Läufe.
-          </p>
-        )}
-      </div>
     </div>
   );
 }
@@ -213,15 +192,15 @@ function UeberschreibWarnung({
         role="dialog"
         aria-modal="true"
         aria-labelledby="warnung-titel"
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="dialog"
       >
         <div className="mb-3 flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" aria-hidden />
           <div className="min-w-0">
-            <h2 id="warnung-titel" className="font-semibold text-gray-900">
+            <h2 id="warnung-titel" className="font-semibold text-stark">
               Lokale Änderungen gehen verloren
             </h2>
-            <p className="mt-1 text-sm text-gray-700">
+            <p className="mt-1 text-sm text-normal">
               Beim Herunterladen wird der Stand der Plattform übernommen.
               {' '}
               {anzeigen.length === 1
@@ -231,13 +210,13 @@ function UeberschreibWarnung({
           </div>
         </div>
 
-        <ul className="mb-4 max-h-48 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2 text-sm">
+        <ul className="mb-4 max-h-48 overflow-y-auto rounded-xl p-2 text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--karte-rand)' }}>
           {anzeigen.map(a => (
-            <li key={a.datei} className="truncate py-0.5 text-gray-800">{a.titel}</li>
+            <li key={a.datei} className="truncate py-0.5 text-normal">{a.titel}</li>
           ))}
         </ul>
 
-        <p className="mb-4 text-xs text-gray-600">
+        <p className="mb-4 text-xs text-leise">
           Erhalten bleiben nur die Automatikfelder: Preisautomatik, Abstand zur
           Neueinstellung und die beiden Zähler.
         </p>
@@ -246,14 +225,14 @@ function UeberschreibWarnung({
           <button
             type="button"
             onClick={aufAbbrechen}
-            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="btn-ghost"
           >
             Abbrechen
           </button>
           <button
             type="button"
             onClick={aufWeiter}
-            className="rounded bg-amber-800 px-4 py-2 text-sm font-medium text-white hover:bg-amber-900"
+            className="btn-primaer"
           >
             Trotzdem herunterladen
           </button>
@@ -267,13 +246,9 @@ function UeberschreibWarnung({
  * Woran der Lauf gerade ist, und seit wann (AP-2.8).
  *
  * Die Dauer ist der eigentliche Punkt. „Bild 2/3 hochladen" beruhigt;
- * dieselbe Zeile seit vier Minuten sagt, dass etwas klemmt. Ein Zustand
- * „läuft" ohne beides hat am 2026-08-27 dazu geführt, dass ein Lauf 40
- * Sekunden vor seinem Ende für gescheitert gehalten wurde.
+ * dieselbe Zeile seit vier Minuten sagt, dass etwas klemmt.
  */
 function Phasenzeile({ text, seit }: { text: string; seit: string | null }) {
-  // Eigener Sekundentakt: Die Jobliste wird nur alle zwei Sekunden geladen,
-  // und zwischen zwei Ladungen soll die Dauer trotzdem weiterlaufen.
   const [jetzt, setJetzt] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setJetzt(Date.now()), 1000);
@@ -288,45 +263,90 @@ function Phasenzeile({ text, seit }: { text: string; seit: string | null }) {
       : `${Math.floor(sekunden / 60)} min ${sekunden % 60} s`;
 
   return (
-    <span className="mt-1 flex items-center gap-2 text-sm text-blue-800">
+    <span className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-blue-800">
       <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" aria-hidden />
-      <span className="min-w-0 truncate">{text}</span>
-      {dauer && <span className="flex-shrink-0 text-xs text-gray-500">seit {dauer}</span>}
+      <span className="min-w-0 break-words">{text}</span>
+      {dauer && <span className="flex-shrink-0 text-xs text-leise">seit {dauer}</span>}
     </span>
   );
 }
 
-function JobKarte({
-  job, offen, aufUmschalten, aufAenderung,
-}: { job: Job; offen: boolean; aufUmschalten: () => void; aufAenderung: () => void }) {
+/**
+ * Ein Lauf als Karte.
+ *
+ * `kompakt` ist die Fassung für „Neue Anzeige" (AP-2.21): Zustand, Befehl,
+ * Wartehinweis und Abbrechen - ohne Protokoll, ohne Captcha-Übernahme.
+ * `bezug` benennt die betroffene Anzeige (AP-2.29/2.31), falls bekannt.
+ */
+export function JobKarte({
+  job, offen, aufUmschalten, aufAenderung, kompakt = false, bezug = null,
+}: {
+  job: Job;
+  offen: boolean;
+  aufUmschalten: () => void;
+  aufAenderung: () => void;
+  kompakt?: boolean;
+  bezug?: string | null;
+}) {
   const zustand = ZUSTAND_TEXT[job.zustand];
+  const punktKlasse = ZUSTAND_PUNKT[job.zustand] ?? 'status-punkt-grau';
   const laeuftNoch = ['wartet', 'laeuft', 'braucht_eingabe'].includes(job.zustand);
+  const Icon = befehlIcon(job.befehl);
+  // Primärzeile ist der Anzeigentitel (AP-2.32); fehlt der Bezug - ein Lauf
+  // fürs ganze Profil wie „Herunterladen" -, tritt der Befehlsname an seine
+  // Stelle. Der Befehl steht sonst nur noch leise in der Meta-Zeile.
+  const titel = bezug ?? befehlText(job.befehl);
+  const meta = [
+    job.profil_slug,
+    kurzZeit(job.beendet_am ?? job.eingereicht_am),
+    bezug ? befehlText(job.befehl) : null,
+  ].filter(Boolean).join(' · ');
+
+  const kopf = (
+    <span className="flex items-center gap-3">
+      {/* AP-2.32 Follow-up: Symbol mittig zur zweizeiligen Karte, ~20% größer (16→19.2px ≈ h-5). */}
+      <Icon className="h-5 w-5 flex-shrink-0 text-leise" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate font-semibold text-stark">{titel}</span>
+          {/* Badge auf breiter Karte, farbiger Punkt sobald es eng wird. */}
+          <span className={`${zustand.klasse} hidden flex-shrink-0 sm:inline-flex`}>
+            {zustand.text}
+          </span>
+          <span
+            className={`status-punkt ${punktKlasse} flex-shrink-0 sm:hidden`}
+            role="img"
+            aria-label={zustand.text}
+          />
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-leise">{meta}</span>
+        {job.meldung && (
+          <span className="mt-1 block text-sm text-normal">{job.meldung}</span>
+        )}
+        {laeuftNoch && job.phase_text && (
+          <Phasenzeile text={job.phase_text} seit={job.phase_seit} />
+        )}
+      </span>
+    </span>
+  );
 
   return (
-    <div className="rounded border border-gray-200 bg-white">
+    <div className="karte">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <button type="button" onClick={aufUmschalten} className="min-w-0 flex-1 text-left">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${zustand.klasse}`}>
-              {zustand.text}
-            </span>
-            <span className="font-medium text-gray-900">{job.befehl}</span>
-            <span className="text-sm text-gray-500">{job.profil_slug}</span>
-          </span>
-          {job.meldung && (
-            <span className="mt-1 block text-sm text-gray-700">{job.meldung}</span>
-          )}
-          {laeuftNoch && job.phase_text && (
-            <Phasenzeile text={job.phase_text} seit={job.phase_seit} />
-          )}
-        </button>
+        {kompakt ? (
+          <div className="min-w-0 flex-1">{kopf}</div>
+        ) : (
+          <button type="button" onClick={aufUmschalten} className="min-w-0 flex-1 text-left">
+            {kopf}
+          </button>
+        )}
 
         <div className="flex flex-wrap gap-2">
-          {job.zustand === 'braucht_eingabe' && (
+          {!kompakt && job.zustand === 'braucht_eingabe' && (
             <button
               type="button"
               onClick={() => void api.jobs.eingabe(job.id).then(aufAenderung)}
-              className="flex items-center gap-2 rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white"
+              className="btn-primaer"
             >
               <Hand className="h-4 w-4" />
               Erledigt, weiter
@@ -336,7 +356,7 @@ function JobKarte({
             <button
               type="button"
               onClick={() => void api.jobs.abbrechen(job.id).then(aufAenderung)}
-              className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+              className="btn-ghost"
             >
               <Ban className="h-4 w-4" />
               Abbrechen
@@ -347,8 +367,8 @@ function JobKarte({
 
       {job.wartet_bis && <Wartehinweis bis={job.wartet_bis} grund={job.wartegrund} />}
 
-      {job.zustand === 'braucht_eingabe' && (
-        <div className="border-t border-amber-200 bg-amber-50 p-4">
+      {!kompakt && job.zustand === 'braucht_eingabe' && (
+        <div className="hinweis hinweis-warn" style={{ borderRadius: 0, border: 0, borderTop: '1px solid var(--hinweis-warn-rand)' }}>
           <p className="mb-3 flex items-start gap-2 text-sm text-amber-900">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
             <span>
@@ -360,22 +380,22 @@ function JobKarte({
             href="/browsersicht/vnc.html?autoconnect=1&resize=scale"
             target="_blank"
             rel="noreferrer"
-            className="inline-block rounded bg-primary-custom px-4 py-2 text-sm font-medium"
+            className="inline-block btn-primaer"
           >
             Browsersicht öffnen
           </a>
         </div>
       )}
 
-      {job.zustand === 'pruefen' && (
-        <div className="border-t border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
+      {!kompakt && job.zustand === 'pruefen' && (
+        <div className="hinweis hinweis-warn text-sm" style={{ borderRadius: 0, border: 0, borderTop: '1px solid var(--hinweis-warn-rand)' }}>
           <strong>Dieser Lauf braucht eine Prüfung von Hand.</strong> Bitte auf
           kleinanzeigen.de nachsehen, was tatsächlich passiert ist – lokaler und
           entfernter Zustand können auseinanderlaufen.
         </div>
       )}
 
-      {offen && <JobLog jobId={job.id} laeuftNoch={laeuftNoch} />}
+      {!kompakt && offen && <JobLog jobId={job.id} laeuftNoch={laeuftNoch} />}
     </div>
   );
 }
@@ -383,9 +403,8 @@ function JobKarte({
 /**
  * Zeigt an, dass ein Lauf ABSICHTLICH wartet, und wie lange noch.
  *
- * Ohne das steht ein Job minutenlang auf "wartet", ohne Grund - im ersten Test
- * mit einem echten Konto wurde das für ein Hängen gehalten. Eine Funktion, die
- * bremst, muss sagen dass und warum sie bremst.
+ * Ohne das steht ein Job minutenlang auf "wartet", ohne Grund. Eine Funktion,
+ * die bremst, muss sagen dass und warum sie bremst.
  */
 function Wartehinweis({ bis, grund }: { bis: string; grund: string | null }) {
   const [rest, setRest] = useState(() => Math.max(0, (Date.parse(bis) - Date.now()) / 1000));
@@ -405,7 +424,7 @@ function Wartehinweis({ bis, grund }: { bis: string; grund: string | null }) {
     : `noch ${sekunden} ${sekunden === 1 ? 'Sekunde' : 'Sekunden'}`;
 
   return (
-    <div className="border-t border-blue-200 bg-blue-50 p-4">
+    <div className="hinweis" style={{ borderRadius: 0, border: 0, borderTop: '1px solid var(--hinweis-ok-rand)' }}>
       <p className="flex items-start gap-2 text-sm text-blue-900">
         <Hourglass className="mt-0.5 h-4 w-4 flex-shrink-0" />
         <span>
@@ -433,8 +452,6 @@ function JobLog({ jobId, laeuftNoch }: { jobId: number; laeuftNoch: boolean }) {
 
     if (!laeuftNoch) return () => { abgebrochen = true; };
 
-    // Server-Sent-Events statt Abfragen im Takt: Die Ausgabe kommt so
-    // unmittelbar an, und der Browser verbindet bei Abbruch selbst neu.
     const quelle = new EventSource(api.jobs.stromUrl(jobId));
     quelle.addEventListener('log', (e: MessageEvent<string>) => {
       const zeile = JSON.parse(e.data) as LogZeile;
@@ -452,15 +469,12 @@ function JobLog({ jobId, laeuftNoch }: { jobId: number; laeuftNoch: boolean }) {
   const farbe = (stufe: LogZeile['stufe']) =>
     stufe === 'fehler' ? 'text-red-400'
       : stufe === 'warnung' ? 'text-amber-300'
-        : stufe === 'debug' ? 'text-gray-500' : 'text-gray-200';
+        : stufe === 'debug' ? 'text-leise' : 'text-white/80';
 
   return (
-    <div className="border-t border-gray-200">
-      {/* Eigener Scrollbereich: Ein Lauf erzeugt hunderte Zeilen, die die
-          Seite sonst endlos lang machen. overflow-x-auto statt Umbruch, damit
-          die Ausrichtung der Bot-Ausgabe erhalten bleibt. */}
+    <div style={{ borderTop: '1px solid var(--karte-rand)' }}>
       <div className="max-h-80 overflow-auto bg-gray-900 p-3 font-mono text-xs">
-        {zeilen.length === 0 && <p className="text-gray-500">Noch keine Ausgabe.</p>}
+        {zeilen.length === 0 && <p className="text-leise">Noch keine Ausgabe.</p>}
         {zeilen.map(z => (
           <div key={z.id} className={`whitespace-pre ${farbe(z.stufe)}`}>{z.text}</div>
         ))}

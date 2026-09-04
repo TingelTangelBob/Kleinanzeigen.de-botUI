@@ -24,13 +24,19 @@ import {
   useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core';
 import {
-  SortableContext, arrayMove, rectSortingStrategy,
-  sortableKeyboardCoordinates, useSortable,
+  SortableContext, arrayMove, sortableKeyboardCoordinates,
+  useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, ImagePlus, RefreshCw, Trash2 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { verkleinern } from '../services/bilder';
+import { InfoTip } from './InfoTip';
+
+const HILFE = 'Das erste Bild ist das Titelbild. Ziehen ändert die Reihenfolge, '
+  + 'und Dateien lassen sich direkt auf diesen Bereich ablegen. Erlaubt sind JPEG, '
+  + 'PNG und GIF; große Bilder werden vor dem Hochladen verkleinert. Hinzufügen, '
+  + 'Ersetzen, Sortieren und Entfernen wirken sofort – nicht erst beim Speichern.';
 
 /** Dieselben Formate, die das Backend annimmt. */
 export const ERLAUBTE_TYPEN = 'image/jpeg,image/png,image/gif';
@@ -55,14 +61,14 @@ function Kachel({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative overflow-hidden rounded border border-gray-200 bg-white
+      className={`relative overflow-hidden karte
                   ${isDragging ? 'z-10 opacity-80 shadow-lg' : ''}`}
     >
       <img
         src={api.bestand.bildUrl(profil, datei, name)}
         alt=""
         loading="lazy"
-        className="h-24 w-24 object-cover"
+        className="bild-kachel"
       />
 
       {erstes && (
@@ -221,23 +227,40 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
         setUeberZone(false);
         void hochladen(e.dataTransfer.files);
       }}
-      className={`rounded border p-3 transition-colors
-                  ${ueberZone ? 'border-primary-custom bg-green-50' : 'border-gray-200'}`}
+      className={`karte p-3 transition-colors ${ueberZone ? 'dropzone-aktiv' : ''}`}
     >
-      <legend className="px-1 text-sm font-medium text-gray-700">
-        Bilder ({bilder.length})
+      {/* Kopf in einer Zeile (Mockup v4): Zähler mit Kurzhilfe links, der
+          Hinzufügen-Knopf rechts. Die Textwand darunter ist ins Info-Icon
+          gewandert. */}
+      <legend className="mb-2 flex w-full items-center justify-between gap-2 px-1">
+        <span className="flex items-center gap-1 text-sm font-medium text-normal">
+          Bilder ({bilder.length})
+          <InfoTip text={HILFE} label="Hilfe zu den Bildern" />
+        </span>
+        <label className="btn-ghost btn-ghost-klein cursor-pointer">
+          <ImagePlus className="h-4 w-4" aria-hidden />
+          {laeuft ? 'Lädt …' : 'Bilder'}
+          <input
+            type="file"
+            accept={ERLAUBTE_TYPEN}
+            multiple
+            disabled={laeuft}
+            onChange={e => { void hochladen(e.target.files); e.target.value = ''; }}
+            className="sr-only"
+          />
+        </label>
       </legend>
 
       {fehler && (
-        <p role="alert" className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+        <p role="alert" className="mb-2 hinweis hinweis-fehler">
           {fehler}
         </p>
       )}
 
-      {bilder.length > 0 && (
+      {bilder.length > 0 ? (
         <DndContext sensors={sensoren} collisionDetection={closestCenter} onDragEnd={e => void sortieren(e)}>
-          <SortableContext items={bilder} strategy={rectSortingStrategy}>
-            <div className="mb-3 flex flex-wrap gap-2">
+          <SortableContext items={bilder} strategy={verticalListSortingStrategy}>
+            <div className="bild-spalte">
               {bilder.map((name, i) => (
                 <Kachel
                   key={name}
@@ -252,28 +275,11 @@ export function BilderVerwaltung({ profil, datei, bilder, aufAenderung }: Props)
             </div>
           </SortableContext>
         </DndContext>
+      ) : (
+        <p className="px-1 text-xs text-leise">
+          Noch keine Bilder. Dateien hierher ziehen oder oben „Bilder“ wählen.
+        </p>
       )}
-
-      <label className="inline-flex cursor-pointer items-center gap-2 rounded border border-gray-300
-                        px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-        <ImagePlus className="h-4 w-4" aria-hidden />
-        {laeuft ? 'Wird hochgeladen …' : 'Bilder hinzufügen'}
-        <input
-          type="file"
-          accept={ERLAUBTE_TYPEN}
-          multiple
-          disabled={laeuft}
-          onChange={e => { void hochladen(e.target.files); e.target.value = ''; }}
-          className="sr-only"
-        />
-      </label>
-
-      <p className="mt-2 text-xs text-gray-500">
-        Das erste Bild ist das Titelbild. Ziehen ändert die Reihenfolge, und Dateien lassen
-        sich direkt auf diesen Bereich ablegen. Erlaubt sind JPEG, PNG und GIF; große Bilder
-        werden vor dem Hochladen verkleinert. Hinzufügen, Ersetzen, Sortieren und Entfernen
-        wirken sofort – nicht erst beim Speichern.
-      </p>
     </fieldset>
   );
 }

@@ -8,17 +8,37 @@
 // Fachseiten. Eine Übersicht, die alles zeigt, zeigt nichts.
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowRight, KeyRound } from 'lucide-react';
+import { ArrowRight, KeyRound } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
+import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useProfil } from '../context/useProfil';
 import type { BestandsAnzeige, Job, ZugangStatus } from '../types';
 import { AnzeigenZeile } from './AnzeigenZeile';
-import type { Seite } from './Layout';
+import { InfoTip } from './InfoTip';
 
 const ZUSTAND_TEXT: Record<string, string> = {
   wartet: 'wartet', laeuft: 'läuft', braucht_eingabe: 'braucht dich',
   fertig: 'fertig', pruefen: 'prüfen', gescheitert: 'gescheitert',
   abgebrochen: 'abgebrochen',
+};
+
+/** Zustände, bei denen jemand hinsehen muss - die tragen zusätzlich Text. */
+const AUFFAELLIG = new Set(['braucht_eingabe', 'gescheitert', 'pruefen']);
+
+const ZUSTAND_MERKMAL: Record<string, string> = {
+  braucht_eingabe: 'merkmal merkmal-gelb',
+  gescheitert: 'merkmal merkmal-rot',
+  pruefen: 'merkmal merkmal-gelb',
+};
+
+const ZUSTAND_PUNKT: Record<string, string> = {
+  wartet: 'status-punkt-grau',
+  laeuft: 'status-punkt-gruen',
+  braucht_eingabe: 'status-punkt-gelb',
+  fertig: 'status-punkt-gruen',
+  pruefen: 'status-punkt-gelb',
+  gescheitert: 'status-punkt-rot',
+  abgebrochen: 'status-punkt-grau',
 };
 
 function zeitText(iso: string | null): string {
@@ -30,18 +50,30 @@ function zeitText(iso: string | null): string {
   });
 }
 
-function Kachel({ zahl, label, betont }: { zahl: number; label: string; betont?: boolean }) {
+function Kachel({
+  zahl, label, betont, onClick,
+}: {
+  zahl: number;
+  label: string;
+  betont?: boolean;
+  onClick?: () => void;
+}) {
+  const klasse = `kachel ${betont && zahl > 0 ? 'kachel-betont' : ''}`;
+  const inner = (
+    <>
+      <div className="kachel-zahl">{zahl}</div>
+      <div className="kachel-label">{label}</div>
+    </>
+  );
+  if (!onClick) return <div className={klasse}>{inner}</div>;
   return (
-    <div className={`rounded border p-3 ${betont && zahl > 0
-      ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}
-    >
-      <div className="text-2xl font-semibold text-gray-900">{zahl}</div>
-      <div className="text-xs text-gray-600">{label}</div>
-    </div>
+    <button type="button" onClick={onClick} className={klasse}>
+      {inner}
+    </button>
   );
 }
 
-export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void }) {
+export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }) {
   const { aktiv, laedt: profileLaden, fehler: profilFehler, neuLaden: profileNeuLaden } = useProfil();
   const [anzeigen, setAnzeigen] = useState<BestandsAnzeige[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -69,21 +101,25 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
     void laden();
   }, [laden]);
 
-  if (profileLaden) return <p className="text-sm text-gray-500">Wird geladen …</p>;
+  if (profileLaden) return <p className="text-sm text-leise">Wird geladen …</p>;
 
   // Eine Störung darf nicht als „noch kein Profil" erscheinen. Das sah aus wie
   // ein gültiger Zustand und verschwieg, dass ein Abruf fehlgeschlagen war.
   if (profilFehler) {
     return (
-      <div className="mx-auto max-w-4xl">
-        <h1 className="mb-4 text-2xl font-bold text-gray-900">Übersicht</h1>
-        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <div className="seite">
+        <div className="seite-kopf">
+          <div>
+            <h1 className="sr-only">Übersicht</h1>
+          </div>
+        </div>
+        <p className="hinweis hinweis-fehler lesebreite">
           Die Profile ließen sich nicht laden: {profilFehler}
         </p>
         <button
           type="button"
           onClick={() => void profileNeuLaden()}
-          className="mt-3 rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          className="btn-ghost mt-3"
         >
           Erneut versuchen
         </button>
@@ -93,15 +129,19 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
 
   if (!aktiv) {
     return (
-      <div className="mx-auto max-w-4xl">
-        <h1 className="mb-4 text-2xl font-bold text-gray-900">Übersicht</h1>
-        <p className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className="seite">
+        <div className="seite-kopf">
+          <div>
+            <h1 className="sr-only">Übersicht</h1>
+          </div>
+        </div>
+        <p className="hinweis hinweis-warn lesebreite">
           Noch kein Profil angelegt. Ein Profil steht für ein Kleinanzeigen-Konto.
         </p>
         <button
           type="button"
-          onClick={() => aufSeite('profile')}
-          className="mt-3 rounded bg-primary-custom px-4 py-2 text-sm font-medium"
+          onClick={() => aufZiel('einstellungen/profile')}
+          className="btn-primaer mt-3"
         >
           Profil anlegen
         </button>
@@ -109,30 +149,42 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
     );
   }
 
-  const faellige = anzeigen.filter(a => a.faellig);
-  const geaendert = anzeigen.filter(a => a.lokal_geaendert).length;
-  const auffaellig = anzeigen.filter(a => a.hinweise.length > 0 || a.unlesbar).length;
+  /*
+   * Nur die EIGENEN Anzeigen (AP-2.34). Vorher zählten die Kacheln über den
+   * ganzen Bestand, also auch über „Von anderen" – die Kachel meldete 6 und
+   * führte per Klick auf eine Liste mit 5. Fremde Anzeigen sind eine getrennte
+   * Sammlung mit eigenem Menüpunkt; auf dem Dashboard des eigenen Kontos haben
+   * sie in keiner der vier Zahlen etwas zu suchen.
+   */
+  const eigene = anzeigen.filter(a => a.herkunft === 'eigene');
+  const faellige = eigene.filter(a => a.faellig);
+  const geaendert = eigene.filter(a => a.lokal_geaendert).length;
+  const auffaellig = eigene.filter(a => a.hinweise.length > 0 || a.unlesbar).length;
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Übersicht</h1>
-      <p className="mb-6 text-sm text-gray-600">{aktiv.anzeigename}</p>
+    <div className="seite">
+      <div className="seite-kopf">
+        <div>
+          <h1 className="sr-only">Übersicht</h1>
+          <p className="seite-beschrieb">{aktiv.anzeigename}</p>
+        </div>
+      </div>
 
       {fehler && (
-        <p className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{fehler}</p>
+        <p className="hinweis hinweis-fehler lesebreite mb-4">{fehler}</p>
       )}
 
       {!zugang?.passwort_hinterlegt && (
-        <div className="mb-6 flex items-start gap-3 rounded border border-amber-200 bg-amber-50 p-4">
-          <KeyRound className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" aria-hidden />
+        <div className="hinweis hinweis-warn lesebreite mb-6 flex items-start gap-3">
+          <KeyRound className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden />
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-amber-900">
+            <p>
               Für dieses Profil sind keine Zugangsdaten hinterlegt. Ohne sie kann kein Lauf starten.
             </p>
             <button
               type="button"
-              onClick={() => aufSeite('profile')}
-              className="mt-2 text-sm font-medium text-amber-900 underline"
+              onClick={() => aufZiel('einstellungen/profile')}
+              className="mt-2 text-sm font-medium underline"
             >
               Zugangsdaten hinterlegen
             </button>
@@ -140,69 +192,116 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kachel zahl={anzeigen.length} label="Anzeigen" />
-        <Kachel zahl={faellige.length} label="Fällig" betont />
-        <Kachel zahl={geaendert} label="Lokal geändert" betont />
-        <Kachel zahl={auffaellig} label="Mit Hinweis" betont />
+      {/* Das Raster behält die volle Seitenbreite – es baut die Seite mit auf
+          und hält die Kante zu den Listen darunter (AP-2.16). Gedeckelt wird
+          nur, was gelesen wird. Der Inhalt einer Kachel bleibt links und
+          kompakt: Zahl und Beschriftung werden nicht auseinandergezogen, um
+          die Breite zu füllen. */}
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Nur „Fällig" ist betont (AP-2.18). Vorher trugen drei von vier
+            Kacheln die Betonung – wenn die Mehrheit hervorgehoben ist, hebt
+            nichts mehr hervor. „Fällig" ist die einzige Zahl, die zu einer
+            Handlung auffordert; „Lokal geändert" und „Mit Hinweis" sind
+            Zustandsangaben und stehen jetzt so ruhig da wie „Anzeigen". */}
+        <Kachel zahl={eigene.length} label="Anzeigen" onClick={() => aufZiel('anzeigen/eigene')} />
+        <Kachel zahl={faellige.length} label="Fällig" betont onClick={() => aufZiel('anzeigen/eigene')} />
+        <Kachel zahl={geaendert} label="Lokal geändert" />
+        <Kachel zahl={auffaellig} label="Mit Hinweis" />
       </div>
 
-      <section className="mb-6">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Letzte Läufe</h2>
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-tight text-stark">Letzte Läufe</h2>
           <button
             type="button"
-            onClick={() => aufSeite('jobs')}
-            className="flex items-center gap-1 text-sm text-primary-custom"
+            onClick={() => aufZiel('warteschlange')}
+            className="btn-leise"
           >
-            Alle Läufe <ArrowRight className="h-4 w-4" aria-hidden />
+            Zur Warteschlange <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
         </div>
         {jobs.length === 0 ? (
-          <p className="rounded border border-gray-200 bg-white p-4 text-sm text-gray-600">
-            Noch kein Lauf. Unter „Läufe" lässt sich einer starten.
+          <p className="leer">
+            Noch kein Lauf. In der Warteschlange lässt sich einer starten.
           </p>
         ) : (
-          <ul className="divide-y divide-gray-200 overflow-hidden rounded border border-gray-200 bg-white">
-            {jobs.map(job => (
-              <li key={job.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                <span className="truncate text-gray-900">{job.befehl}</span>
-                <span className="flex flex-shrink-0 items-center gap-3">
-                  <span className="text-xs text-gray-500">{zeitText(job.eingereicht_am)}</span>
-                  <span className="text-xs text-gray-700">{ZUSTAND_TEXT[job.zustand] ?? job.zustand}</span>
-                </span>
-              </li>
-            ))}
+          <ul className="liste">
+            {jobs.map(job => {
+              const zustandText = ZUSTAND_TEXT[job.zustand] ?? job.zustand;
+              const bezug = anzeigeBezug(job, anzeigen);
+              // Symbol trägt den Vorgang (AP-2.32), die Primärzeile den
+              // Anzeigentitel; fehlt der Bezug, tritt der Befehlsname ein.
+              const Icon = befehlIcon(job.befehl);
+              const titel = bezug ?? befehlText(job.befehl);
+              return (
+                <li key={job.id}>
+                  {/* Klick führt auf die Warteschlange (AP-2.31). Dort steht
+                      das Protokoll und lässt sich der Lauf aufklappen. */}
+                  <button
+                    type="button"
+                    onClick={() => aufZiel('warteschlange')}
+                    className="zeile items-center !py-2.5 text-sm"
+                    title={`${befehlText(job.befehl)}${bezug ? ` · ${bezug}` : ''} · ${zustandText}`}
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
+                      <span
+                        className={`status-punkt ${ZUSTAND_PUNKT[job.zustand] ?? 'status-punkt-grau'}`}
+                        role="img"
+                        aria-label={zustandText}
+                      />
+                      <span className="truncate text-stark">{titel}</span>
+                      {/* Farbe allein trägt den Status nicht (AP-2.34): Rot
+                          und Grün sind für Rot-Grün-Blinde derselbe Punkt, und
+                          „fertig" gegen „gescheitert" ist genau der
+                          Unterschied, der zählt. Screenreader lesen ohnehin das
+                          `aria-label` am Punkt; hier geht es um die Augen.
+                          Beschriftet werden nur die Zustände, die Aufmerksamkeit
+                          brauchen – ein Dashboard, das auch „fertig"
+                          ausbuchstabiert, ist wieder eine Wand. */}
+                      {AUFFAELLIG.has(job.zustand) && (
+                        <span className={`${ZUSTAND_MERKMAL[job.zustand]} hidden flex-shrink-0 sm:inline-flex`}>
+                          {zustandText}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Steht an</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-1 text-base font-semibold tracking-tight text-stark">
+            Steht an
+            {/* Früher ein Dauerabsatz über der Liste (AP-2.25): Wann eine
+                Anzeige auf der Plattform abläuft, steht nicht in der
+                heruntergeladenen Datei – gezählt wird der selbst eingestellte
+                Abstand. Das ist Hintergrund, kein Alarm, also als Kurzhilfe. */}
+            <InfoTip
+              label="Was „fällig“ bedeutet"
+              text="Fällig heißt: Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht. Das Ablaufdatum der Plattform steht nicht in den heruntergeladenen Dateien."
+            />
+          </h2>
           <button
             type="button"
-            onClick={() => aufSeite('bestand')}
-            className="flex items-center gap-1 text-sm text-primary-custom"
+            onClick={() => aufZiel('anzeigen/eigene')}
+            className="btn-leise"
           >
             Alle Anzeigen <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
         </div>
         {faellige.length === 0 ? (
-          <p className="rounded border border-gray-200 bg-white p-4 text-sm text-gray-600">
+          <p className="leer">
             Keine Anzeige ist zur Neueinstellung fällig.
           </p>
         ) : (
           <>
-            {/* Bewusst ohne Zeitangabe der Plattform: Wann eine Anzeige dort
-                abläuft, steht nicht in der heruntergeladenen Datei. Was hier
-                zählt, ist der selbst eingestellte Abstand. */}
-            <p className="mb-2 flex items-start gap-2 text-xs text-gray-600">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-              Fällig heißt: Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht.
-              Das Ablaufdatum der Plattform steht nicht in den heruntergeladenen Dateien.
-            </p>
-            <ul className="divide-y divide-gray-200 overflow-hidden rounded border border-gray-200 bg-white">
+            <ul className="liste">
               {faellige.slice(0, 5).map(a => (
                 <li key={a.datei}>
                   <AnzeigenZeile anzeige={a} profil={aktiv.slug} />
@@ -210,7 +309,7 @@ export function UebersichtSeite({ aufSeite }: { aufSeite: (seite: Seite) => void
               ))}
             </ul>
             {faellige.length > 5 && (
-              <p className="mt-2 text-sm text-gray-600">und {faellige.length - 5} weitere</p>
+              <p className="mt-2 text-sm text-leise">und {faellige.length - 5} weitere</p>
             )}
           </>
         )}

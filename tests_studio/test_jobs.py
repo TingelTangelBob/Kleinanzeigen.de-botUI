@@ -77,7 +77,9 @@ def _ereignis(text:str, **kwargs:object) -> Ereignis:
     e = zeile_auswerten(text)
     return Ereignis(zeitpunkt = e.zeitpunkt, text = e.text, stufe = e.stufe,
                     aufmerksamkeit = kwargs.get("aufmerksamkeit") or e.aufmerksamkeit,  # type: ignore[arg-type]
-                    eingriff = kwargs.get("eingriff") or e.eingriff)  # type: ignore[arg-type]
+                    eingriff = kwargs.get("eingriff") or e.eingriff,  # type: ignore[arg-type]
+                    phase = kwargs.get("phase", e.phase),  # type: ignore[arg-type]
+                    phase_text = kwargs.get("phase_text", e.phase_text))  # type: ignore[arg-type]
 
 
 @pytest.fixture
@@ -179,6 +181,47 @@ class TestSpeicher:
         assert job is not None
         assert job.zustand is JobZustand.FERTIG
 
+    def test_beendete_loeschen_raeumt_nur_abgeschlossene(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        """AP-2.32: „Beendete leeren" entfernt Fertiges, lässt Aktives stehen."""
+        _, conn, profil_id, _ = umgebung
+        with db.transaction(conn):
+            fertig = speicher.einreihen(conn, profil_id, "verify", [])
+            speicher.zustand_setzen(conn, fertig, JobZustand.FERTIG, rueckgabecode = 0)
+            speicher.log_anhaengen(conn, fertig, _ereignis("eine Zeile"))
+            gescheitert = speicher.einreihen(conn, profil_id, "verify", [])
+            speicher.zustand_setzen(conn, gescheitert, JobZustand.GESCHEITERT, rueckgabecode = 1)
+            laeuft = speicher.einreihen(conn, profil_id, "verify", [])
+            speicher.zustand_setzen(conn, laeuft, JobZustand.LAEUFT)
+            wartet = speicher.einreihen(conn, profil_id, "verify", [])
+
+        with db.transaction(conn):
+            anzahl = speicher.beendete_loeschen(conn, profil_id)
+
+        assert anzahl == 2
+        assert speicher.holen(conn, fertig) is None
+        assert speicher.holen(conn, gescheitert) is None
+        assert speicher.log_lesen(conn, fertig) == []
+        assert speicher.holen(conn, laeuft) is not None
+        assert speicher.holen(conn, wartet) is not None
+
+    def test_beendete_loeschen_trennt_nach_profil(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        cfg, conn, profil_id, _ = umgebung
+        anderes = profile_dienst.anlegen(conn, cfg.profiles_dir, "hobby", "Hobby")
+        with db.transaction(conn):
+            eigenes = speicher.einreihen(conn, profil_id, "verify", [])
+            speicher.zustand_setzen(conn, eigenes, JobZustand.FERTIG, rueckgabecode = 0)
+            fremdes = speicher.einreihen(conn, anderes.id, "verify", [])
+            speicher.zustand_setzen(conn, fremdes, JobZustand.FERTIG, rueckgabecode = 0)
+
+        with db.transaction(conn):
+            anzahl = speicher.beendete_loeschen(conn, profil_id)
+
+        assert anzahl == 1
+        assert speicher.holen(conn, eigenes) is None
+        assert speicher.holen(conn, fremdes) is not None
+
 
 class TestWarteschlange:
 
@@ -213,6 +256,106 @@ class TestWarteschlange:
         assert job.rueckgabecode == 0
         assert job.zustand is JobZustand.PRUEFEN
         assert str(Aufmerksamkeit.VEROEFFENTLICHT_NICHT_GESPEICHERT) in job.aufmerksamkeit
+
+    # -- AP-3.9: uebersprungener Upload darf nicht als Erfolg gelten ----------
+
+    _UEBERSPRUNGEN = (
+        " -> ÜBERSPRUNGEN: Anzeige [ads/ad_9/ad_9.yaml] wurde zuletzt vor 0 Tagen "
+        "veröffentlicht. Erneute Veröffentlichung ist erst nach 7 Tagen erforderlich"
+    )
+
+    @pytest.mark.asyncio
+    async def test_gezielter_publish_ohne_abschluss_ist_pruefen(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """`publish --ads=due` uebersprang die Anzeige - Code 0, aber nichts online."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis(self._UEBERSPRUNGEN), _ereignis("0 Anzeigen geladen")], code = 0))
+        job_id = await ws.einreihen(
+            conn, profil_id, "publish", [], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = "./ads/ad_9/ad_9.yaml",
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.rueckgabecode == 0
+        assert job.zustand is JobZustand.PRUEFEN
+        assert job.meldung is not None and "ÜBERSPRUNGEN" in job.meldung
+
+    @pytest.mark.asyncio
+    async def test_gezielter_publish_mit_abschluss_ist_fertig(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """Kommt die ERFOLG-Zeile (Phase ABSCHLUSS), ist der Lauf echt fertig."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis(" -> ERFOLG: Anzeige mit ID 12345 veröffentlicht")], code = 0))
+        job_id = await ws.einreihen(
+            conn, profil_id, "publish", [], profil_verzeichnis = verzeichnis,
+            anzeigen_glob = "./ads/ad_9/ad_9.yaml",
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
+
+    @pytest.mark.asyncio
+    async def test_sammellauf_der_alles_ueberspringt_ist_pruefen(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """AP-3.11: Ein Sammellauf, der jede Anzeige uebersprang und 0 lud, ist kein Erfolg.
+
+        Vorher (AP-3.9) durfte er "nichts faellig" gruen melden. Der stille
+        Skip war aber genau der Samsung-SSD-Fehler - "0 veroeffentlicht, alles
+        uebersprungen" gehoert vor Augen, auch ohne Dateigrenze.
+        """
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis(self._UEBERSPRUNGEN), _ereignis("0 Anzeigen geladen")], code = 0))
+        job_id = await ws.einreihen(conn, profil_id, "publish", [], profil_verzeichnis = verzeichnis)
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.rueckgabecode == 0
+        assert job.zustand is JobZustand.PRUEFEN
+        assert job.meldung is not None and "übersprungen" in job.meldung
+
+    @pytest.mark.asyncio
+    async def test_sammellauf_mit_einer_veroeffentlichung_bleibt_fertig(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """Skip-Zeilen schaden nicht, solange wenigstens eine Anzeige online ging."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [
+                _ereignis(self._UEBERSPRUNGEN),
+                _ereignis(" -> ERFOLG: Anzeige mit ID 55 veröffentlicht"),
+            ], code = 0))
+        job_id = await ws.einreihen(conn, profil_id, "publish", [], profil_verzeichnis = verzeichnis)
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
+
+    @pytest.mark.asyncio
+    async def test_sammellauf_ohne_skip_bleibt_fertig(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """"0 Anzeigen geladen" allein - ohne eine Skip-Zeile - ist noch kein Skip-all."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis("0 Anzeigen geladen")], code = 0))
+        job_id = await ws.einreihen(conn, profil_id, "update", [], profil_verzeichnis = verzeichnis)
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
 
     @pytest.mark.asyncio
     async def test_fehlschlag(self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
@@ -406,3 +549,20 @@ class TestAnzeigenGlob:
         geschrieben = (verzeichnis / "config.yaml").read_text(encoding = "utf-8")
         assert "./downloaded-ads/ad_4711/ad_4711.yaml" in geschrieben
         assert "./ads/**" not in geschrieben
+
+    @pytest.mark.asyncio
+    async def test_nachladen_schreibt_nach_fremde_ads(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:
+        """Per-Link-Download landet in fremde-ads/, nicht im eigenen Bestand."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(cfg, taktung = OHNE_TAKT, lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+            a, zeilen = [_ereignis("INFO fertig")]))
+
+        await ws.einreihen(
+            conn, profil_id, "download", ["--ads=3310837392"],
+            profil_verzeichnis = verzeichnis,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        geschrieben = (verzeichnis / "config.yaml").read_text(encoding = "utf-8")
+        assert "fremde-ads" in geschrieben

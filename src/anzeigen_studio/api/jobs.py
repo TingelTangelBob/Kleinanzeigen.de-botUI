@@ -79,6 +79,12 @@ class JobAusgabe(BaseModel):
     wartet_bis: str | None
     wartegrund: str | None
 
+    #: Auf welche Anzeigendatei der Lauf eingegrenzt ist (AP-3.3), etwa
+    #: `./downloaded-ads/ad_4711/ad_4711.yaml` beim Hochladen einer einzelnen
+    #: Anzeige. `None` heißt: der übliche weite Ausschnitt. Das Dashboard
+    #: (AP-2.29) nutzt es, um den Lauf einer Anzeige zuzuordnen.
+    anzeigen_glob: str | None = None
+
     #: Woran der Lauf gerade ist (AP-2.8). Reine Anzeige.
     phase: str | None = None
     phase_text: str | None = None
@@ -103,6 +109,7 @@ def _ausgabe(job: Job) -> JobAusgabe:
         beendet_am = job.beendet_am, rueckgabecode = job.rueckgabecode,
         aufmerksamkeit = job.aufmerksamkeit, eingriff = job.eingriff, meldung = job.meldung,
         wartet_bis = job.wartet_bis, wartegrund = job.wartegrund,
+        anzeigen_glob = job.anzeigen_glob,
         phase = job.phase, phase_text = job.phase_text, phase_seit = job.phase_seit,
     )
 
@@ -135,6 +142,21 @@ async def einreihen(daten: JobEingabe, conn: Verbindung, cfg: Konfiguration, ws:
     if job is None:  # pragma: no cover
         raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
     return _ausgabe(job)
+
+
+@router.delete("/beendete")
+def beendete_leeren(conn: Verbindung, profil: str) -> dict[str, int]:
+    """Loescht die abgeschlossenen Laeufe eines Profils (AP-2.32).
+
+    Muss vor `/{job_id}` stehen, sonst versucht FastAPI, „beendete" als
+    Zahl zu lesen. Aktive und wartende Laeufe bleiben unberuehrt.
+    """
+    p = profile_dienst.nach_slug(conn, profil)
+    if p is None:
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+    with db.transaction(conn):
+        anzahl = speicher.beendete_loeschen(conn, p.id)
+    return {"geloescht": anzahl}
 
 
 @router.get("/{job_id}", response_model = JobAusgabe)

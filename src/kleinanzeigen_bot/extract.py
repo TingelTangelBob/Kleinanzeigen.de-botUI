@@ -17,9 +17,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
+# Anzeigen-Studio-Fork 2026-08-31: GeloeschteAnzeige, BelenConf darf None sein.
 from kleinanzeigen_bot.model.ad_model import ContactPartial
 
-from .model.ad_model import OPTION_NAME_BY_CARRIER_CODE, AdPartial, validate_condition_api_mapping
+from .model.ad_model import OPTION_NAME_BY_CARRIER_CODE, AdPartial, MAX_TITLE_LENGTH, validate_condition_api_mapping
 from .model.config_model import AutoPriceReductionConfig, Config
 from .utils import dicts, files, i18n, loggers, misc, reflect
 from .utils.web_scraping_mixin import Browser, By, Element, WebScrapingMixin
@@ -29,6 +30,19 @@ __all__ = [
 ]
 
 LOG:Final[loggers.Logger] = loggers.get_logger(__name__)
+
+
+class GeloeschteAnzeige(Exception):
+    """Die Anzeigenseite ist auf der Plattform entfernt.
+
+    Wird nicht mehr geworfen, um den Download abzubrechen: Steffen will
+    gelöschte Anzeigen trotzdem lokal sichern. Die Klasse bleibt als Erkennung.
+    """
+
+
+def _titel_ist_geloescht(title: str) -> bool:
+    return bool(_OWNED_AD_TITLE_DECORATION_RE.match(title.strip().lstrip("[").strip()))
+
 
 _BREADCRUMB_MIN_DEPTH:Final[int] = 2
 BREADCRUMB_RE = re.compile(r"/c(\d+)")
@@ -56,7 +70,159 @@ validate_condition_api_mapping("_CONDITION_DISPLAY_TO_API", _CONDITION_DISPLAY_T
 _LABEL_TO_KEY:Final[dict[str, str]] = {
     "zustand": "condition_s",
 }
+
 DOWNLOAD_CREATION_DATE_SELECTOR:Final[str] = "#viewad-extra-info > div:nth-child(1) > span:nth-child(2)"
+
+_KA_IMAGE_UUID_RE:Final[re.Pattern[str]] = re.compile(
+    r"/images/([0-9a-f]{2})/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    re.IGNORECASE,
+)
+_BACKGROUND_IMAGE_URL_RE:Final[re.Pattern[str]] = re.compile(
+    r"""url\(\s*['"]?(https?://[^'")\s]+)['"]?\s*\)""",
+    re.IGNORECASE,
+)
+# Prefer high-res Kleinanzeigen image rules. Lower index wins.
+_IMAGE_RULE_PREFERENCE:Final[tuple[str, ...]] = (
+    "$_59.JPG",
+    "$_59.AUTO",
+    "$_1.AUTO",
+    "$_2.AUTO",
+)
+_GALLERY_ROOT_SELECTOR:Final[str] = ".vip-image-gallery, .galleryimage-large, #viewad-product"
+# Unique marker so a deployed backend image can be grepped: GALLERY_IMG_UUID_DEDUPE_20260831
+_COLLECT_AD_IMAGE_URLS_JS:Final[str] = """
+(() => {
+  /* GALLERY_IMG_UUID_DEDUPE_20260831 */
+  const urls = [];
+  const push = (value) => {
+    if (typeof value === "string" && value.trim()) {
+      urls.push(value.trim());
+    }
+  };
+  const pushImg = (img) => {
+    if (!img) {
+      return;
+    }
+    push(img.getAttribute("data-imgsrc"));
+    push(img.getAttribute("src"));
+  };
+  const pushBackground = (el) => {
+    if (!el) {
+      return;
+    }
+    const styleAttr = el.getAttribute("style") || "";
+    const fromAttr = /url\\(\\s*['"]?([^'")\\s]+)['"]?\\s*\\)/i.exec(styleAttr);
+    if (fromAttr) {
+      push(fromAttr[1]);
+    }
+    const computed = (el.style && el.style.backgroundImage) ? el.style.backgroundImage : "";
+    const fromStyle = /url\\(\\s*['"]?([^'")\\s]+)['"]?\\s*\\)/i.exec(computed);
+    if (fromStyle) {
+      push(fromStyle[1]);
+    }
+  };
+  const pushJsonLd = (root) => {
+    if (!root) {
+      return;
+    }
+    root.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        const parsed = JSON.parse(script.textContent || "null");
+        const items = Array.isArray(parsed) ? parsed : [parsed];
+        items.forEach((item) => {
+          if (!item || typeof item !== "object") {
+            return;
+          }
+          const type = item["@type"];
+          const types = Array.isArray(type) ? type : [type];
+          if (types.indexOf("ImageObject") === -1) {
+            return;
+          }
+          push(item.contentUrl);
+        });
+      } catch (ignore) {
+      }
+    });
+  };
+
+  const gallery =
+    document.querySelector(".vip-image-gallery") ||
+    document.querySelector(".galleryimage-large") ||
+    document.querySelector("#viewad-product");
+  if (gallery) {
+    gallery.querySelectorAll(".galleryimage-element[data-ix] img").forEach(pushImg);
+    gallery.querySelectorAll(".galleryimage-large--cover").forEach(pushBackground);
+    pushJsonLd(gallery);
+  }
+  if (urls.length === 0) {
+    pushImg(document.querySelector("img#viewad-image"));
+    const og = document.querySelector('meta[property="og:image"]');
+    if (og) {
+      push(og.getAttribute("content"));
+    }
+    pushJsonLd(document.querySelector("#viewad-product"));
+  }
+  return urls;
+})()
+""".strip()
+
+
+def _normalize_ad_image_url(raw:Any) -> str | None:
+    """Turn a raw src/data-imgsrc/CSS url() value into a downloadable URL."""
+    if not isinstance(raw, str):
+        return None
+    candidate = html.unescape(raw).strip()
+    if not candidate:
+        return None
+    bg_match = _BACKGROUND_IMAGE_URL_RE.search(candidate)
+    if bg_match:
+        candidate = html.unescape(bg_match.group(1)).strip()
+    candidate = candidate.strip("'\"")
+    if not candidate or candidate.lower() in {"none", "null", "undefined"}:
+        return None
+    return candidate
+
+
+def _image_rule_rank(url:str) -> int:
+    """Lower rank is a higher-resolution Kleinanzeigen image rule."""
+    upper = url.upper()
+    for index, rule in enumerate(_IMAGE_RULE_PREFERENCE):
+        if rule.upper() in upper:
+            return index
+    return len(_IMAGE_RULE_PREFERENCE)
+
+
+def _image_asset_key(url:str) -> str:
+    """Dedupe key: image UUID when present, otherwise the raw URL."""
+    match = _KA_IMAGE_UUID_RE.search(url)
+    if match:
+        return match.group(2).lower()
+    return url
+
+
+def _dedupe_ad_image_urls(urls:Any) -> list[str]:
+    """Keep gallery order, one URL per image UUID, preferring $_59.JPG over AUTO.
+
+    GALLERY_IMG_UUID_DEDUPE_20260831
+    """
+    if not isinstance(urls, (list, tuple)):
+        return []
+
+    ordered_keys:list[str] = []
+    best_by_key:dict[str, str] = {}
+    for raw in urls:
+        url = _normalize_ad_image_url(raw)
+        if url is None:
+            continue
+        key = _image_asset_key(url)
+        existing = best_by_key.get(key)
+        if existing is None:
+            best_by_key[key] = url
+            ordered_keys.append(key)
+            continue
+        if _image_rule_rank(url) < _image_rule_rank(existing):
+            best_by_key[key] = url
+    return [best_by_key[key] for key in ordered_keys]
 
 
 def _is_retryable_rmtree_error(error:BaseException) -> bool:
@@ -485,43 +651,38 @@ class AdExtractor(WebScrapingMixin):
         :param ad_file_stem: the rendered filename stem shared by the ad config and images
         :return: the relative paths for all downloaded images
         """
+        # Wait for the gallery/product root. Empty galleries are valid; do not
+        # use web_find_all (empty NodeList is falsy and times out).
+        await self.web_probe(
+            By.CSS_SELECTOR,
+            _GALLERY_ROOT_SELECTOR,
+            timeout = self.timeout("default"),
+        )
 
-        n_images:int
-        img_paths = []
+        raw_urls:Any = []
         try:
-            # download all images from box
-            image_box = await self.web_probe(By.CLASS_NAME, "galleryimage-large")
-            if image_box is None:
-                raise TimeoutError("No image area found.")
+            raw_urls = await self.web_execute(_COLLECT_AD_IMAGE_URLS_JS)
+        except Exception as ex:  # noqa: BLE001 - deleted ads / DOM quirks
+            LOG.debug("Image URL collection via JS failed: %s", ex)
 
-            images = await self.web_find_all(By.CSS_SELECTOR, ".galleryimage-element[data-ix] > img", parent = image_box)
-            n_images = len(images)
-            LOG.info("Found %s.", i18n.pluralize("image", n_images))
+        urls = _dedupe_ad_image_urls(raw_urls)
+        n_images = len(urls)
+        LOG.info("Found %s.", i18n.pluralize("image", n_images))
+        if not urls:
+            return []
 
-            img_fn_prefix = f"{ad_file_stem}__img"
-            img_nr = 1
-            dl_counter = 0
-
-            loop = asyncio.get_running_loop()
-
-            for img_element in images:
-                current_img_url = img_element.attrs["src"]  # URL of the image
-                if current_img_url is None:
-                    continue
-
-                img_path = await loop.run_in_executor(None, self._download_and_save_image_sync, str(current_img_url), directory, img_fn_prefix, img_nr)
-
-                if img_path:
-                    dl_counter += 1
-                    # Use pathlib.Path for OS-agnostic path handling
-                    img_paths.append(Path(img_path).name)
-
-                img_nr += 1
-            LOG.info("Downloaded %s.", i18n.pluralize("image", dl_counter))
-
-        except TimeoutError:  # some ads do not require images
-            LOG.warning("No image area found. Continuing without downloading images.")
-
+        img_fn_prefix = f"{ad_file_stem}__img"
+        img_paths:list[str] = []
+        dl_counter = 0
+        loop = asyncio.get_running_loop()
+        for img_nr, current_img_url in enumerate(urls, start = 1):
+            img_path = await loop.run_in_executor(
+                None, self._download_and_save_image_sync, current_img_url, directory, img_fn_prefix, img_nr
+            )
+            if img_path:
+                dl_counter += 1
+                img_paths.append(Path(img_path).name)
+        LOG.info("Downloaded %s.", i18n.pluralize("image", dl_counter))
         return img_paths
 
     def extract_ad_id_from_ad_url(self, url:str) -> int:
@@ -663,6 +824,78 @@ class AdExtractor(WebScrapingMixin):
             return cleaned_title
         return page_title
 
+    async def _extract_geloeschte_anzeige(
+        self,
+        directory: str,
+        ad_id: int,
+        ad_file_stem: str,
+        title: str,
+        *,
+        active_override: bool | None = None,
+    ) -> AdPartial:
+        """Sichert eine gelöschte Anzeigenseite so weit wie möglich.
+
+        BelenConf, Bilder und Kategorie fehlen oft. Titel und ID bleiben.
+        Die Anzeige wird inaktiv gespeichert, damit sie nicht versehentlich
+        wieder veröffentlicht wird.
+        """
+        gekuerzt = title.strip()
+        if len(gekuerzt) > MAX_TITLE_LENGTH:
+            gekuerzt = gekuerzt[: MAX_TITLE_LENGTH - 1].rstrip() + "…"
+        if len(gekuerzt) < 10:
+            gekuerzt = (gekuerzt + " (gelöscht)")[:MAX_TITLE_LENGTH]
+
+        beschreibung = (
+            "Diese Anzeige ist auf Kleinanzeigen gelöscht. "
+            "Gesichert wurden Titel und ID, weitere Felder nur soweit die Seite sie noch zeigte."
+        )
+        kategorie = "0/0"
+        try:
+            kategorie = await self._extract_category_from_ad_page()
+        except Exception as ex:  # noqa: BLE001 - gelöschte Seite hat oft keine Krümel
+            LOG.info("Deleted ad %s has no category: %s", ad_id, ex)
+        try:
+            roh = (await self.web_text(By.ID, "viewad-description-text")).strip()
+            if roh:
+                beschreibung = roh
+        except Exception:  # noqa: BLE001
+            pass
+
+        bilder: list[str] = []
+        try:
+            bilder = await self._download_images_from_ad_page(directory, ad_file_stem)
+        except Exception as ex:  # noqa: BLE001
+            LOG.info("Deleted ad %s has no images: %s", ad_id, ex)
+
+        preis = None
+        preistyp = "NOT_APPLICABLE"
+        try:
+            preis, preistyp = await self._extract_pricing_info_from_ad_page()
+        except Exception:  # noqa: BLE001
+            pass
+
+        info: dict[str, Any] = {
+            "active": False if active_override is None else active_override,
+            "type": "OFFER",
+            "title": gekuerzt,
+            "description": beschreibung,
+            "category": kategorie,
+            "price": preis,
+            "price_type": preistyp,
+            "shipping_type": "NOT_APPLICABLE",
+            "images": bilder,
+            "id": ad_id,
+            "created_on": None,
+            "updated_on": None,
+        }
+        LOG.warning(
+            "Ad %s is deleted on Kleinanzeigen. Saving an inactive local copy.",
+            ad_id,
+        )
+        ad_cfg = AdPartial.model_validate(info)
+        ad_cfg.content_hash = ad_cfg.to_ad(self.config.ad_defaults).update_content_hash().content_hash
+        return ad_cfg
+
     async def _extract_ad_page_info(
         self,
         directory:str,
@@ -685,14 +918,22 @@ class AdExtractor(WebScrapingMixin):
         """
         info:dict[str, Any] = {"active": active_override if active_override is not None else True}
 
-        # Get BelenConf data which contains accurate ad_type information
-        belen_conf = await self.web_execute("window.BelenConf")
+        if _titel_ist_geloescht(title):
+            return await self._extract_geloeschte_anzeige(
+                directory, ad_id, ad_file_stem, title, active_override = False,
+            )
+
+        # Get BelenConf data which contains accurate ad_type information.
+        # Auf gelöschten oder blockierten Seiten ist window.BelenConf None —
+        # darauf darf nicht indiziert werden (TypeError: NoneType not subscriptable).
+        belen_roh = await self.web_execute("window.BelenConf")
+        belen_conf: dict[str, Any] = belen_roh if isinstance(belen_roh, dict) else {}
+        ua = belen_conf.get("universalAnalyticsOpts")
+        dimensions: dict[str, Any] = ua.get("dimensions") if isinstance(ua, dict) and isinstance(ua.get("dimensions"), dict) else {}
 
         # Extract ad type from BelenConf - more reliable than URL pattern matching
         # BelenConf contains "ad_type":"WANTED" or "ad_type":"OFFER" in dimensions
-        ad_type_from_conf = None
-        if isinstance(belen_conf, dict):
-            ad_type_from_conf = belen_conf.get("universalAnalyticsOpts", {}).get("dimensions", {}).get("ad_type")
+        ad_type_from_conf = dimensions.get("ad_type")
         info["type"] = ad_type_from_conf if ad_type_from_conf in {"OFFER", "WANTED"} else ("OFFER" if "s-anzeige" in self.page.url else "WANTED")
 
         info["category"] = await self._extract_category_from_ad_page()
@@ -700,7 +941,7 @@ class AdExtractor(WebScrapingMixin):
         # append subcategory and change e.g. category "161/172" to "161/172/lautsprecher_kopfhoerer"
         # take subcategory from third_category_name as key 'art_s' sometimes is a special attribute (e.g. gender for clothes)
         # the subcategory isn't really necessary, but when set, the appropriate special attribute gets preselected
-        if third_category_id := belen_conf["universalAnalyticsOpts"]["dimensions"].get("l3_category_id"):
+        if third_category_id := dimensions.get("l3_category_id"):
             info["category"] += f"/{third_category_id}"
 
         info["title"] = title
@@ -874,7 +1115,9 @@ class AdExtractor(WebScrapingMixin):
         """
 
         # e.g. "art_s:lautsprecher_kopfhoerer|condition_s:like_new|versand_s:t"
-        special_attributes_str = belen_conf["universalAnalyticsOpts"]["dimensions"].get("ad_attributes")
+        ua = belen_conf.get("universalAnalyticsOpts") if isinstance(belen_conf, dict) else None
+        dimensions = ua.get("dimensions") if isinstance(ua, dict) else None
+        special_attributes_str = dimensions.get("ad_attributes") if isinstance(dimensions, dict) else None
         if not special_attributes_str:
             return await self._extract_special_attributes_from_dom()
         special_attributes = dict(item.split(":") for item in special_attributes_str.split("|") if ":" in item)

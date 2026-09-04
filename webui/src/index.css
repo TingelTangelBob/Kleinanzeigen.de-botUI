@@ -1,9 +1,11 @@
 /* SPDX-FileCopyrightText: © Anzeigen-Studio contributors */
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* STUDIO_UI_OVERHAUL_20260831 */
+/*! STUDIO_UI_OVERHAUL_20260831 */
 /*
- * Designsystem. Struktur und Ansatz aus SoloOffice (AGPL-3.0-or-later)
- * übernommen: Farben über CSS-Variablen, Dunkelmodus über ein Attribut an der
- * App-Schale, Touch-Ziele von mindestens 44 px.
+ * Anzeigen-Studio: classifieds studio on warm paper, forest sidebar, green
+ * accent, photo-first ads. Chrome lives on these tokens and component classes
+ * — not on gray-* utilities. Dark mode restyles the same classes.
  */
 
 @tailwind base;
@@ -11,156 +13,123 @@
 @tailwind utilities;
 
 :root {
-  /* Primärfarbe: Grün in Anlehnung an kleinanzeigen.de.
-   *
-   * NICHT der helle Markenton. Gemessen: #00A046 erreicht gegen weiße Schrift
-   * nur 3,43:1 und #23A24D nur 3,31:1 - beide fallen unter WCAG AA (4,5:1)
-   * durch. #15803D erreicht 5,02:1 und trägt Text sicher.
-   *
-   * Der helle Ton bleibt als reiner Akzent ohne Schrift erhalten. */
+  --studio-ui-overhaul: "STUDIO_UI_OVERHAUL_20260831";
+  --canvas: #f4f1ea;
+  --karte: #ffffff;
+  --karte-rand: #e7e1d6;
+  --text-stark: #142017;
+  --text: #3d4a40;
+  --text-schwach: #6b756e;
+
   --primary-color: #15803d;
   --primary-hover: #166534;
   --primary-text-color: #ffffff;
-  --primary-light: #f0fdf4;
-  --primary-medium: #dcfce7;
-  --primary-akzent: #22c55e;
+  --primary-light: #e8f6ec;
+  --primary-medium: #c6e6d0;
+  --primary-akzent: #4ade80;
+
+  --sidebar: #12261a;
+  --sidebar-text: #d7e6db;
+  --sidebar-text-schwach: #8fa396;
+  --sidebar-aktiv: #1b3d28;
+  --sidebar-rand: #1c3326;
 
   --status-erfolg: #15803d;
   --status-warnung: #a16207;
   --status-fehler: #b91c1c;
-  --status-neutral: #4b5563;
+  --status-neutral: #6b756e;
+
+  --hinweis-warn-flaeche: #fbf6e8;
+  --hinweis-warn-rand: #ead9a8;
+  --hinweis-warn-text: #6b5420;
+  --hinweis-fehler-flaeche: #fdecec;
+  --hinweis-fehler-rand: #f0c4c4;
+  --hinweis-fehler-text: #8f2a2a;
+  --hinweis-ok-flaeche: #e8f6ec;
+  --hinweis-ok-rand: #b7ddc2;
+  --hinweis-ok-text: #14532d;
+
+  --merkmal-grau-flaeche: #eef0ec;
+  --merkmal-grau-text: #4a554e;
+  --merkmal-gelb-flaeche: #fbf0d2;
+  --merkmal-gelb-text: #7a5a12;
+  --merkmal-blau-flaeche: #e4eef8;
+  --merkmal-blau-text: #1e4a73;
+  --merkmal-rot-flaeche: #f8e4e4;
+  --merkmal-rot-text: #8b2e2e;
+  --merkmal-gruen-flaeche: #e8f6ec;
+  --merkmal-gruen-text: #14532d;
+
+  --radius-karte: 16px;
+  --radius-kontrolle: 10px;
+  --radius-pille: 999px;
+
+  /* Reservierte Höhe der Kopfleiste (AP-2.26). 3.5rem trägt die 44-px-
+     Trefferfläche des Mobilmenüs und die 32-px-Glocke, ohne dass Status-Chip,
+     Badge oder die Eingriff-Pille die Leiste noch höher oder niedriger machen. */
+  --topbar-hoehe: 3.5rem;
+  --schatten: 0 1px 2px rgb(20 32 23 / 0.04), 0 8px 24px rgb(20 32 23 / 0.06);
 }
 
-#app-shell[data-theme='dark'] {
+#app-shell[data-theme='dark'],
+html:has(#app-shell[data-theme='dark']) {
+  --canvas: #0c1410;
+  --karte: #152019;
+  --karte-rand: #243328;
+  --text-stark: #eef6f0;
+  --text: #c5d4c9;
+  --text-schwach: #8aa090;
+
   --primary-color: #4ade80;
   --primary-hover: #86efac;
-  /* Auf hellem Grün braucht es dunkle Schrift, nicht weiße. */
   --primary-text-color: #052e16;
   --primary-light: #14532d;
   --primary-medium: #166534;
+  --primary-akzent: #4ade80;
+
+  --sidebar: #0a120d;
+  --sidebar-text: #d7e6db;
+  --sidebar-text-schwach: #8fa396;
+  --sidebar-aktiv: #1b3d28;
+  --sidebar-rand: #1a2a20;
 
   --status-erfolg: #4ade80;
   --status-warnung: #fbbf24;
   --status-fehler: #f87171;
-  --status-neutral: #9ca3af;
+  --status-neutral: #8aa090;
 
-  /* Flächen und Schrift des Dunkelmodus (AP-2.11).
-   *
-   * Gemessen gegen die Kartenfläche #1e293b: kräftige Schrift 13,2:1,
-   * gewöhnliche 9,1:1, gedämpfte 5,3:1 - alle über WCAG AA. */
-  --flaeche: #1e293b;
-  --flaeche-tief: #0f172a;
-  --flaeche-hoch: #334155;
-  --rand: #334155;
-  --rand-stark: #475569;
-  --text-stark: #f1f5f9;
-  --text: #cbd5e1;
-  --text-schwach: #94a3b8;
-}
+  --hinweis-warn-flaeche: #2a2110;
+  --hinweis-warn-rand: #5c4a1a;
+  --hinweis-warn-text: #fde68a;
+  --hinweis-fehler-flaeche: #2a1414;
+  --hinweis-fehler-rand: #7f1d1d;
+  --hinweis-fehler-text: #fecaca;
+  --hinweis-ok-flaeche: #102418;
+  --hinweis-ok-rand: #166534;
+  --hinweis-ok-text: #bbf7d0;
 
-/* Der Dunkelmodus als Überschreibung der Tailwind-Klassen statt als
- * Umschreiben jeder Komponente.
- *
- * Das ist bewusst der zweitbeste Weg. Sauberer wären eigene Klassen wie
- * `.karte` in jeder Komponente - das ist ein Umbau aller Seiten und gehört
- * gemacht, wenn die Oberfläche steht, nicht währenddessen. Bis dahin gilt:
- * Eine Farbe wird an genau einer Stelle festgelegt, hier.
- *
- * Der Preis ist benannt: Wer eine neue Grauabstufung verwendet, muss sie hier
- * ergänzen, sonst bleibt sie im Dunkelmodus hell. */
-#app-shell[data-theme='dark'] {
-  background-color: var(--flaeche-tief);
-  color: var(--text);
-}
-
-/* Auch hinter der App-Schale, sonst blitzt beim Überscrollen Weiß auf. */
-html:has(#app-shell[data-theme='dark']) body {
-  background: #0f172a;
-  color: #cbd5e1;
-}
-
-#app-shell[data-theme='dark'] .bg-white { background-color: var(--flaeche);  }
-#app-shell[data-theme='dark'] .bg-gray-50 { background-color: var(--flaeche-tief);  }
-#app-shell[data-theme='dark'] .bg-gray-100 { background-color: var(--flaeche-hoch);  }
-#app-shell[data-theme='dark'] .bg-black\/40 { background-color: rgb(0 0 0 / 0.6);  }
-
-#app-shell[data-theme='dark'] .hover\:bg-gray-50:hover { background-color: var(--flaeche-hoch);  }
-#app-shell[data-theme='dark'] .hover\:bg-gray-100:hover { background-color: var(--rand-stark);  }
-
-#app-shell[data-theme='dark'] .text-gray-900, #app-shell[data-theme='dark'] .text-gray-800 { color: var(--text-stark);  }
-#app-shell[data-theme='dark'] .text-gray-700, #app-shell[data-theme='dark'] .text-gray-600 { color: var(--text);  }
-#app-shell[data-theme='dark'] .text-gray-500, #app-shell[data-theme='dark'] .text-gray-400 { color: var(--text-schwach);  }
-
-#app-shell[data-theme='dark'] .border-gray-200 { border-color: var(--rand);  }
-#app-shell[data-theme='dark'] .border-gray-300 { border-color: var(--rand-stark);  }
-#app-shell[data-theme='dark'] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--rand);  }
-
-/* Eingabefelder erben sonst das Weiß des Browsers. */
-#app-shell[data-theme='dark'] input,
-#app-shell[data-theme='dark'] select,
-#app-shell[data-theme='dark'] textarea {
-  background-color: var(--flaeche-tief);
-  color: var(--text-stark);
-}
-#app-shell[data-theme='dark'] ::placeholder { color: var(--text-schwach);  }
-
-/* Getönte Kästen und Merkmale. Fläche dunkel, Schrift hell - das Paar
-* gehört zusammen, sonst steht dunkle Schrift auf dunkler Fläche. */
-/* Getönte Flächen dunkler als getönte Merkmale: Drei Kacheln nebeneinander
- * in kräftigem Braun übertönen sonst den Inhalt, den sie tragen. */
-#app-shell[data-theme='dark'] .bg-amber-50 { background-color: #451a03; }
-#app-shell[data-theme='dark'] .bg-amber-100 { background-color: #78350f; }
-#app-shell[data-theme='dark'] .text-amber-900, #app-shell[data-theme='dark'] .text-amber-800, #app-shell[data-theme='dark'] .text-amber-700, #app-shell[data-theme='dark'] .text-amber-600 { color: #fde68a;  }
-#app-shell[data-theme='dark'] .border-amber-200, #app-shell[data-theme='dark'] .border-amber-300 { border-color: #92400e;  }
-
-#app-shell[data-theme='dark'] .bg-red-50 { background-color: #450a0a; }
-#app-shell[data-theme='dark'] .bg-red-100 { background-color: #7f1d1d; }
-#app-shell[data-theme='dark'] .text-red-900, #app-shell[data-theme='dark'] .text-red-800, #app-shell[data-theme='dark'] .text-red-700 { color: #fecaca;  }
-#app-shell[data-theme='dark'] .text-red-400 { color: #fca5a5;  }
-#app-shell[data-theme='dark'] .border-red-200 { border-color: #991b1b;  }
-
-#app-shell[data-theme='dark'] .bg-blue-100 { background-color: #1e3a8a;  }
-#app-shell[data-theme='dark'] .text-blue-900, #app-shell[data-theme='dark'] .text-blue-800 { color: #bfdbfe;  }
-#app-shell[data-theme='dark'] .border-blue-200 { border-color: #1d4ed8;  }
-
-#app-shell[data-theme='dark'] .bg-green-100 { background-color: #14532d;  }
-#app-shell[data-theme='dark'] .text-green-800 { color: #bbf7d0;  }
-
-#app-shell[data-theme='dark'] .bg-orange-50 { background-color: #7c2d12;  }
-#app-shell[data-theme='dark'] .text-orange-900 { color: #fed7aa;  }
-#app-shell[data-theme='dark'] .border-orange-200 { border-color: #9a3412;  }
-
-#app-shell[data-theme='dark'] .bg-gray-200 { background-color: var(--rand-stark);  }
-
-@layer components {
-  .text-primary-custom { color: var(--primary-color); }
-  .bg-primary-custom {
-    background-color: var(--primary-color);
-    color: var(--primary-text-color);
-  }
-  .border-primary-custom { border-color: var(--primary-color); }
-
-  .focus\:border-primary-custom:focus { border-color: var(--primary-color); }
-  .focus\:ring-primary-custom:focus {
-    --tw-ring-color: var(--primary-color);
-  }
+  --merkmal-grau-flaeche: #243328;
+  --merkmal-grau-text: #c5d4c9;
+  --merkmal-gelb-flaeche: #3a2c0c;
+  --merkmal-gelb-text: #fde68a;
+  --merkmal-blau-flaeche: #1a2f44;
+  --merkmal-blau-text: #bfdbfe;
+  --merkmal-rot-flaeche: #3a1515;
+  --merkmal-rot-text: #fecaca;
+  --merkmal-gruen-flaeche: #14532d;
+  --merkmal-gruen-text: #bbf7d0;
 }
 
 @layer base {
+  html, body, #root {
+    min-height: 100%;
+    background: var(--canvas);
+    color: var(--text-stark);
+  }
+
   body {
     margin: 0;
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    background: #f9fafb;
-    color: #111827;
-  }
-
-  /* Mindestgröße für Touch-Ziele. Vorbereitung für AP-2.12; billiger jetzt
-     als später an dreißig Stellen nachzuziehen. */
-  button,
-  [role='button'],
-  input[type='submit'],
-  input[type='button'] {
-    min-height: 44px;
   }
 
   /* Sichtbarer Fokus. Ohne ihn ist die Anwendung mit Tastatur unbedienbar. */
@@ -169,7 +138,951 @@ html:has(#app-shell[data-theme='dark']) body {
     outline-offset: 2px;
   }
 
-  /* Feste Bereiche dürfen nicht unter Notch oder Gestenleiste rutschen. */
+  /*
+   * Innerhalb einer Liste wird der Ring nach innen gezeichnet (AP-2.18).
+   *
+   * `.liste` schneidet ihre Kinder an den runden Ecken ab (`overflow: hidden`).
+   * Der Ring mit +2 px Versatz fiel damit genau in den Schnitt: nachgemessen
+   * lag die fokussierte Zeile bei x = 273, die Liste bei x = 272 – links und
+   * oben war vom Ring nichts zu sehen. Eine Anzeige, die man mit der Tastatur
+   * ansteuert, muss man auch finden.
+   */
+  .liste :focus-visible { outline-offset: -2px; }
+
   .safe-oben { padding-top: env(safe-area-inset-top, 0); }
   .safe-unten { padding-bottom: env(safe-area-inset-bottom, 0); }
 }
+
+@layer components {
+  .text-primary-custom { color: var(--primary-color); }
+  .bg-primary-custom {
+    background-color: var(--primary-color);
+    color: var(--primary-text-color);
+  }
+  .border-primary-custom { border-color: var(--primary-color); }
+  .focus\:border-primary-custom:focus { border-color: var(--primary-color); }
+  .focus\:ring-primary-custom:focus { --tw-ring-color: var(--primary-color); }
+
+  /*
+   * Kopfleiste mit reserviertem Höhen-Slot (AP-2.26). Feste Höhe statt
+   * inhaltsgetriebener: Status-Pille, Glocken-Badge und die Eingriff-Pille
+   * dürfen erscheinen und verschwinden, ohne die Leiste - und damit Sidebar
+   * und Hauptfläche darunter - höher oder niedriger zu machen. Die
+   * Notch-Einfassung von `.safe-oben` legt sich oben zusätzlich drauf, statt
+   * vom Slot abzugehen. `flex-shrink: 0`, damit eine lange Hauptfläche die
+   * Leiste im Spalten-Flex nicht zusammendrückt.
+   */
+  .topbar {
+    height: calc(var(--topbar-hoehe) + env(safe-area-inset-top, 0px));
+    flex-shrink: 0;
+  }
+
+  .text-stark { color: var(--text-stark); }
+  .text-normal { color: var(--text); }
+  .text-leise { color: var(--text-schwach); }
+
+  .beschriftung {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 550;
+    color: var(--text-stark);
+  }
+
+  .marke {
+    display: flex;
+    height: 32px;
+    width: 32px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+  }
+
+  .nav-link {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 44px;
+    border: 0;
+    border-left: 3px solid transparent;
+    border-radius: 0 10px 10px 0;
+    background: transparent;
+    padding: 0.5rem 0.875rem;
+    text-align: left;
+    font-size: 0.875rem;
+    letter-spacing: -0.01em;
+    color: var(--sidebar-text);
+  }
+  /* Schweben war bisher genauso kräftig wie Aktiv - beide auf
+     `--sidebar-aktiv`. Damit sah beim Zeigen jeder Eintrag aus wie der offene.
+     Schweben ist jetzt die halbe Deckkraft derselben Fläche, ohne dass eine
+     neue Farbe dazukommt (AP-2.17). */
+  .nav-link:hover {
+    background: color-mix(in srgb, var(--sidebar-aktiv) 55%, transparent);
+    color: #ffffff;
+  }
+  .nav-link-aktiv,
+  .nav-link-aktiv:hover {
+    border-left-color: var(--primary-akzent);
+    background: var(--sidebar-aktiv);
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .nav-link-aktiv svg { color: var(--primary-akzent); }
+  .nav-unter { padding-left: 1.75rem; }
+
+  /* Gruppenzeile über einem Navigationsblock. Vorher als Utility-Kette am
+     Element; hier steht sie neben den Einträgen, mit denen sie ausgerichtet
+     sein muss. */
+  .nav-gruppe {
+    margin: 1rem 0 0.2rem;
+    padding-inline: 0.875rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sidebar-text-schwach);
+  }
+
+  /* Ab lg bedient ein Zeigegerät die Leiste, kein Daumen - dort darf sie
+     dichter stehen (AP-2.17). Darunter bleiben es 44 px, weil dort die mobile
+     Schublade angetippt wird und 44 px die kleinste vernünftige Trefferfläche
+     sind. */
+  @media (min-width: 1024px) {
+    .nav-link {
+      min-height: 38px;
+      padding-block: 0.3rem;
+    }
+    .nav-gruppe { margin-top: 0.85rem; }
+  }
+
+  /* Der Drei-Wege-Theme-Schalter im Sidebar-Fuß (AP-2.27) ist mit AP-2.32
+     entfallen - die Theme-Wahl sitzt jetzt allein unter Einstellungen ›
+     Darstellung. */
+
+  /* Zähler am Nav-Punkt „Warteschlange" (AP-2.31): nur sichtbar, wenn Läufe
+     aktiv sind. Ersetzt die frühere Mini-Liste unter der Nav (AP-2.28) - ein
+     Einstieg statt zwei. Farbe aus dem Akzent, damit sie hell und dunkel trägt. */
+  .nav-zaehler {
+    flex-shrink: 0;
+    min-width: 1.25rem;
+    border-radius: 999px;
+    background: var(--primary-akzent);
+    padding: 0.05rem 0.4rem;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.15rem;
+    color: var(--sidebar);
+  }
+
+  /*
+   * Eine Breite für alle Inhaltsseiten (AP-2.14). Vorher lief jede Seite auf
+   * eigener max-width - 3xl bis 6xl -, und beim Wechseln in der Seitenleiste
+   * sprang der Inhalt hin und her. 72rem ist die Breite der Anzeigenliste; sie
+   * gibt der Liste mit Vorschaubild genug Platz und lässt Fließtext nicht
+   * unlesbar breit werden.
+   *
+   * Ausgenommen bleiben die Anmeldung (schmaler Kasten) und alles, was
+   * ausdrücklich die volle Spalte braucht.
+   */
+  .seite {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+  }
+
+  /*
+   * Breitere Kante, nur für den Editor und die Neue-Anzeige-Maske (AP-2.24).
+   * Beide sind zweispaltig - Fotos neben Feldern - und gewinnen mit mehr Platz
+   * echte Dichte: die Feldraster füllen sich, Chip-Reihen brechen später um,
+   * es bleibt weniger zu scrollen. Fließtext wird davon nicht breiter, der
+   * bleibt über `.lesebreite` gedeckelt.
+   *
+   * Listen und Übersicht behalten ihre gemeinsame 72rem-Kante aus AP-2.14 -
+   * die wird hier nicht angefasst. Und bis rund 1440 px Fensterbreite greift
+   * dieser Deckel ohnehin nicht: nach Abzug von Seitenleiste (15rem) und
+   * Seitenrand bleiben keine 72rem übrig, also ist die Seite dort schon so
+   * breit wie hier. Der gewonnene Platz liegt erst darüber, zwischen 72 und
+   * 86rem.
+   */
+  .seite-breit {
+    width: 100%;
+    max-width: 86rem;
+    margin-inline: auto;
+  }
+
+  /*
+   * Lesebreite für Fließtext und einzelne Eingaben (AP-2.16).
+   *
+   * `.seite` gibt allen Inhaltsseiten eine gemeinsame Kante bei 72rem. Das ist
+   * richtig für Listen, Karten und Leisten – aber zu breit für Text: auf
+   * 1152 px laufen Zeilen über rund 150 Zeichen, angenehm zu lesen sind 45–90.
+   * Ein einzeiliges Eingabefeld über die volle Breite sieht aus demselben Grund
+   * verloren aus.
+   *
+   * Die Regel dahinter: Was die Seite baut – Karten, Listen, Reiterleiste,
+   * Speichern-Leiste, Kennzahlraster – behält die volle Breite, damit die Kante
+   * steht. Was gelesen oder einzeln ausgefüllt wird, wird hier gedeckelt.
+   * Deshalb wird `.seite` dafür nicht wieder aufgebrochen.
+   *
+   * `ch` statt `rem`, und das ist der Punkt: Der Deckel soll eine Zeilenlänge
+   * sein, keine Pixelzahl. Ein fester Wert trifft nur eine Schriftgröße – 42rem
+   * ergaben in dieser Schrift 106 Zeichen bei `text-sm` und 120 bei `text-xs`,
+   * also genau das, was vermieden werden sollte. Mit `ch` wandert der Deckel
+   * mit: 52ch sind hier gemessen rund 70 Zeichen je Zeile, bei jeder der
+   * verwendeten Größen. (Ein `ch` ist die Breite der Null und damit rund 1,36
+   * mal so breit wie ein Durchschnittszeichen – deshalb 52 und nicht 70.)
+   */
+  .lesebreite { max-width: 52ch; }
+
+  .seite-kopf {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.75rem;
+  }
+  @media (min-width: 640px) {
+    .seite-kopf {
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+  }
+
+  .seite-titel {
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--text-stark);
+    line-height: 1.2;
+  }
+  /* Eine Seitenbeschreibung ist per Definition Fließtext und trägt die
+     Lesebreite deshalb schon eingebaut (AP-2.16) – niemand muss daran denken. */
+  .seite-beschrieb {
+    margin-top: 0.3rem;
+    max-width: 52ch;
+    font-size: 0.875rem;
+    color: var(--text-schwach);
+  }
+
+  /* Überschrift einer Feldgruppe im Editor (AP-2.15). Kleiner als eine
+     Seitenüberschrift, aber kräftig genug, dass die Gruppen beim Überfliegen
+     auseinanderfallen. */
+  .karte-kopf {
+    margin-bottom: 0.9rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-stark);
+  }
+
+  /* Bildkacheln füllen ihre Spalte (AP-2.15). Seit AP-2.30 steht je Kachel
+     eine Zeile in der scrollbaren Fotospalte (`.bild-spalte`). */
+  .bild-kachel {
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .karte {
+    border-radius: var(--radius-karte);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    box-shadow: var(--schatten);
+  }
+
+  .kachel {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    text-align: left;
+    border-radius: var(--radius-karte);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    padding: 1.15rem 1.2rem 1.05rem;
+    box-shadow: var(--schatten);
+    color: inherit;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  button.kachel:hover,
+  a.kachel:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--karte-rand));
+    box-shadow: 0 1px 2px rgb(20 32 23 / 0.04), 0 12px 28px rgb(20 32 23 / 0.1);
+  }
+  .kachel-zahl {
+    font-size: 1.875rem;
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    color: var(--text-stark);
+    line-height: 1.05;
+  }
+  .kachel-label {
+    margin-top: 0.35rem;
+    font-size: 0.8125rem;
+    color: var(--text-schwach);
+  }
+  .kachel-betont {
+    background: var(--primary-light);
+    border-color: color-mix(in srgb, var(--primary-color) 28%, var(--karte-rand));
+  }
+
+  .liste {
+    overflow: hidden;
+    border-radius: var(--radius-karte);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    box-shadow: var(--schatten);
+  }
+  .liste > li + li,
+  .liste > .zeile + .zeile {
+    border-top: 1px solid var(--karte-rand);
+  }
+
+  .zeile {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 1rem;
+    min-height: 0 !important;
+    border: 0;
+    background: transparent;
+    padding: 0.85rem 1rem;
+    text-align: left;
+    color: inherit;
+    border-radius: 0;
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+  button.zeile { cursor: pointer; }
+  button.zeile:hover {
+    background: var(--primary-light);
+  }
+
+  .feld {
+    width: 100%;
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    color: var(--text-stark);
+    padding: 0.55rem 0.8rem;
+    font-size: 0.875rem;
+  }
+  .feld::placeholder { color: var(--text-schwach); }
+  .feld:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px var(--primary-color);
+  }
+  select.feld { min-height: 44px; }
+
+  /*
+   * Feldbreiten nach Inhalt (AP-2.35).
+   *
+   * `.feld` ist `width: 100%` - richtig für Titel und Beschreibung, falsch für
+   * alles Kurze. Ein Preisfeld über die halbe Karte sieht nicht nach „Preis"
+   * aus, sondern nach vergessenem Platz, und das Auge sucht die Zahl am
+   * falschen Ende. Beide Klassen deckeln nur; auf schmalen Fenstern greift
+   * weiterhin die volle Breite.
+   */
+  .feld-zahl {
+    width: 100%;
+    max-width: 9rem;
+  }
+  .feld-auswahl {
+    width: 100%;
+    max-width: 16rem;
+  }
+
+  .btn-primaer,
+  .btn-ghost,
+  .btn-leise,
+  button[type='submit'],
+  input[type='submit'],
+  input[type='button'] {
+    min-height: 44px;
+  }
+
+  .btn-primaer {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 0;
+    border-radius: var(--radius-kontrolle);
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 550;
+  }
+  .btn-primaer:hover:not(:disabled) { background: var(--primary-hover); }
+  .btn-primaer:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--primary-light); }
+  .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-leise {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-kontrolle);
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8125rem;
+    color: var(--text-schwach);
+  }
+  .btn-leise:hover { color: var(--text-stark); background: var(--primary-light); }
+
+  .leer {
+    border-radius: var(--radius-karte);
+    border: 1px dashed var(--karte-rand);
+    background: transparent;
+    padding: 2rem 1.5rem;
+    text-align: center;
+    color: var(--text);
+    font-size: 0.875rem;
+  }
+
+  .merkmal {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: var(--radius-pille);
+    padding: 0.15rem 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 550;
+    letter-spacing: 0.01em;
+    line-height: 1.3;
+  }
+  .merkmal-grau { background: var(--merkmal-grau-flaeche); color: var(--merkmal-grau-text); }
+  .merkmal-gelb { background: var(--merkmal-gelb-flaeche); color: var(--merkmal-gelb-text); }
+  .merkmal-blau { background: var(--merkmal-blau-flaeche); color: var(--merkmal-blau-text); }
+  .merkmal-rot { background: var(--merkmal-rot-flaeche); color: var(--merkmal-rot-text); }
+  .merkmal-gruen { background: var(--merkmal-gruen-flaeche); color: var(--merkmal-gruen-text); }
+
+  .job-pille {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 32px;
+    white-space: nowrap;
+    border-radius: var(--radius-pille);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    padding: 0.2rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--text);
+  }
+  .job-pille-eingabe {
+    border-color: var(--hinweis-warn-rand);
+    background: var(--hinweis-warn-flaeche);
+    color: var(--hinweis-warn-text);
+  }
+
+  .reiter-leiste {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    background: var(--karte);
+    border: 1px solid var(--karte-rand);
+    border-radius: 12px;
+    box-shadow: var(--schatten);
+  }
+  .reiter {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    border: 0;
+    border-radius: var(--radius-pille);
+    background: transparent;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.875rem;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .reiter:hover { background: var(--primary-light); }
+  .reiter-aktiv {
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+    font-weight: 550;
+  }
+  .reiter-aktiv:hover { background: var(--primary-hover); color: var(--primary-text-color); }
+
+  /*
+   * Versandpaket-Auswahl (AP-2.23): ein Chip je Paket, Name und Live-Preis in
+   * einer Zeile. Ausgewählt ist es an Waldgrün-Rand, hellgrüner Fläche und
+   * Häkchen erkennbar – ohne die volle Primärfläche, damit die Karte ruhig
+   * bleibt, auch wenn mehrere Chips derselben Größe aktiv sind. Alle Werte aus
+   * den Tokens, der Dunkelmodus trägt darüber.
+   */
+  .vp-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    min-height: 36px;
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    padding: 0.3rem 0.65rem;
+    font-size: 0.8125rem;
+    color: var(--text);
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  }
+  .vp-chip:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--karte-rand));
+    background: var(--primary-light);
+  }
+  .vp-chip-aktiv,
+  .vp-chip-aktiv:hover {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+    color: var(--text-stark);
+    font-weight: 550;
+  }
+  .vp-chip svg { align-self: center; color: var(--primary-color); }
+  .vp-chip-preis { color: var(--text-schwach); font-variant-numeric: tabular-nums; }
+  .vp-chip-aktiv .vp-chip-preis { color: var(--primary-color); }
+
+  .hinweis {
+    border-radius: 12px;
+    border: 1px solid var(--hinweis-ok-rand);
+    background: var(--hinweis-ok-flaeche);
+    color: var(--hinweis-ok-text);
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+  }
+  .hinweis-warn {
+    border-color: var(--hinweis-warn-rand);
+    background: var(--hinweis-warn-flaeche);
+    color: var(--hinweis-warn-text);
+  }
+  .hinweis-fehler {
+    border-color: var(--hinweis-fehler-rand);
+    background: var(--hinweis-fehler-flaeche);
+    color: var(--hinweis-fehler-text);
+  }
+
+  .dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 11rem;
+    width: 100%;
+    border-radius: var(--radius-karte);
+    border: 2px dashed var(--karte-rand);
+    background: var(--karte);
+    color: var(--text-schwach);
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: var(--schatten);
+  }
+  .dropzone:hover,
+  .dropzone-aktiv {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+    color: var(--primary-color);
+  }
+
+  /*
+   * Auswahlkästchen (AP-2.34). Tailwinds `h-4 w-4` sind 16x16 - unter dem
+   * Mindestmaß von 24x24 aus WCAG 2.5.8 und auf einem Telefon ein Glücksspiel.
+   * Der Kasten selbst bleibt sichtbar 16px; vergrößert wird die Fläche, die
+   * Klick und Fingertipp annimmt. `accent-color` zieht ihn zugleich ins
+   * Waldgrün, statt das Systemblau stehen zu lassen.
+   */
+  input[type='checkbox'] {
+    min-width: 24px;
+    min-height: 24px;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+
+  .status-punkt {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex-shrink: 0;
+    border-radius: var(--radius-pille);
+    background: var(--status-neutral);
+  }
+  .status-punkt-gruen { background: var(--status-erfolg); }
+  .status-punkt-gelb { background: var(--status-warnung); }
+  .status-punkt-rot { background: var(--status-fehler); }
+  .status-punkt-grau { background: var(--status-neutral); }
+
+  .dialog {
+    max-height: 85vh;
+    width: 100%;
+    max-width: 32rem;
+    overflow-y: auto;
+    border-radius: var(--radius-karte);
+    background: var(--karte);
+    border: 1px solid var(--karte-rand);
+    box-shadow: var(--schatten), 0 24px 48px rgb(20 32 23 / 0.16);
+    padding: 1.25rem 1.5rem;
+    color: var(--text);
+  }
+
+  .leiste-fix {
+    border-top: 1px solid var(--karte-rand);
+    background: var(--karte);
+  }
+
+  .sidebar-schale {
+    background: var(--sidebar);
+    color: var(--sidebar-text);
+    border-right: 1px solid var(--sidebar-rand);
+    /* Das Auffangnetz sitzt an der Schale, nicht mehr an der Navigation
+       (AP-2.17). Auf jedem normalen Fenster ist die Leiste rund 500 px hoch
+       und der Bildschirm mindestens 600 - da entsteht kein Balken. Nur wo das
+       nicht mehr stimmt, etwa in der Schublade auf einem quer gehaltenen
+       Telefon, bleibt Abmelden erreichbar, statt unten abgeschnitten zu sein. */
+    overflow-y: auto;
+  }
+
+  /*
+   * Hinweise & Benachrichtigungen (AP-2.25).
+   *
+   * `.hinweis-schliessen` blendet ein Instruktionsbanner weg; der Zustand
+   * hängt je Kennung in localStorage. `.info-tip` ist die kleine Kurzhilfe
+   * statt eines Dauerbanners. `.glocke*` sammelt Lauf-Meldungen in der
+   * Kopfleiste. Alles über die vorhandenen Token, damit hell und dunkel ohne
+   * Sonderfall tragen.
+   */
+  .hinweis-schliessen {
+    flex-shrink: 0;
+    margin: -0.2rem -0.35rem -0.2rem 0;
+    border-radius: var(--radius-kontrolle);
+    padding: 0.25rem;
+    color: inherit;
+    opacity: 0.65;
+  }
+  .hinweis-schliessen:hover {
+    opacity: 1;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+  }
+
+  .info-tip {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+  /* 24x24 als Trefferfläche (AP-2.34). Vorher 21x21 - unter dem Mindestmaß
+     aus WCAG 2.5.8, und mit dem Finger auf einem Telefon kaum zu treffen. Das
+     Symbol bleibt 16px, gewachsen ist nur die Fläche darum. */
+  .info-tip-knopf {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    border: 0;
+    border-radius: var(--radius-pille);
+    background: transparent;
+    padding: 0.15rem;
+    color: var(--text-schwach);
+    cursor: help;
+  }
+  .info-tip-knopf:hover { color: var(--text); }
+  /*
+   * Die Blase hing an `left: 0` und lief auf 375 px rechts aus dem Bild
+   * (AP-2.34). Jetzt klebt sie am rechten Rand ihres Ankers und darf höchstens
+   * so breit werden, wie im Sichtfeld Platz ist. `right: 0` statt `left: 0`,
+   * weil die Kurzhilfen am Zeilenende stehen - links ist immer Platz, rechts
+   * die Kante.
+   */
+  .info-tip-blase {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 30;
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 2rem));
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    box-shadow: var(--schatten);
+    padding: 0.5rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--text);
+    text-align: left;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s ease;
+  }
+  .info-tip:hover .info-tip-blase,
+  .info-tip:focus-within .info-tip-blase {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .glocke-knopf {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    min-width: 32px;
+    border-radius: var(--radius-pille);
+    border: 0;
+    background: transparent;
+    color: var(--text-schwach);
+  }
+  .glocke-knopf:hover { color: var(--text-stark); background: var(--primary-light); }
+  .glocke-zahl {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    border-radius: var(--radius-pille);
+    background: var(--primary-color);
+    color: var(--primary-text-color);
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 15px;
+    text-align: center;
+  }
+  .glocke-zahl-eingabe {
+    background: var(--hinweis-warn-rand);
+    color: var(--hinweis-warn-text);
+  }
+  .glocke-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 40;
+    width: 20rem;
+    max-width: calc(100vw - 2rem);
+    border-radius: var(--radius-karte);
+    border: 1px solid var(--karte-rand);
+    background: var(--karte);
+    box-shadow: var(--schatten), 0 16px 40px rgb(20 32 23 / 0.16);
+    overflow: hidden;
+  }
+  .glocke-kopf {
+    padding: 0.6rem 0.9rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-stark);
+    border-bottom: 1px solid var(--karte-rand);
+  }
+  .glocke-zeile {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8125rem;
+    color: var(--text);
+    text-align: left;
+    background: transparent;
+    border: 0;
+  }
+  .glocke-zeile:hover { background: var(--primary-light); }
+  .glocke-zeile + .glocke-zeile { border-top: 1px solid var(--karte-rand); }
+  .glocke-fuss {
+    display: block;
+    width: 100%;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    color: var(--primary-color);
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--karte-rand);
+  }
+  .glocke-fuss:hover { background: var(--primary-light); }
+  .glocke-leer {
+    padding: 0.9rem;
+    font-size: 0.8125rem;
+    color: var(--text-schwach);
+  }
+
+  /*
+   * Meldungen in der Glocke (AP-2.30): ein farbiger Kasten je Schwere, Symbol
+   * links, Wegklicken rechts. Alle Farben aus den `--hinweis-*`-Token, damit
+   * hell und dunkel ohne Sonderfall tragen. Pop-in beim Aufklappen zeigt, dass
+   * etwas Neues da ist.
+   */
+  .glocke-meldungen {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.55rem 0.6rem;
+  }
+  .glocke-meldung {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    border-radius: var(--radius-kontrolle);
+    border: 1px solid var(--hinweis-ok-rand);
+    background: var(--hinweis-ok-flaeche);
+    color: var(--hinweis-ok-text);
+    padding: 0.5rem 0.55rem;
+    animation: glocke-popin 0.18s ease-out;
+  }
+  .glocke-meldung-tipp {
+    border-color: var(--hinweis-ok-rand);
+    background: var(--hinweis-ok-flaeche);
+    color: var(--hinweis-ok-text);
+  }
+  .glocke-meldung-hinweis {
+    border-color: var(--hinweis-warn-rand);
+    background: var(--hinweis-warn-flaeche);
+    color: var(--hinweis-warn-text);
+  }
+  .glocke-meldung-warnung {
+    border-color: var(--hinweis-fehler-rand);
+    background: var(--hinweis-fehler-flaeche);
+    color: var(--hinweis-fehler-text);
+  }
+  .glocke-meldung-titel {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .glocke-meldung-text {
+    margin-top: 0.1rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .glocke-kopf-zwischen { border-top: 1px solid var(--karte-rand); }
+
+  .glocke-knopf-puls { animation: glocke-puls 0.7s ease-out; }
+
+  @keyframes glocke-popin {
+    from { opacity: 0; transform: translateY(-0.25rem) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes glocke-puls {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.18); }
+    60% { transform: scale(0.96); }
+    100% { transform: scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glocke-meldung, .glocke-knopf-puls { animation: none; }
+  }
+
+  /*
+   * Editor-Layout Mockup v4 (AP-2.30).
+   *
+   * `.editor-kopf` ist die eine Kopfzeile: Titel und - sobald AP-3.10 sie
+   * liefert - ein „Gelöscht"-Badge, ohne „Zurück"-Link. `.editor-bilder` hält
+   * die Fotospalte ab md stehen und lässt sie für sich scrollen (`.bild-spalte`
+   * deckelt die Höhe). `.btn-ghost-klein` ist der kompakte Knopf im
+   * Bilder-Kopf.
+   */
+  .editor-kopf {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .bild-spalte {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    max-height: min(60vh, 34rem);
+    overflow-y: auto;
+    padding-right: 0.15rem;
+  }
+
+  @media (min-width: 768px) {
+    .editor-bilder {
+      position: sticky;
+      top: calc(var(--topbar-hoehe) + 1rem);
+    }
+  }
+
+  .btn-ghost-klein {
+    min-height: 36px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* Rest: leftover gray-* still used in nested chrome. Tokens, not slate. */
+#app-shell[data-theme='dark'] .bg-white { background-color: var(--karte); }
+#app-shell[data-theme='dark'] .bg-gray-50 { background-color: var(--canvas); }
+#app-shell[data-theme='dark'] .bg-gray-100 { background-color: var(--karte-rand); }
+#app-shell[data-theme='dark'] .bg-black\/40 { background-color: rgb(0 0 0 / 0.6); }
+#app-shell[data-theme='dark'] .hover\:bg-gray-50:hover { background-color: var(--primary-light); }
+#app-shell[data-theme='dark'] .hover\:bg-gray-100:hover { background-color: var(--karte-rand); }
+#app-shell[data-theme='dark'] .text-gray-900,
+#app-shell[data-theme='dark'] .text-gray-800 { color: var(--text-stark); }
+#app-shell[data-theme='dark'] .text-gray-700,
+#app-shell[data-theme='dark'] .text-gray-600 { color: var(--text); }
+#app-shell[data-theme='dark'] .text-gray-500,
+#app-shell[data-theme='dark'] .text-gray-400 { color: var(--text-schwach); }
+#app-shell[data-theme='dark'] .border-gray-100,
+#app-shell[data-theme='dark'] .border-gray-200 { border-color: var(--karte-rand); }
+#app-shell[data-theme='dark'] .border-gray-300 { border-color: var(--karte-rand); }
+#app-shell[data-theme='dark'] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--karte-rand); }
+#app-shell[data-theme='dark'] input:not(.feld),
+#app-shell[data-theme='dark'] select:not(.feld),
+#app-shell[data-theme='dark'] textarea:not(.feld) {
+  background-color: var(--canvas);
+  color: var(--text-stark);
+}
+#app-shell[data-theme='dark'] ::placeholder { color: var(--text-schwach); }
+#app-shell[data-theme='dark'] .bg-amber-50 { background-color: var(--hinweis-warn-flaeche); }
+#app-shell[data-theme='dark'] .bg-amber-100 { background-color: var(--merkmal-gelb-flaeche); }
+#app-shell[data-theme='dark'] .text-amber-900,
+#app-shell[data-theme='dark'] .text-amber-800,
+#app-shell[data-theme='dark'] .text-amber-700,
+#app-shell[data-theme='dark'] .text-amber-600 { color: var(--hinweis-warn-text); }
+#app-shell[data-theme='dark'] .border-amber-200,
+#app-shell[data-theme='dark'] .border-amber-300 { border-color: var(--hinweis-warn-rand); }
+#app-shell[data-theme='dark'] .bg-red-50 { background-color: var(--hinweis-fehler-flaeche); }
+#app-shell[data-theme='dark'] .bg-red-100 { background-color: var(--merkmal-rot-flaeche); }
+#app-shell[data-theme='dark'] .text-red-900,
+#app-shell[data-theme='dark'] .text-red-800,
+#app-shell[data-theme='dark'] .text-red-700 { color: var(--hinweis-fehler-text); }
+#app-shell[data-theme='dark'] .text-red-400 { color: #fca5a5; }
+#app-shell[data-theme='dark'] .border-red-200,
+#app-shell[data-theme='dark'] .border-red-300 { border-color: var(--hinweis-fehler-rand); }
+#app-shell[data-theme='dark'] .bg-blue-100 { background-color: var(--merkmal-blau-flaeche); }
+#app-shell[data-theme='dark'] .text-blue-900,
+#app-shell[data-theme='dark'] .text-blue-800 { color: var(--merkmal-blau-text); }
+#app-shell[data-theme='dark'] .border-blue-200 { border-color: #1d4ed8; }
+#app-shell[data-theme='dark'] .bg-green-50,
+#app-shell[data-theme='dark'] .bg-green-100 { background-color: var(--hinweis-ok-flaeche); }
+/* `text-green-600` fehlte in dieser Abbildung (AP-2.18) und blieb im Dunkeln
+   auf Tailwinds #16a34a stehen - das Häkchen an einer beantworteten Rückfrage
+   war auf der dunklen Karte kaum zu sehen. Keine neue Farbe: derselbe Token,
+   den der Dunkelmodus ohnehin für Erfolg führt. */
+#app-shell[data-theme='dark'] .text-green-600 { color: var(--status-erfolg); }
+#app-shell[data-theme='dark'] .text-green-800 { color: var(--hinweis-ok-text); }
+#app-shell[data-theme='dark'] .bg-orange-50 { background-color: #3a1e0c; }
+#app-shell[data-theme='dark'] .text-orange-900 { color: #fed7aa; }
+#app-shell[data-theme='dark'] .border-orange-200 { border-color: #9a3412; }
+#app-shell[data-theme='dark'] .bg-gray-200 { background-color: var(--karte-rand); }

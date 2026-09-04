@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from anzeigen_studio.bestand import (
+    BestandsAnzeige,
     bearbeiten,
     bestand_lesen,
     bilder,
@@ -57,6 +58,32 @@ VOLLSTAENDIG = """
     updated_on:
     """
 
+#: Eine eigene Anzeige, die auf der Plattform nicht mehr aktiv ist (AP-3.10).
+#: Nummer wie im Projektplan-Beispiel: 3461223245 (Fire Stick).
+GELOESCHT = """
+    active: false
+    type: OFFER
+    title: Amazon Fire TV Stick
+    description: Lag im Schrank
+    category: 161/168
+    price: 15
+    price_type: FIXED
+    id: 3461223245
+    created_on: '2026-02-01T00:00:00+01:00'
+    updated_on:
+    """
+
+#: Wie GELOESCHT, aber ohne Anzeigennummer: ein lokaler Entwurf, der nie
+#: online war. `active: false` allein macht ihn nicht zu etwas Geloeschtem.
+ENTWURF_INAKTIV = """
+    active: false
+    type: OFFER
+    title: Amazon Fire TV Stick
+    description: Lag im Schrank
+    price: 15
+    price_type: FIXED
+    """
+
 
 class TestLesen:
 
@@ -80,6 +107,19 @@ class TestLesen:
         assert anzeige.bilder == 1
         assert anzeige.vorschaubild == "ad_1__img1.jpg"
         assert anzeige.datei.startswith("downloaded-ads/")
+        assert anzeige.herkunft == "eigene"
+
+    def test_fremde_ads_werden_gelesen(self, tmp_path:Path) -> None:
+        """Per Link geholte Anzeigen liegen in fremde-ads/ und gelten als fremd."""
+        ziel = tmp_path / "fremde-ads" / "ad_fremd"
+        ziel.mkdir(parents = True)
+        (ziel / "ad_fremd.yaml").write_text("title: Von jemand anderem\nid: 111222333\n", encoding = "utf-8")
+
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+
+        assert anzeige.herkunft == "fremde"
+        assert anzeige.datei.startswith("fremde-ads/")
+        assert anzeige.titel == "Von jemand anderem"
 
     def test_fehlendes_bild_verschweigt_die_anzeige_nicht(self, tmp_path:Path) -> None:
         """Die YAML nennt ein Bild, das nicht daliegt - die Anzeige bleibt sichtbar."""
@@ -491,3 +531,132 @@ class TestLinksLesen:
         """Preise, Postleitzahlen und Jahreszahlen sind keine Anzeigennummern."""
         fund = links.nummern_lesen("Kostet 45 Euro, PLZ 21337, Baujahr 2019")
         assert fund.nummern == []
+
+
+
+class TestHerkunft:
+    """Umsortieren eigene <-> fremde (Ordnerwechsel)."""
+
+    def test_eigene_wird_fremd(self, tmp_path:Path) -> None:
+        from anzeigen_studio.bestand.lesen import herkunft_setzen
+
+        _anzeige_schreiben(tmp_path, "ad_1", "ad_1", VOLLSTAENDIG)
+        (tmp_path / "downloaded-ads" / "ad_1" / "ad_1__img1.jpg").write_bytes(b"x")
+        datei = "downloaded-ads/ad_1/ad_1.yaml"
+
+        kopf = herkunft_setzen(tmp_path, datei, "fremde")
+
+        assert kopf.herkunft == "fremde"
+        assert kopf.datei.startswith("fremde-ads/")
+        assert (tmp_path / "fremde-ads" / "ad_1" / "ad_1.yaml").is_file()
+        assert (tmp_path / "fremde-ads" / "ad_1" / "ad_1__img1.jpg").is_file()
+        assert not (tmp_path / "downloaded-ads" / "ad_1").exists()
+
+    def test_schon_passend_laesst_liegen(self, tmp_path:Path) -> None:
+        from anzeigen_studio.bestand.lesen import herkunft_setzen
+
+        _anzeige_schreiben(tmp_path, "ad_1", "ad_1", VOLLSTAENDIG)
+        datei = "downloaded-ads/ad_1/ad_1.yaml"
+        kopf = herkunft_setzen(tmp_path, datei, "eigene")
+        assert kopf.herkunft == "eigene"
+        assert kopf.datei == datei
+
+    def test_verschieben_behaelt_active_false(self, tmp_path:Path) -> None:
+        """Ein Ordnerwechsel darf `active: false` nicht stillschweigend verlieren (AP-3.10)."""
+        from anzeigen_studio.bestand.lesen import herkunft_setzen
+
+        _anzeige_schreiben(tmp_path, "ad_fire", "ad_fire", GELOESCHT)
+        datei = "downloaded-ads/ad_fire/ad_fire.yaml"
+
+        nach_fremde = herkunft_setzen(tmp_path, datei, "fremde")
+        assert nach_fremde.aktiv is False
+        assert "active: false" in (tmp_path / nach_fremde.datei).read_text(encoding = "utf-8")
+        # Als fremde Anzeige ist der Kontostatus nicht mehr unsere Sache.
+        assert nach_fremde.geloescht is False
+
+        zurueck = herkunft_setzen(tmp_path, nach_fremde.datei, "eigene")
+        assert zurueck.aktiv is False
+        assert zurueck.geloescht is True
+        assert "active: false" in (tmp_path / zurueck.datei).read_text(encoding = "utf-8")
+
+
+class TestKlassifikation:
+    """Gelöschte / nicht mehr aktive eigene Anzeigen (AP-3.10)."""
+
+    def test_eigene_inaktive_mit_nummer_gilt_als_geloescht(self, tmp_path:Path) -> None:
+        _anzeige_schreiben(tmp_path, "ad_fire", "ad_fire", GELOESCHT)
+
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+
+        assert anzeige.id == 3461223245
+        assert anzeige.aktiv is False
+        assert anzeige.geloescht is True
+
+    def test_aktive_eigene_ist_nicht_geloescht(self, tmp_path:Path) -> None:
+        _anzeige_schreiben(tmp_path, "ad_1", "ad_1", VOLLSTAENDIG)
+
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+
+        assert anzeige.aktiv is True
+        assert anzeige.geloescht is False
+
+    def test_entwurf_ohne_nummer_ist_nicht_geloescht(self, tmp_path:Path) -> None:
+        """`active: false` ohne Anzeigennummer: nie online gewesen, also kein „Gelöscht"."""
+        _anzeige_schreiben(tmp_path, "entwurf", "entwurf", ENTWURF_INAKTIV)
+
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+
+        assert anzeige.id is None
+        assert anzeige.aktiv is False
+        assert anzeige.geloescht is False
+
+    def test_fremde_inaktive_ist_nicht_geloescht(self, tmp_path:Path) -> None:
+        """fremde-ads/ ist kein Konto-Bestand - der Status geht uns nichts an."""
+        ziel = tmp_path / "fremde-ads" / "ad_fremd"
+        ziel.mkdir(parents = True)
+        (ziel / "ad_fremd.yaml").write_text(
+            "title: Von jemand anderem\nid: 111222333\nactive: false\n", encoding = "utf-8",
+        )
+
+        (anzeige,) = bestand_lesen(tmp_path, jetzt = JETZT)
+
+        assert anzeige.herkunft == "fremde"
+        assert anzeige.aktiv is False
+        assert anzeige.geloescht is False
+
+
+class TestGeloeschtUeberTitel:
+    """Das „Gelöscht •"-Präfix als Statusbefund (AP-2.35).
+
+    Kleinanzeigen.de stellt es dem Titel einer nicht mehr aktiven Anzeige
+    voran; `extract.py` übernimmt es wörtlich. Die Oberfläche zeigt es nicht
+    mehr an - ohne diese Auswertung wäre die Auskunft ersatzlos verloren.
+    """
+
+    def _anzeige(self, **felder: object) -> BestandsAnzeige:
+        grund: dict[str, object] = {
+            "datei": "d.yaml", "ordner": "o", "titel": "Kommode",
+            "id": 1, "aktiv": True, "herkunft": "eigene",
+        }
+        grund.update(felder)
+        return BestandsAnzeige(**grund)  # type: ignore[arg-type]
+
+    def test_fremde_mit_praefix_gilt_als_geloescht(self) -> None:
+        # Bei fremden Anzeigen kennen wir `active` oft nicht - das Präfix ist
+        # dann der einzige Befund, den wir haben.
+        assert self._anzeige(titel = "Gelöscht • Ahorn", herkunft = "fremde").geloescht
+
+    def test_punkt_variante_zaehlt_auch(self) -> None:
+        assert self._anzeige(titel = "Gelöscht · Ahorn", herkunft = "fremde").geloescht
+
+    def test_eigene_mit_praefix_trotz_active_true(self) -> None:
+        assert self._anzeige(titel = "Gelöscht • Kommode", aktiv = True).geloescht
+
+    def test_wort_am_anfang_ist_kein_praefix(self) -> None:
+        # Gegenprobe: Ohne den Trenner ist es ein gewöhnlicher Titel.
+        assert not self._anzeige(titel = "Gelöschte Datei retten").geloescht
+
+    def test_ohne_praefix_bleibt_die_alte_regel(self) -> None:
+        assert self._anzeige(aktiv = False).geloescht
+        assert not self._anzeige(aktiv = True).geloescht
+        assert not self._anzeige(aktiv = False, id = None).geloescht

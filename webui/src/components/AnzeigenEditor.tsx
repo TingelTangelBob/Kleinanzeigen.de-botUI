@@ -13,17 +13,26 @@
 // dass ein späterer Download die Änderung überschreibt, und was dem
 // Veröffentlichen im Weg steht.
 
-import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, Copy, Info, Save } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, ChevronDown, Copy, Save, Trash2,
+} from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
+import { titelFuerAnzeige } from '../titel';
+import type { Meldung } from '../context/meldungenKontext';
+import { useMeldungenQuelle } from '../context/useMeldungen';
 import { BilderVerwaltung } from './BilderVerwaltung';
 import { HochladenDialog } from './HochladenDialog';
 import { KategorieWahl } from './KategorieWahl';
+import { LoeschDialog } from './LoeschDialog';
 import { VersandpaketWahl } from './VersandpaketWahl';
 
 const TITEL_MIN = 10;
 const TITEL_MAX = 65;
+// Aus dem Upstream-Modell (`MAX_DESCRIPTION_LENGTH`, ad_model.py). Wie beim
+// Titel ist das hier Bedienhilfe - geprüft wird am Ende das Modell des Bots.
+const BESCHREIBUNG_MAX = 4000;
 
 const ARTEN = [
   { wert: 'OFFER', label: 'Angebot' },
@@ -62,9 +71,20 @@ interface Props {
   aufZurueck: (geaendert: boolean) => void;
   /** Wird nach dem Duplizieren mit der Datei der Kopie gerufen (AP-3.3). */
   aufKopie?: (datei: string) => void;
+  /** Die Anzeige wurde lokal gelöscht - diese Maske hat kein Ziel mehr (AP-2.20). */
+  aufGeloescht?: () => void;
+  /**
+   * Ob die Anzeige auf kleinanzeigen.de nicht mehr aktiv ist, lokal aber noch
+   * liegt - dann steht im Kopf ein „Gelöscht"-Badge (Mockup v4, AP-3.10). Nur
+   * ein Vorabwert, damit das Badge nicht erst nach dem Laden erscheint; die
+   * verbindliche Klassifikation kommt mit `kopf.geloescht` aus dem Backend.
+   */
+  geloescht?: boolean;
 }
 
-export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
+export function AnzeigenEditor({
+  profil, datei, aufZurueck, aufKopie, aufGeloescht, geloescht = false,
+}: Props) {
   const [inhalt, setInhalt] = useState<AnzeigeInhalt | null>(null);
   const [felder, setFelder] = useState<Felder>({});
   const [fehler, setFehler] = useState<string | null>(null);
@@ -78,6 +98,14 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
   const [vorlageAngelegt, setVorlageAngelegt] = useState(false);
   const [laedtHoch, setLaedtHoch] = useState(false);
   const [eingereiht, setEingereiht] = useState<number | null>(null);
+  // Welcher Befehl daraus wurde (AP-3.8). Das Backend entscheidet das an der
+  // Anzeigennummer; die Meldung soll denselben Vorgang nennen, nicht raten.
+  const [eingereihterBefehl, setEingereihterBefehl] = useState<string | null>(null);
+  const [fragtLoeschen, setFragtLoeschen] = useState(false);
+  const [loescht, setLoescht] = useState(false);
+  // Seltener gebrauchte Felder liegen eingeklappt (Mockup v4): mehr Formular
+  // passt so above the fold.
+  const [weitereOffen, setWeitereOffen] = useState(false);
 
   const laden = useCallback(async () => {
     setFehler(null);
@@ -93,6 +121,27 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  /**
+   * Löscht diese Anzeige von der Platte (AP-2.20) - derselbe Endpunkt wie das
+   * Sammellöschen in der Liste, damit die Zusage „nur lokal" nur an einer
+   * Stelle hängt. Danach hat diese Maske kein Ziel mehr und muss zu.
+   */
+  const loeschen = async () => {
+    setLoescht(true);
+    setFehler(null);
+    try {
+      await api.bestand.loeschen(profil, [datei]);
+      setFragtLoeschen(false);
+      if (aufGeloescht) aufGeloescht();
+      else aufZurueck(true);
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+      setFragtLoeschen(false);
+    } finally {
+      setLoescht(false);
+    }
+  };
 
   const setzen = (feld: string, wert: unknown) => {
     setFelder(vorher => ({ ...vorher, [feld]: wert }));
@@ -199,6 +248,7 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
     try {
       const ergebnis = await api.bestand.hochladen(profil, datei);
       setEingereiht(ergebnis.job_id);
+      setEingereihterBefehl(ergebnis.befehl);
       setFragtHochladen(false);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
@@ -208,68 +258,146 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
     }
   };
 
+  // Tipps und Hinweise wandern in die Glocke (AP-2.30) statt als hohe Banner
+  // über dem Formular zu stehen. Kritische Fehler (`role=alert`) bleiben unten
+  // im Formular. Die Kennung `editor-speichern-lokal` ist dieselbe wie beim
+  // früheren Banner - wer ihn schon weggeklickt hatte, sieht ihn nicht wieder.
+  const meldungen = useMemo<Meldung[]>(() => {
+    if (!inhalt) return [];
+    const liste: Meldung[] = [{
+      id: 'editor-speichern-lokal',
+      ton: 'hinweis',
+      titel: 'Speichern bleibt auf diesem Rechner',
+      text: inhalt.kopf.id !== null
+        ? 'Speichern ändert nichts auf kleinanzeigen.de - dafür ist „Aktualisieren". '
+          + 'Und ein späteres Herunterladen überschreibt, was hier geändert wurde.'
+        : 'Speichern ändert nichts auf kleinanzeigen.de. Diese Anzeige war nie online - '
+          + '„Veröffentlichen" stellt sie neu ein, erst danach hat sie eine Nummer.',
+    }];
+    for (const h of hinweise) {
+      liste.push({
+        id: `editor-nicht-veroeffentlichbar:${h}`,
+        ton: 'warnung',
+        titel: 'Gespeichert, aber so nicht veröffentlichbar',
+        text: h,
+      });
+    }
+    return liste;
+  }, [inhalt, hinweise]);
+  useMeldungenQuelle('editor', meldungen);
+
   if (fehler && !inhalt) {
     return (
-      <div className="mx-auto max-w-3xl">
-        <button type="button" onClick={() => aufZurueck(false)} className="mb-4 flex items-center gap-1 text-sm text-gray-700">
+      <div className="seite-breit">
+        <button type="button" onClick={() => aufZurueck(false)} className="btn-leise mb-4 -ml-2">
           <ArrowLeft className="h-4 w-4" aria-hidden /> Zurück zur Liste
         </button>
-        <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{fehler}</p>
+        <p className="hinweis hinweis-fehler">{fehler}</p>
       </div>
     );
   }
 
-  if (!inhalt) return <p className="text-sm text-gray-500">Wird geladen …</p>;
+  if (!inhalt) return <p className="text-sm text-leise">Wird geladen …</p>;
 
-  const titel = text(felder.title);
+  const titel = titelFuerAnzeige(text(felder.title));
+  const geloeschtAnzeige = inhalt.kopf.geloescht || geloescht;
+  const titelAnzeige = titelFuerAnzeige(titel || inhalt.kopf.titel || 'Ohne Titel');
+  /*
+   * Das „Gelöscht •"-Präfix wird auch im FELD nicht mitgeführt (AP-2.35).
+   * Es steht in der heruntergeladenen Datei, ist aber kein Titel, sondern
+   * eine Dekoration der Plattform - und es frisst 11 der 65 Zeichen. Wer hier
+   * etwas tippt, arbeitet am echten Titel; gespeichert wird beim nächsten
+   * Speichern der bereinigte Wert.
+   */
   const titelZuKurz = titel.length > 0 && titel.length < TITEL_MIN;
+  /*
+   * Zu LANG kann der Titel nur werden, wenn er nicht hier getippt wurde:
+   * `maxLength` am Feld bremst die Tastatur, aber nicht einen Wert, der schon
+   * in der Datei stand. Genau so kommt er vor - heruntergeladene Titel kommen
+   * von der Plattform, und ein von Hand geschriebenes YAML kennt keine Grenze.
+   * Vorher stand dann „77 von 65 Zeichen" in Grau, der Knopf war offen, und
+   * der Lauf lief bis in den 422 des Backends (AP-2.34).
+   */
+  const titelZuLang = titel.length > TITEL_MAX;
+  const titelUngueltig = titelZuKurz || titelZuLang;
   const bilder = (felder.images as string[] | null) ?? [];
   const sonderfelder = (felder.special_attributes as Record<string, unknown> | null) ?? {};
   const kontakt = (felder.contact as Record<string, unknown> | null) ?? {};
 
   return (
-    <div className="mx-auto max-w-3xl pb-24">
-      <button
-        type="button"
-        onClick={() => aufZurueck(schmutzig || gespeichert)}
-        className="mb-4 flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden /> Zurück zur Liste
-      </button>
-
-      <h1 className="mb-1 text-2xl font-bold text-gray-900">Anzeige bearbeiten</h1>
-      <p className="mb-6 text-sm text-gray-600">
-        {inhalt.kopf.id !== null ? `Nr. ${inhalt.kopf.id} · ` : ''}{datei}
-      </p>
-
-      {/* Diese Aussage muss stimmen und auffallen. Ein Nutzer hat eine
-          Preisänderung gespeichert und sie auf kleinanzeigen.de gesucht - der
-          alte Hinweis sprach nur vom Herunterladen und ließ offen, dass
-          Speichern nichts veröffentlicht. */}
-      <div className="mb-6 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-        <div>
-          <p className="font-medium">Speichern ändert nichts auf kleinanzeigen.de.</p>
-          <p className="mt-1">
-            Die Änderung liegt danach nur hier auf dem Rechner. Das Hochladen einer
-            geänderten Anzeige ist noch nicht gebaut – bis dahin geht es nur direkt
-            auf der Website. Und Achtung: Ein späteres Herunterladen übernimmt den
-            Stand der Plattform und überschreibt, was du hier geändert hast.
-          </p>
+    <div className="seite-breit pb-44 sm:pb-32 lg:pb-24">
+      {/* Eine Kopfzeile (Mockup v4): der Anzeigentitel und - für eine eigene
+          Anzeige, die auf der Plattform nicht mehr aktiv ist (AP-3.10) - ein
+          „Gelöscht"-Badge. Datenquelle ist `kopf.geloescht`; die Eigenschaft
+          `geloescht` dient nur dazu, das Badge schon vor dem Laden zu zeigen.
+          Kein „Zurück"-Link mehr; zurück führt die Seitenleiste. Die Glocke
+          sitzt in der App-Kopfleiste (Layout) direkt darüber und trägt jetzt
+          Tipps, Hinweise und Warnungen dieser Maske (AP-2.30). Alle Aktionen
+          stehen in der Leiste unten (AP-2.24). */}
+      <div className="editor-kopf">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="seite-titel break-words">
+            {titelAnzeige}
+          </h1>
+          {geloeschtAnzeige && (
+            <span
+              className="merkmal merkmal-rot"
+              title={'Auf kleinanzeigen.de nicht mehr aktiv. Gelöscht, pausiert oder '
+                + 'in Prüfung – das unterscheidet der Download nicht. Die lokale Kopie bleibt.'}
+            >
+              Gelöscht
+            </span>
+          )}
         </div>
+        {/*
+          Nur die Anzeigennummer (AP-2.35). Vorher stand hier der ganze
+          Dateipfad - und der enthält den Ordnernamen, der aus dem Titel
+          gebildet wird: Die Zeile wiederholte damit die Überschrift darüber,
+          über zwei Zeilen umgebrochen. Der Pfad ist Betriebswissen und hängt
+          jetzt als `title` am Element; die Nummer ist das, womit man eine
+          Anzeige auf kleinanzeigen.de wiederfindet.
+        */}
+        <p className="seite-beschrieb" title={datei}>
+          {inhalt.kopf.id !== null
+            ? `Anzeigennummer ${inhalt.kopf.id}`
+            : 'Noch nicht veröffentlicht – keine Anzeigennummer'}
+        </p>
       </div>
 
-      {fehler && (
-        <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {fehler}
-        </p>
+      {fragtLoeschen && inhalt && (
+        <LoeschDialog
+          anzeigen={[inhalt.kopf]}
+          laeuft={loescht}
+          aufAbbrechen={() => setFragtLoeschen(false)}
+          aufLoeschen={() => void loeschen()}
+        />
       )}
 
-      {eingereiht !== null && (
-        <p className="mb-4 rounded border border-green-200 bg-green-100 p-3 text-sm text-green-800">
-          Lauf {eingereiht} ist eingereiht. Unter „Läufe" lässt er sich mitlesen –
-          und abbrechen, solange er nicht fertig ist.
-        </p>
+      {(fehler || eingereiht !== null) && (
+        <div className="mb-4 space-y-2">
+          {/* Kritischer Fehler bleibt im Formular stehen (role=alert). Tipps
+              und „nicht veröffentlichbar"-Warnungen stehen in der Glocke. */}
+          {fehler && (
+            <p role="alert" className="hinweis hinweis-fehler lesebreite">
+              {fehler}
+            </p>
+          )}
+
+          {/* Der eingereihte Lauf steht in der Glocke (AP-2.25); hier bleibt
+              nur die kurze Bestätigung mit dem Weg dorthin. */}
+          {eingereiht !== null && (
+            <p className="lesebreite text-sm text-leise">
+              {eingereihterBefehl === 'publish'
+                ? `Lauf ${eingereiht} ist eingereiht – die Anzeige wird neu eingestellt.`
+                : `Lauf ${eingereiht} ist eingereiht – die bestehende Anzeige wird bearbeitet.`}
+              {' '}
+              <a href="#warteschlange" className="font-medium underline">
+                Zur Warteschlange
+              </a>{' '}
+              – dort mitlesen und abbrechen.
+            </p>
+          )}
+        </div>
       )}
 
       {fragtHochladen && inhalt && (
@@ -282,276 +410,366 @@ export function AnzeigenEditor({ profil, datei, aufZurueck, aufKopie }: Props) {
         />
       )}
 
-      {hinweise.length > 0 && (
-        <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="mb-1 flex items-center gap-2 font-medium">
-            <AlertTriangle className="h-4 w-4" aria-hidden />
-            Gespeichert, aber so nicht veröffentlichbar
-          </p>
-          <ul className="list-inside list-disc">
-            {hinweise.map(h => <li key={h}>{h}</li>)}
-          </ul>
+      {/* Fotos links, Felder rechts - wie eine Anzeige auf der Plattform auch
+          gelesen wird. Die Fotospalte bleibt ab md stehen und scrollt für sich
+          (Mockup v4). Unterhalb von md stapelt es sich, Fotos zuerst: Auf dem
+          Handy ist das Bild das, woran man die Anzeige wiedererkennt. */}
+      <div className="grid gap-6 md:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)]">
+        <div className="editor-bilder min-w-0">
+          <BilderVerwaltung
+            profil={profil}
+            datei={datei}
+            bilder={bilder}
+            aufAenderung={bilderAktualisiert}
+          />
         </div>
-      )}
 
-      <div className="space-y-4 rounded border border-gray-200 bg-white p-4">
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Titel</span>
-          <input
-            type="text"
-            value={titel}
-            maxLength={TITEL_MAX}
-            onChange={e => setzen('title', e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
-          />
-          <span className={`mt-1 block text-xs ${titelZuKurz ? 'text-red-700' : 'text-gray-500'}`}>
-            {titel.length} von {TITEL_MAX} Zeichen{titelZuKurz ? `, mindestens ${TITEL_MIN}` : ''}
-          </span>
-        </label>
+        <div className="min-w-0 space-y-3">
+          {/*
+            Titel/Beschreibung und Art/Kategorie nebeneinander, 65 zu 35
+            (AP-2.35). Der Text braucht die Breite - die Beschreibung ist das
+            längste Feld der Maske -, die beiden Auswahlfelder daneben nicht.
+            Übereinander gestapelt schob die Kategorie den Preis unter die
+            Falz. Erst ab `lg`: Darunter wäre die schmale Spalte enger als das
+            Kategoriefeld selbst.
+          */}
+          <div className="grid gap-3 lg:grid-cols-[65fr_35fr] lg:items-start">
+          <div className="min-w-0 space-y-3">
+          <section className="karte p-3">
+            <h2 className="karte-kopf">Titel und Beschreibung</h2>
 
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Beschreibung</span>
-          <textarea
-            rows={10}
-            value={text(felder.description)}
-            onChange={e => setzen('description', e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
-          />
-        </label>
+            <label className="block">
+              <span className="beschriftung">Titel</span>
+              <input
+                type="text"
+                value={titel}
+                maxLength={TITEL_MAX}
+                aria-invalid={titelUngueltig || undefined}
+                onChange={e => setzen('title', e.target.value)}
+                className="feld mt-1"
+                style={titelUngueltig
+                  ? { borderColor: 'var(--status-fehler)' }
+                  : undefined}
+              />
+              <span className={`mt-1 block text-xs ${titelUngueltig ? 'text-red-700' : 'text-leise'}`}>
+                {titel.length} von {TITEL_MAX} Zeichen
+                {titelZuKurz ? `, mindestens ${TITEL_MIN}` : ''}
+                {titelZuLang
+                  ? ` – ${titel.length - TITEL_MAX} zu viel. Kürzen, sonst weist kleinanzeigen.de die Anzeige ab.`
+                  : ''}
+              </span>
+            </label>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Art</span>
-            <select
-              value={text(felder.type) || 'OFFER'}
-              onChange={e => setzen('type', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            >
-              {ARTEN.map(a => <option key={a.wert} value={a.wert}>{a.label}</option>)}
-            </select>
-          </label>
+            <label className="mt-3 block">
+              <span className="beschriftung">Beschreibung</span>
+              <textarea
+                rows={7}
+                maxLength={BESCHREIBUNG_MAX}
+                value={text(felder.description)}
+                onChange={e => setzen('description', e.target.value)}
+                className="feld mt-1"
+              />
+              <span className="mt-1 block text-right text-xs text-leise">
+                {text(felder.description).length.toLocaleString('de-DE')} / {BESCHREIBUNG_MAX.toLocaleString('de-DE')}
+              </span>
+            </label>
+          </section>
 
-          <div className="sm:col-span-2">
-            <KategorieWahl
-              wert={text(felder.category)}
-              aufAenderung={wert => setzen('category', wert)}
-            />
+          <section className="karte p-3">
+            <h2 className="karte-kopf">Preis und Versand</h2>
+
+            {/* Breite nach Inhalt, nicht nach Spalte (AP-2.35): Ein Preis ist
+                vier bis sechs Zeichen lang und stand vorher in einem Feld über
+                die halbe Karte. `flex-wrap` statt Raster, damit die beiden
+                Felder ihre eigene Breite behalten und auf schmalen Fenstern
+                umbrechen, statt sich zu strecken. */}
+            <div className="flex flex-wrap items-start gap-4">
+              <label className="block">
+                <span className="beschriftung">Preis (€)</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  inputMode="decimal"
+                  value={text(felder.price)}
+                  onChange={e => setzen('price', zahlOderNull(e.target.value))}
+                  className="feld feld-zahl mt-1"
+                />
+              </label>
+
+              <label className="block">
+                <span className="beschriftung">Versand</span>
+                <select
+                  value={text(felder.shipping_type) || 'NOT_APPLICABLE'}
+                  onChange={e => setzen('shipping_type', e.target.value)}
+                  className="feld feld-auswahl mt-1"
+                >
+                  {VERSANDARTEN.map(v => <option key={v.wert} value={v.wert}>{v.label}</option>)}
+                </select>
+              </label>
+            </div>
+          </section>
           </div>
 
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Preis (€)</span>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              value={text(felder.price)}
-              onChange={e => setzen('price', zahlOderNull(e.target.value))}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
+          <section className="karte p-3">
+            <h2 className="karte-kopf">Art und Kategorie</h2>
 
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Preistyp</span>
-            <select
-              value={text(felder.price_type) || 'FIXED'}
-              onChange={e => setzen('price_type', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
+            {/* In der schmalen Spalte untereinander: Zwei Auswahlfelder
+                nebeneinander wären hier je gut 8rem breit - zu wenig für einen
+                Kategoriepfad. */}
+            <div className="space-y-3">
+              <label className="block">
+                <span className="beschriftung">Art</span>
+                <select
+                  value={text(felder.type) || 'OFFER'}
+                  onChange={e => setzen('type', e.target.value)}
+                  className="feld feld-auswahl mt-1"
+                >
+                  {ARTEN.map(a => <option key={a.wert} value={a.wert}>{a.label}</option>)}
+                </select>
+              </label>
+
+              <div>
+                <KategorieWahl
+                  wert={text(felder.category)}
+                  aufAenderung={wert => setzen('category', wert)}
+                />
+              </div>
+            </div>
+
+            {Object.keys(sonderfelder).length > 0 && (
+              <div className="mt-3">
+                <p className="beschriftung">Sonderfelder der Kategorie</p>
+                <dl className="mt-1 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                  {Object.entries(sonderfelder).map(([schluessel, wert]) => (
+                    <div key={schluessel} className="flex min-w-0 gap-2">
+                      <dt className="flex-shrink-0 text-leise">{schluessel}</dt>
+                      <dd className="min-w-0 truncate text-stark">{text(wert)}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="mt-2 text-xs text-leise">
+                  Noch nicht änderbar: Welche Werte eine Kategorie zulässt, weiß erst AP-2.7.
+                </p>
+              </div>
+            )}
+          </section>
+
+          </div>
+
+
+          {/* Weitere Optionen: Preistyp, Versandkosten und -pakete, Kontakt und
+              Neueinstellung liegen eingeklappt (Mockup v4). Alle Felder bleiben
+              erreichbar, nur eben nicht vor dem ersten Scrollen. */}
+          <section className="karte">
+            <button
+              type="button"
+              onClick={() => setWeitereOffen(o => !o)}
+              aria-expanded={weitereOffen}
+              className="flex w-full items-center justify-between gap-2 p-3 text-left"
             >
-              {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
-            </select>
-          </label>
+              <span className="karte-kopf mb-0">Weitere Optionen</span>
+              <ChevronDown
+                className={`h-4 w-4 flex-shrink-0 text-leise transition-transform ${weitereOffen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </button>
 
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Versand</span>
-            <select
-              value={text(felder.shipping_type) || 'NOT_APPLICABLE'}
-              onChange={e => setzen('shipping_type', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            >
-              {VERSANDARTEN.map(v => <option key={v.wert} value={v.wert}>{v.label}</option>)}
-            </select>
-          </label>
+            {weitereOffen && (
+              <div className="space-y-4 border-t px-3 pb-3 pt-3" style={{ borderColor: 'var(--karte-rand)' }}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="beschriftung">Preistyp</span>
+                    <select
+                      value={text(felder.price_type) || 'FIXED'}
+                      onChange={e => setzen('price_type', e.target.value)}
+                      className="feld mt-1"
+                    >
+                      {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
+                    </select>
+                  </label>
 
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Versandkosten (€)</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={text(felder.shipping_costs)}
-              onChange={e => setzen('shipping_costs', zahlOderNull(e.target.value))}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Abstand zur Neueinstellung (Tage)</span>
-            <input
-              type="number"
-              step="1"
-              min="1"
-              value={text(felder.republication_interval)}
-              onChange={e => setzen('republication_interval', zahlOderNull(e.target.value))}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-        </div>
-
-        <VersandpaketWahl
-          gewaehlt={(felder.shipping_options as string[] | null) ?? []}
-          versandkosten={typeof felder.shipping_costs === 'number' ? felder.shipping_costs : null}
-          direktKaufen={Boolean(felder.sell_directly)}
-          aufAenderung={pakete => setzen('shipping_options', pakete.length > 0 ? pakete : null)}
-        />
-
-        <div className="flex flex-wrap gap-6">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={Boolean(felder.active)}
-              onChange={e => setzen('active', e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span className="text-sm text-gray-700">Aktiv</span>
-          </label>
-
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={Boolean(felder.sell_directly)}
-              onChange={e => setzen('sell_directly', e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span className="text-sm text-gray-700">Direkt kaufen</span>
-          </label>
-        </div>
-
-        <fieldset className="grid gap-4 rounded border border-gray-200 p-3 sm:grid-cols-3">
-          <legend className="px-1 text-sm font-medium text-gray-700">Kontakt</legend>
-          <label className="block">
-            <span className="text-xs text-gray-600">Name</span>
-            <input
-              type="text"
-              value={text(kontakt.name)}
-              onChange={e => kontaktSetzen('name', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs text-gray-600">PLZ</span>
-            <input
-              type="text"
-              value={text(kontakt.zipcode)}
-              onChange={e => kontaktSetzen('zipcode', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs text-gray-600">Ort</span>
-            <input
-              type="text"
-              value={text(kontakt.location)}
-              onChange={e => kontaktSetzen('location', e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2"
-            />
-          </label>
-        </fieldset>
-
-        {Object.keys(sonderfelder).length > 0 && (
-          <fieldset className="rounded border border-gray-200 p-3">
-            <legend className="px-1 text-sm font-medium text-gray-700">
-              Sonderfelder der Kategorie
-            </legend>
-            <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
-              {Object.entries(sonderfelder).map(([schluessel, wert]) => (
-                <div key={schluessel} className="flex justify-between gap-2">
-                  <dt className="truncate text-gray-600">{schluessel}</dt>
-                  <dd className="truncate text-gray-900">{text(wert)}</dd>
+                  <label className="block">
+                    <span className="beschriftung">Versandkosten (€)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={text(felder.shipping_costs)}
+                      onChange={e => setzen('shipping_costs', zahlOderNull(e.target.value))}
+                      className="feld mt-1"
+                    />
+                  </label>
                 </div>
-              ))}
-            </dl>
-            <p className="mt-2 text-xs text-gray-500">
-              Noch nicht änderbar: Welche Werte eine Kategorie zulässt, weiß erst AP-2.7.
-            </p>
-          </fieldset>
-        )}
 
-        <BilderVerwaltung
-          profil={profil}
-          datei={datei}
-          bilder={bilder}
-          aufAenderung={bilderAktualisiert}
-        />
+                <VersandpaketWahl
+                  gewaehlt={(felder.shipping_options as string[] | null) ?? []}
+                  versandkosten={typeof felder.shipping_costs === 'number' ? felder.shipping_costs : null}
+                  direktKaufen={Boolean(felder.sell_directly)}
+                  aufDirektKaufen={wert => setzen('sell_directly', wert)}
+                  aufAenderung={pakete => setzen('shipping_options', pakete.length > 0 ? pakete : null)}
+                />
+
+                <div>
+                  <p className="beschriftung mb-1">Kontakt</p>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <label className="block">
+                      <span className="text-xs text-leise">Name</span>
+                      <input
+                        type="text"
+                        value={text(kontakt.name)}
+                        onChange={e => kontaktSetzen('name', e.target.value)}
+                        className="feld mt-1"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-leise">PLZ</span>
+                      <input
+                        type="text"
+                        value={text(kontakt.zipcode)}
+                        onChange={e => kontaktSetzen('zipcode', e.target.value)}
+                        className="feld mt-1"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-leise">Ort</span>
+                      <input
+                        type="text"
+                        value={text(kontakt.location)}
+                        onChange={e => kontaktSetzen('location', e.target.value)}
+                        className="feld mt-1"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(felder.active)}
+                      onChange={e => setzen('active', e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-normal">Aktiv</span>
+                  </label>
+
+                  <label className="mt-3 block sm:max-w-xs">
+                    <span className="beschriftung">Abstand zur Neueinstellung (Tage)</span>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={text(felder.republication_interval)}
+                      onChange={e => setzen('republication_interval', zahlOderNull(e.target.value))}
+                      className="feld mt-1"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
 
-      {/* Der Knopf bleibt am unteren Rand stehen. Bei einem Formular dieser
-          Länge sonst zu weit weg von dem, was man gerade getippt hat. */}
-      <div className="safe-unten fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white px-4 py-3">
-        <div className="mx-auto flex max-w-3xl items-center justify-end gap-3">
-          {vorlageAngelegt && (
-            <span className="flex items-center gap-1 text-sm text-gray-600">
-              <Check className="h-4 w-4" aria-hidden /> Als Vorlage gesichert
-            </span>
-          )}
-          {gespeichert && !schmutzig && !vorlageAngelegt && (
-            <span className="flex items-center gap-1 text-sm text-gray-600">
-              <Check className="h-4 w-4" aria-hidden /> Gespeichert
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => void duplizieren()}
-            disabled={speichert || dupliziert || schmutzig}
-            title={schmutzig
-              ? 'Erst speichern - kopiert wird der gespeicherte Stand.'
-              : 'Legt eine Kopie als neuen Entwurf an. Nur lokal.'}
-            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
-                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Copy className="h-4 w-4" aria-hidden />
-            {dupliziert ? 'Wird kopiert …' : 'Duplizieren'}
-          </button>
+      {/* Alle Aktionen der Maske stehen hier unten und bleiben stehen (AP-2.24).
+          Bei einem Formular dieser Länge ist der obere Seitenkopf schnell
+          weggescrollt - Duplizieren, Als Vorlage, Veröffentlichen und Löschen
+          waren dann nur über den Weg zurück nach oben erreichbar.
+          `lg:left-60` lässt die Seitenleiste frei - über die volle Breite legte
+          sich die Leiste sonst über deren unterste Einträge. Innen dieselbe
+          `.seite-breit`-Kante und dasselbe Seitenmaß wie im Inhalt, damit die
+          Leiste mit der rechten Kante der Karten fluchtet. */}
+      <div className="leiste-fix safe-unten fixed inset-x-0 bottom-0 z-20 px-6 py-3 sm:px-8 lg:left-60">
+        <div className="seite-breit flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-leise">
+            {vorlageAngelegt && (
+              <span className="flex items-center gap-1">
+                <Check className="h-4 w-4" aria-hidden /> Als Vorlage gesichert
+              </span>
+            )}
+            {gespeichert && !schmutzig && !vorlageAngelegt && (
+              <span className="flex items-center gap-1">
+                <Check className="h-4 w-4" aria-hidden /> Gespeichert
+              </span>
+            )}
+            {schmutzig && <span>Ungespeicherte Änderungen</span>}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => void alsVorlage()}
-            disabled={speichert || wirdVorlage || schmutzig}
-            title={schmutzig
-              ? 'Erst speichern - übernommen wird der gespeicherte Stand.'
-              : 'Legt eine Vorlage an. Sie geht nie online und lässt sich beliebig oft anwenden.'}
-            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
-                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <BookmarkPlus className="h-4 w-4" aria-hidden />
-            {wirdVorlage ? 'Wird angelegt …' : 'Als Vorlage'}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => void duplizieren()}
+              disabled={speichert || dupliziert || schmutzig}
+              title={schmutzig
+                ? 'Erst speichern - kopiert wird der gespeicherte Stand.'
+                : 'Legt eine Kopie als neuen Entwurf an. Nur lokal.'}
+              className="btn-ghost"
+            >
+              <Copy className="h-4 w-4" aria-hidden />
+              {dupliziert ? 'Wird kopiert …' : 'Duplizieren'}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setFragtHochladen(true)}
-            disabled={speichert || schmutzig || inhalt.kopf.id === null}
-            title={schmutzig
-              ? 'Erst speichern - hochgeladen wird der gespeicherte Stand.'
-              : undefined}
-            className="flex items-center gap-2 rounded border border-gray-300 px-4 py-2 text-sm
-                       text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <ArrowUpFromLine className="h-4 w-4" aria-hidden />
-            Hochladen
-          </button>
+            <button
+              type="button"
+              onClick={() => void alsVorlage()}
+              disabled={speichert || wirdVorlage || schmutzig}
+              title={schmutzig
+                ? 'Erst speichern - übernommen wird der gespeicherte Stand.'
+                : 'Legt eine Vorlage an. Sie geht nie online und lässt sich beliebig oft anwenden.'}
+              className="btn-ghost"
+            >
+              <BookmarkPlus className="h-4 w-4" aria-hidden />
+              {wirdVorlage ? 'Wird angelegt …' : 'Als Vorlage'}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => void speichern()}
-            disabled={speichert || !schmutzig}
-            className="flex items-center gap-2 rounded bg-primary-custom px-4 py-2 text-sm font-medium
-                       disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Save className="h-4 w-4" aria-hidden />
-            {speichert ? 'Wird gespeichert …' : 'Speichern'}
-          </button>
+            {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen
+                Knöpfen daneben unterscheiden (AP-2.20). */}
+            <button
+              type="button"
+              onClick={() => setFragtLoeschen(true)}
+              disabled={speichert || loescht}
+              title="Löscht die Anzeige von diesem Rechner. Auf kleinanzeigen.de ändert sich nichts."
+              className="btn-ghost"
+              style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+              Löschen
+            </button>
+
+            {/* Ohne Nummer nicht mehr gesperrt (AP-3.8): Eine neue Anzeige
+                lässt sich veröffentlichen. Der Knopf heißt dann auch so - was er
+                tut, unterscheidet sich, also darf er nicht gleich heißen. */}
+            <button
+              type="button"
+              onClick={() => setFragtHochladen(true)}
+              disabled={speichert || schmutzig || titelUngueltig}
+              title={schmutzig
+                ? 'Erst speichern - übertragen wird der gespeicherte Stand.'
+                : titelZuLang
+                  ? `Der Titel ist ${titel.length - TITEL_MAX} Zeichen zu lang - der Lauf würde abgewiesen.`
+                  : titelZuKurz
+                    ? `Der Titel braucht mindestens ${TITEL_MIN} Zeichen.`
+                    : inhalt.kopf.id === null
+                      ? 'Stellt die Anzeige neu auf kleinanzeigen.de ein.'
+                      : 'Schreibt den gespeicherten Stand in die bestehende Anzeige.'}
+              className="btn-ghost"
+            >
+              <ArrowUpFromLine className="h-4 w-4" aria-hidden />
+              {inhalt.kopf.id === null ? 'Veröffentlichen' : 'Aktualisieren'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void speichern()}
+              disabled={speichert || !schmutzig}
+              className="flex items-center gap-2 btn-primaer
+                         disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save className="h-4 w-4" aria-hidden />
+              {speichert ? 'Wird gespeichert …' : 'Speichern'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

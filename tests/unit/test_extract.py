@@ -1746,7 +1746,11 @@ class TestAdExtractorDownload:
     # pylint: disable=protected-access
     async def test_download_images_no_images(self, extractor:extract_module.AdExtractor) -> None:
         """Test image download when no images are found."""
-        with patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = None):
+        with (
+            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = None),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = []),
+            patch.object(extractor, "web_find_all", new_callable = AsyncMock, side_effect = AssertionError("web_find_all must not collect images")),
+        ):
             image_paths = await extractor._download_images_from_ad_page("/some/dir", "ad_12345")
             assert len(image_paths) == 0
 
@@ -1754,18 +1758,9 @@ class TestAdExtractorDownload:
     # pylint: disable=protected-access
     async def test_download_images_with_none_url(self, extractor:extract_module.AdExtractor) -> None:
         """Test image download when some images have None as src attribute."""
-        image_box_mock = MagicMock()
-
-        # Create image elements - one with valid src, one with None src
-        img_with_url = MagicMock()
-        img_with_url.attrs = {"src": "http://example.com/valid_image.jpg"}
-
-        img_without_url = MagicMock()
-        img_without_url.attrs = {"src": None}
-
         with (
-            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = image_box_mock),
-            patch.object(extractor, "web_find_all", new_callable = AsyncMock, return_value = [img_with_url, img_without_url]),
+            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = MagicMock()),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = [None, "http://example.com/valid_image.jpg"]),
             patch.object(extract_module.AdExtractor, "_download_and_save_image_sync", return_value = "/some/dir/ad_12345__img1.jpg"),
         ):
             image_paths = await extractor._download_images_from_ad_page("/some/dir", "ad_12345")
@@ -2891,14 +2886,9 @@ class TestAdExtractorDownload:
 
     @pytest.mark.asyncio
     async def test_download_images_use_provided_ad_file_stem(self, extractor:extract_module.AdExtractor) -> None:
-        image_box_mock = MagicMock()
-
-        img_with_url = MagicMock()
-        img_with_url.attrs = {"src": "http://example.com/valid_image.jpg"}
-
         with (
-            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = image_box_mock),
-            patch.object(extractor, "web_find_all", new_callable = AsyncMock, return_value = [img_with_url]),
+            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = MagicMock()),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = ["http://example.com/valid_image.jpg"]),
             patch.object(extract_module.AdExtractor, "_download_and_save_image_sync", return_value = "/some/dir/listing_12345__img1.jpg"),
         ):
             image_paths = await extractor._download_images_from_ad_page("/some/dir", "listing_12345")
@@ -3252,3 +3242,133 @@ class TestRenderDownloadNameWithBudgetWarnings:
         assert len(rendered) <= 15
         assert "Very Long Title Here" not in rendered
         assert "12345678901234567890" not in rendered
+
+
+GINKGO_IMG_A = "https://img.kleinanzeigen.de/api/v1/prod-ads/images/de/dea64432-5aaf-4f6c-8b62-8f012b095563"
+GINKGO_IMG_B = "https://img.kleinanzeigen.de/api/v1/prod-ads/images/8b/8bdd68ed-67d6-4240-ab8c-77c0a95609ec"
+CAROUSEL_IMG = "https://img.kleinanzeigen.de/api/v1/prod-ads/images/aa/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+
+class TestAdImageUrlDedupe:
+    """Pure helper tests for gallery URL normalize/dedupe (no browser)."""
+
+    def test_empty_and_invalid_inputs(self) -> None:
+        assert extract_module._dedupe_ad_image_urls([]) == []
+        assert extract_module._dedupe_ad_image_urls(None) == []
+        assert extract_module._dedupe_ad_image_urls("https://example.com/a.jpg") == []
+        assert extract_module._dedupe_ad_image_urls([None, "", "  ", "none"]) == []
+
+    def test_normalize_background_image_url(self) -> None:
+        wrapped = f"background-image: url('{GINKGO_IMG_A}?rule=$_59.AUTO');"
+        assert extract_module._normalize_ad_image_url(wrapped) == f"{GINKGO_IMG_A}?rule=$_59.AUTO"
+
+    def test_ginkgo_order_and_high_res_preference(self) -> None:
+        raw = [
+            f"{GINKGO_IMG_A}?rule=$_59.AUTO",
+            f"{GINKGO_IMG_A}?rule=$_59.AUTO",
+            f"{GINKGO_IMG_B}?rule=$_59.AUTO",
+            f"url('{GINKGO_IMG_A}?rule=$_59.AUTO')",
+            f"url('{GINKGO_IMG_B}?rule=$_59.AUTO')",
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{GINKGO_IMG_B}?rule=$_59.JPG",
+        ]
+        result = extract_module._dedupe_ad_image_urls(raw)
+        assert result == [
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{GINKGO_IMG_B}?rule=$_59.JPG",
+        ]
+
+    def test_prefers_jpg_without_reordering(self) -> None:
+        raw = [
+            f"{GINKGO_IMG_B}?rule=$_2.AUTO",
+            f"{GINKGO_IMG_A}?rule=$_1.AUTO",
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{GINKGO_IMG_B}?rule=$_59.AUTO",
+        ]
+        result = extract_module._dedupe_ad_image_urls(raw)
+        assert [extract_module._image_asset_key(url) for url in result] == [
+            "8bdd68ed-67d6-4240-ab8c-77c0a95609ec",
+            "dea64432-5aaf-4f6c-8b62-8f012b095563",
+        ]
+        assert result[0].endswith("$_59.AUTO")
+        assert result[1].endswith("$_59.JPG")
+
+    def test_non_kleinanzeigen_urls_dedupe_by_full_url(self) -> None:
+        result = extract_module._dedupe_ad_image_urls([
+            "http://example.com/a.jpg",
+            "http://example.com/a.jpg",
+            "http://example.com/b.jpg",
+        ])
+        assert result == ["http://example.com/a.jpg", "http://example.com/b.jpg"]
+
+    def test_carousel_uuid_stays_separate_if_passed_in(self) -> None:
+        """Collector must not pass carousel URLs; helper still keys them separately."""
+        result = extract_module._dedupe_ad_image_urls([
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{CAROUSEL_IMG}?rule=$_59.AUTO",
+        ])
+        assert len(result) == 2
+        assert "dea64432" in result[0]
+        assert "aaaaaaaa-aaaa" in result[1]
+
+
+class TestDownloadImagesFromAdPageCollection:
+    @pytest.fixture
+    def extractor(self, test_bot_config:Config) -> extract_module.AdExtractor:
+        browser_mock = MagicMock(spec = Browser)
+        return extract_module.AdExtractor(browser_mock, test_bot_config, Path("downloaded-ads"))
+
+    @pytest.mark.asyncio
+    async def test_empty_js_result_does_not_call_web_find_all(self, extractor:extract_module.AdExtractor) -> None:
+        with (
+            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = MagicMock()),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = []),
+            patch.object(extractor, "web_find_all", new_callable = AsyncMock, side_effect = TimeoutError("should not wait for zero matches")),
+        ):
+            image_paths = await extractor._download_images_from_ad_page("/some/dir", "ad_12345")
+        assert image_paths == []
+
+    @pytest.mark.asyncio
+    async def test_downloads_deduped_ginkgo_urls_in_gallery_order(self, extractor:extract_module.AdExtractor) -> None:
+        raw = [
+            f"{GINKGO_IMG_A}?rule=$_59.AUTO",
+            f"{GINKGO_IMG_B}?rule=$_59.AUTO",
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{GINKGO_IMG_B}?rule=$_59.JPG",
+            f"{CAROUSEL_IMG}?rule=$_59.AUTO",
+        ]
+        saved:list[str] = []
+
+        def fake_download(url:str, directory:str, filename_prefix:str, img_nr:int) -> str:
+            saved.append(url)
+            return f"{directory}/{filename_prefix}{img_nr}.jpg"
+
+        with (
+            patch.object(extractor, "web_probe", new_callable = AsyncMock, return_value = MagicMock()),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = raw),
+            patch.object(extract_module.AdExtractor, "_download_and_save_image_sync", side_effect = fake_download),
+        ):
+            image_paths = await extractor._download_images_from_ad_page("/some/dir", "ginkgo")
+
+        assert saved == [
+            f"{GINKGO_IMG_A}?rule=$_59.JPG",
+            f"{GINKGO_IMG_B}?rule=$_59.JPG",
+            f"{CAROUSEL_IMG}?rule=$_59.AUTO",
+        ]
+        assert image_paths == ["ginkgo__img1.jpg", "ginkgo__img2.jpg", "ginkgo__img3.jpg"]
+
+    @pytest.mark.asyncio
+    async def test_probe_uses_gallery_css_not_cover_class(self, extractor:extract_module.AdExtractor) -> None:
+        probe = AsyncMock(return_value = None)
+        with (
+            patch.object(extractor, "web_probe", probe),
+            patch.object(extractor, "web_execute", new_callable = AsyncMock, return_value = []),
+        ):
+            await extractor._download_images_from_ad_page("/some/dir", "ad_12345")
+        assert probe.await_count == 1
+        _args, kwargs = probe.call_args
+        assert _args[0] == By.CSS_SELECTOR
+        assert ".vip-image-gallery" in _args[1]
+        assert "#viewad-product" in _args[1]
+        assert "galleryimage-large--cover" not in _args[1]
+        assert kwargs["timeout"] == extractor.timeout("default")

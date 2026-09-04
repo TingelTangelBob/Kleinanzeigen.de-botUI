@@ -13,10 +13,12 @@
 from __future__ import annotations
 
 import logging
+import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ruamel.yaml import YAML
 
@@ -27,17 +29,34 @@ LOG = logging.getLogger(__name__)
 
 #: Unterverzeichnisse eines Profils, in denen Anzeigen liegen koennen.
 #:
-#: `downloaded-ads` fuellt der Bot beim Herunterladen, `ads` ist das
-#: Verzeichnis, auf das die erzeugte config.yaml zeigt (dort landen spaeter
-#: selbst angelegte Anzeigen, AP-2.5).
-_ANZEIGEN_ORDNER = ("downloaded-ads", "ads")
+#: `downloaded-ads` fuellt der Bot beim Konto-Download, `ads` ist das
+#: Verzeichnis, auf das die erzeugte config.yaml zeigt (selbst angelegte
+#: Anzeigen). `fremde-ads` nimmt Anzeigen auf, die per Link geholt wurden
+#: (nicht aus dem eigenen Konto). Herkunft folgt dem Ordner, nicht einem
+#: Marker in der YAML - bestehende Dateien ohne Marker bleiben eigene.
+#: Oeffentlich seit AP-2.20: `loeschen` muss dieselbe Liste pruefen, sonst
+#: liesse sich ueber den Loeschendpunkt eine Vorlage oder die Datenbank
+#: erwischen. Zwei Kopien derselben Wahrheit waeren genau die Art Fehler, die
+#: erst auffaellt, wenn jemand einen vierten Ordner ergaenzt.
+ANZEIGEN_ORDNER = ("downloaded-ads", "ads", "fremde-ads")
+_ANZEIGEN_ORDNER = ANZEIGEN_ORDNER
+_FREMDE_ORDNER = "fremde-ads"
+_EIGENE_ZIEL = "downloaded-ads"
+Herkunft = Literal["eigene", "fremde"]
 
 #: Bildendungen, die der Bot herunterlaedt - und zugleich die, die er beim
 #: Hochladen wieder lesen kann (`ad_loading.resolve_ad_images`). WebP steht
 #: bewusst nicht dabei, siehe `bilder.ERLAUBTE_FORMATE`.
-_BILD_ENDUNGEN = {".jpg", ".jpeg", ".png", ".gif"}
+BILD_ENDUNGEN = {".jpg", ".jpeg", ".png", ".gif"}
+_BILD_ENDUNGEN = BILD_ENDUNGEN
 
 _yaml = YAML(typ = "safe")
+
+
+#: Die Dekoration, die kleinanzeigen.de dem Titel einer nicht mehr aktiven
+#: Anzeige voranstellt. Sie ist kein Teil des Titels, sondern ein Statusbefund -
+#: siehe `BestandsAnzeige.geloescht` und `webui/src/titel.ts`.
+_GELOESCHT_PRAEFIX = re.compile(r"^Gel\u00f6scht\s*[\u2022\u00b7]\s*")
 
 
 @dataclass(frozen = True, slots = True)
@@ -68,6 +87,43 @@ class BestandsAnzeige:
     lokal_geaendert: bool = False
     hinweise: list[str] = field(default_factory = list)
     unlesbar: str | None = None
+    herkunft: Herkunft = "eigene"
+
+    @property
+    def geloescht(self) -> bool:
+        """Eigene Anzeige, die auf der Plattform nicht mehr aktiv ist (AP-3.10).
+
+        Klassifiziert wird ueber das bestehende YAML-Feld `active` - kein neues
+        Feld. Der Bot setzt es beim Herunterladen aus der Profiluebersicht
+        (`state == "active"`, siehe `docs/RUNDLAUF.md` Abschnitt 3). Geloescht,
+        pausiert und "in Pruefung" fallen dort alle auf `active: false` zusammen;
+        die Oberflaeche darf also nicht behaupten, die Anzeige sei sicher
+        geloescht - nur, dass sie nicht mehr online ist.
+
+        Drei Bedingungen zusammen, damit ein harmloser Entwurf nicht als
+        geloescht erscheint:
+
+        * `herkunft == "eigene"` - fremde Anzeigen aus `fremde-ads/` sind kein
+          Konto-Bestand; ihr Status geht uns nichts an.
+        * `id is not None` - die Anzeige hatte eine Anzeigennummer, war also
+          einmal online. Ein lokal angelegter Entwurf ohne Nummer ist nichts
+          "Geloeschtes".
+        * `not aktiv` - `active: false` in der Datei.
+
+        **Zweiter Weg ueber den Titel (AP-2.35).** Kleinanzeigen.de stellt dem
+        Titel einer nicht mehr aktiven Anzeige in der Uebersicht "Geloescht \u2022"
+        voran, und `extract.py` uebernimmt ihn woertlich. Das Praefix ist damit
+        ein Befund der Plattform - genauso belastbar wie `active: false` und in
+        manchen Faellen der einzige, den wir haben. Es zaehlt deshalb mit, und
+        zwar auch fuer FREMDE Anzeigen: Bei denen kennen wir `active` oft nicht,
+        aber wenn die Plattform den Titel so ausliefert, ist die Anzeige weg.
+        Die Oberflaeche zeigt das Praefix nicht mehr an (`titel.ts`) - ohne
+        diese Auswertung waere die Auskunft also ersatzlos verloren.
+        """
+        ueber_titel = _GELOESCHT_PRAEFIX.match(self.titel) is not None
+        if ueber_titel:
+            return True
+        return self.herkunft == "eigene" and self.id is not None and not self.aktiv
 
 
 def _als_text(wert: Any) -> str | None:
@@ -170,9 +226,16 @@ def _vorschaubild(ordner: Path, daten: dict[str, Any]) -> tuple[str | None, int]
     return None, len(bilder)
 
 
+def _herkunft_von(relativ: str) -> Herkunft:
+    """Herkunft aus dem Bestandsordner, nicht aus der YAML."""
+    kopf = relativ.split("/", 1)[0]
+    return "fremde" if kopf == _FREMDE_ORDNER else "eigene"
+
+
 def _anzeige_lesen(pfad: Path, profil_wurzel: Path, *, jetzt: datetime) -> BestandsAnzeige:
     relativ = pfad.relative_to(profil_wurzel).as_posix()
     ordner = pfad.parent.name
+    herkunft = _herkunft_von(relativ)
     try:
         daten = _yaml.load(pfad.read_text(encoding = "utf-8")) or {}
     except Exception as fehler:  # noqa: BLE001 - eine kaputte Datei darf die Liste nicht kippen
@@ -180,11 +243,13 @@ def _anzeige_lesen(pfad: Path, profil_wurzel: Path, *, jetzt: datetime) -> Besta
         return BestandsAnzeige(
             datei = relativ, ordner = ordner, titel = pfad.stem,
             unlesbar = "Die Datei ist nicht lesbar.",
+            herkunft = herkunft,
         )
     if not isinstance(daten, dict):
         return BestandsAnzeige(
             datei = relativ, ordner = ordner, titel = pfad.stem,
             unlesbar = "Die Datei enthält keine Anzeige.",
+            herkunft = herkunft,
         )
 
     vorschau, bilder = _vorschaubild(pfad.parent, daten)
@@ -213,6 +278,7 @@ def _anzeige_lesen(pfad: Path, profil_wurzel: Path, *, jetzt: datetime) -> Besta
         faellig = faellig,
         lokal_geaendert = _lokal_geaendert(daten),
         hinweise = _hinweise_sammeln(daten),
+        herkunft = herkunft,
     )
 
 
@@ -246,6 +312,49 @@ def bestand_lesen(profil_wurzel: Path, *, jetzt: datetime | None = None) -> list
 def lokal_geaenderte(profil_wurzel: Path) -> list[BestandsAnzeige]:
     """Anzeigen mit lokalen Aenderungen, die ein Download ueberschreiben wuerde."""
     return [a for a in bestand_lesen(profil_wurzel) if a.lokal_geaendert]
+
+
+def herkunft_setzen(profil_wurzel: Path, datei: str, ziel: Herkunft) -> BestandsAnzeige:
+    """Verschiebt eine Anzeige zwischen eigenen und fremden Ordnern.
+
+    Nur der Bestandsordner wechselt. YAML und Bilder bleiben zusammen.
+    Kein Massen-Umsortieren: nur dieser eine Aufruf.
+    """
+    if ziel not in ("eigene", "fremde"):
+        raise FachlicherFehler("Herkunft muss eigene oder fremde sein.", status = 400, feld = "herkunft")
+
+    wurzel = profil_wurzel.resolve()
+    yaml_pfad = (wurzel / datei).resolve()
+    if not yaml_pfad.is_relative_to(wurzel):
+        raise FachlicherFehler("Ungültiger Pfad.", status = 400, feld = "datei")
+    if yaml_pfad.suffix.lower() not in {".yaml", ".yml"}:
+        raise FachlicherFehler("Das ist keine Anzeigendatei.", status = 400, feld = "datei")
+    if not yaml_pfad.is_file():
+        raise FachlicherFehler("Anzeige nicht gefunden.", status = 404)
+
+    relativ = yaml_pfad.relative_to(wurzel).as_posix()
+    teile = Path(relativ).parts
+    if not teile or teile[0] not in _ANZEIGEN_ORDNER:
+        raise FachlicherFehler("Anzeige liegt in keinem Bestandsordner.", status = 400, feld = "datei")
+
+    bisher = _herkunft_von(relativ)
+    if bisher == ziel:
+        return _anzeige_lesen(yaml_pfad, wurzel, jetzt = datetime.now(UTC))
+
+    quellordner = yaml_pfad.parent
+    bucket = _FREMDE_ORDNER if ziel == "fremde" else _EIGENE_ZIEL
+    zielordner = wurzel / bucket / quellordner.name
+    if not zielordner.is_relative_to(wurzel):
+        raise FachlicherFehler("Ungültiger Zielpfad.", status = 400)
+    if zielordner.exists():
+        raise FachlicherFehler(
+            "Unter diesem Namen liegt dort schon eine Anzeige.",
+            status = 409, feld = "datei",
+        )
+    zielordner.parent.mkdir(parents = True, exist_ok = True)
+    shutil.move(str(quellordner), str(zielordner))
+    neu = zielordner / yaml_pfad.name
+    return _anzeige_lesen(neu, wurzel, jetzt = datetime.now(UTC))
 
 
 def bildpfad(profil_wurzel: Path, datei: str, bild: str) -> Path:

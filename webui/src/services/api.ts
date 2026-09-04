@@ -7,7 +7,7 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
-  AnzeigeInhalt, AuthStatus, BestandsAnzeige, Gesundheit, Job, Kategorie, LogZeile,
+  AnzeigeInhalt, AuthStatus, BestandsAnzeige, Einstellungen, Gesundheit, Job, Kategorie, LogZeile,
   KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
   Profil, SpeichernAusgabe, Vergleich, Versandpaket, Vorlage, ZugangStatus,
 } from '../types';
@@ -177,9 +177,36 @@ export const api = {
         { method: 'POST', ...json({ text }) },
       ),
 
+    /**
+     * Löscht Anzeigen **nur auf diesem Rechner** (AP-2.20).
+     *
+     * Kein Bot-Lauf, keine Warteschlange, kein Kontakt zur Plattform: Eine
+     * Anzeige, die online steht, steht danach weiter online – nur ohne lokale
+     * Kopie. Immer eine Liste, auch für eine einzelne Datei; Einzel- und
+     * Sammellöschen sind derselbe Vorgang.
+     */
+    loeschen: (profil: string, dateien: string[]) =>
+      anfrage<{ geloescht: { datei: string; titel: string; bilder: number; ordner_entfernt: boolean }[] }>(
+        `/bestand/loeschen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json({ dateien }) },
+      ),
+
+    /** Verschiebt eine Anzeige zwischen eigenen und fremden Ordnern. */
+    herkunftSetzen: (profil: string, datei: string, herkunft: 'eigene' | 'fremde') =>
+      anfrage<BestandsAnzeige>(`/bestand/herkunft?profil=${encodeURIComponent(profil)}`, {
+        method: 'POST', ...json({ datei, herkunft }),
+      }),
+
     /** Reiht einen Lauf ein, der genau diese Anzeige aktualisiert (AP-3.3). */
+    /**
+     * Bringt eine Anzeige auf die Plattform (AP-3.3, AP-3.8).
+     *
+     * Welcher Bot-Befehl daraus wird, entscheidet das Backend an der
+     * Anzeigennummer: mit Nummer `update` (bearbeiten), ohne Nummer `publish`
+     * (neu einstellen). `befehl` in der Antwort sagt, was es wurde.
+     */
     hochladen: (profil: string, datei: string) =>
-      anfrage<{ job_id: number; anzeige: BestandsAnzeige }>(
+      anfrage<{ job_id: number; anzeige: BestandsAnzeige; befehl: string }>(
         `/bestand/hochladen?profil=${encodeURIComponent(profil)}`,
         { method: 'POST', ...json({ datei }) },
       ),
@@ -286,6 +313,21 @@ export const api = {
     versandpakete: () => anfrage<Versandpaket[]>('/katalog/versandpakete'),
   },
 
+  einstellungen: {
+    lesen: (profil: string) =>
+      anfrage<Einstellungen>(`/einstellungen?profil=${encodeURIComponent(profil)}`),
+    speichern: (profil: string, werte: Record<string, unknown>) =>
+      anfrage<{ profil: string; werte: Record<string, unknown> }>(
+        `/einstellungen?profil=${encodeURIComponent(profil)}`,
+        { method: 'PUT', ...json({ werte }) },
+      ),
+    browserprofilZuruecksetzen: (profil: string) =>
+      anfrage<void>(
+        `/einstellungen/browserprofil-zuruecksetzen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST' },
+      ),
+  },
+
   jobs: {
     liste: (profil?: string) =>
       anfrage<Job[]>(`/jobs${profil ? `?profil=${encodeURIComponent(profil)}` : ''}`),
@@ -295,6 +337,11 @@ export const api = {
     abbrechen: (id: number) => anfrage<unknown>(`/jobs/${id}/abbrechen`, { method: 'POST' }),
     eingabe: (id: number, text = '') =>
       anfrage<unknown>(`/jobs/${id}/eingabe`, { method: 'POST', ...json({ text }) }),
+    beendeteLeeren: (profil: string) =>
+      anfrage<{ geloescht: number }>(
+        `/jobs/beendete?profil=${encodeURIComponent(profil)}`,
+        { method: 'DELETE' },
+      ),
     log: (id: number, abId = 0) => anfrage<LogZeile[]>(`/jobs/${id}/log?ab_id=${abId}`),
     stromUrl: (id: number, abId = 0) => `/api/jobs/${id}/strom?ab_id=${abId}`,
   },

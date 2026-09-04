@@ -8,7 +8,7 @@ import { KeyRound, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { KiStatus, Profil, ZugangStatus } from '../types';
 
-export function ProfilSeite() {
+export function ProfilSeite({ ohneTitel = false }: { ohneTitel?: boolean } = {}) {
   const [profile, setProfile] = useState<Profil[]>([]);
   const [zugaenge, setZugaenge] = useState<Record<string, ZugangStatus | null>>({});
   const [fehler, setFehler] = useState<string | null>(null);
@@ -35,40 +35,43 @@ export function ProfilSeite() {
   useEffect(() => { void laden(); }, [laden]);
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="seite">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
-          <Users className="h-6 w-6 text-primary-custom" />
-          Profile
-        </h1>
+        {!ohneTitel && (
+          <h1 className="seite-titel flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary-custom" />
+            Profile
+          </h1>
+        )}
+        {ohneTitel && <p className="seite-beschrieb m-0">Kleinanzeigen-Konten dieser Installation.</p>}
         <button
           type="button"
           onClick={() => setFormOffen(o => !o)}
-          className="flex items-center gap-2 rounded bg-primary-custom px-4 py-2 text-sm font-medium"
+          className="btn-primaer"
         >
           <Plus className="h-4 w-4" />
           Profil anlegen
         </button>
       </div>
 
-      <p className="mb-6 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <p className="mb-6 hinweis hinweis-warn">
         Ein Profil steht für ein Kleinanzeigen-Konto. Die Zugangsdaten werden verschlüsselt
         gespeichert und nur beim Start eines Laufs an den Bot gereicht – sie stehen nie im
         Klartext auf der Platte.
       </p>
 
       {fehler && (
-        <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="mb-4 hinweis hinweis-fehler">
           {fehler}
         </p>
       )}
 
       {formOffen && <NeuesProfil aufFertig={() => { setFormOffen(false); void laden(); }} />}
 
-      {laedt && <p className="text-sm text-gray-500">Wird geladen …</p>}
+      {laedt && <p className="text-sm text-leise">Wird geladen …</p>}
 
       {!laedt && profile.length === 0 && !formOffen && (
-        <p className="rounded border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+        <p className="leer">
           Noch kein Profil angelegt.
         </p>
       )}
@@ -138,18 +141,18 @@ function KiZugang() {
   };
 
   return (
-    <section className="mt-8 rounded border border-gray-200 bg-white p-4">
-      <h2 className="flex items-center gap-2 font-medium text-gray-900">
+    <section className="mt-8 karte p-4">
+      <h2 className="flex items-center gap-2 font-medium text-stark">
         <Sparkles className="h-5 w-5 text-primary-custom" />
         KI-Zugang
       </h2>
-      <p className="mt-1 text-sm text-gray-600">
+      <p className="mt-1 text-sm text-leise">
         Gilt für die ganze Installation, nicht für ein einzelnes Profil. Ohne ihn bleibt
         „Neue Anzeige aus Fotos“ aus.
       </p>
 
       {status && (
-        <p className="mt-3 text-sm text-gray-700">
+        <p className="mt-3 text-sm text-normal">
           Modell: <span className="font-mono text-xs">{status.modell}</span>
           {status.hinterlegt ? (
             <>
@@ -161,7 +164,7 @@ function KiZugang() {
       )}
 
       {fehler && (
-        <p role="alert" className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+        <p role="alert" className="mt-3 hinweis hinweis-fehler">
           {fehler}
         </p>
       )}
@@ -174,12 +177,12 @@ function KiZugang() {
           placeholder={status?.hinterlegt ? 'Neuen Schlüssel eintragen' : 'OpenAI-Schlüssel einfügen'}
           aria-label="OpenAI-Schlüssel"
           autoComplete="off"
-          className="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 font-mono text-sm"
+          className="feld min-w-0 flex-1 font-mono"
         />
         <button
           type="submit"
           disabled={laeuft || !eingabe.trim()}
-          className="rounded bg-primary-custom px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="btn-primaer"
         >
           {laeuft ? 'Wird gespeichert …' : 'Speichern'}
         </button>
@@ -187,13 +190,13 @@ function KiZugang() {
           <button
             type="button"
             onClick={() => void entfernen()}
-            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700"
+            className="btn-ghost"
           >
             Entfernen
           </button>
         )}
       </form>
-      <p className="mt-2 text-xs text-gray-500">
+      <p className="mt-2 text-xs text-leise">
         Wird verschlüsselt gespeichert, genau wie die Kleinanzeigen-Zugangsdaten, und nie
         im Protokoll ausgegeben.
       </p>
@@ -222,32 +225,30 @@ function NeuesProfil({ aufFertig }: { aufFertig: () => void }) {
   };
 
   return (
-    <form onSubmit={absenden} className="mb-6 rounded border border-gray-200 bg-white p-4">
+    <form onSubmit={absenden} className="mb-6 karte p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Kürzel</span>
+          <span className="text-sm font-medium text-normal">Kürzel</span>
           <input
             value={slug}
             onChange={e => setSlug(e.target.value)}
             placeholder="haushalt"
             required
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="feld mt-1"
           />
-          <span className="mt-1 block text-xs text-gray-500">
+          <span className="mt-1 block text-xs text-leise">
             Kleinbuchstaben, Ziffern, Bindestriche. Wird zum Verzeichnisnamen und ist
             danach unveränderlich.
           </span>
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Anzeigename</span>
+          <span className="text-sm font-medium text-normal">Anzeigename</span>
           <input
             value={anzeigename}
             onChange={e => setAnzeigename(e.target.value)}
             placeholder="Haushaltsauflösung"
             required
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="feld mt-1"
           />
         </label>
       </div>
@@ -255,7 +256,7 @@ function NeuesProfil({ aufFertig }: { aufFertig: () => void }) {
       <button
         type="submit"
         disabled={laeuft}
-        className="mt-4 rounded bg-primary-custom px-4 py-2 text-sm font-medium disabled:opacity-50"
+        className="mt-4 btn-primaer"
       >
         {laeuft ? 'Wird angelegt …' : 'Anlegen'}
       </button>
@@ -269,11 +270,11 @@ function ProfilKarte({
   const [offen, setOffen] = useState(false);
 
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
+    <div className="karte p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="truncate font-medium text-gray-900">{profil.anzeigename}</h2>
-          <p className="text-sm text-gray-500">Kürzel: {profil.slug}</p>
+          <h2 className="truncate font-medium text-stark">{profil.anzeigename}</h2>
+          <p className="text-sm text-leise">Kürzel: {profil.slug}</p>
           <p className="mt-1 text-sm">
             {zugang?.passwort_hinterlegt ? (
               <span className="text-green-800">
@@ -288,7 +289,7 @@ function ProfilKarte({
           <button
             type="button"
             onClick={() => setOffen(o => !o)}
-            className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="btn-ghost"
           >
             <KeyRound className="h-4 w-4" />
             Zugang
@@ -333,22 +334,21 @@ function ZugangForm({
   };
 
   return (
-    <form onSubmit={absenden} className="mt-4 border-t border-gray-200 pt-4">
+    <form onSubmit={absenden} className="mt-4 pt-4" style={{ borderTop: '1px solid var(--karte-rand)' }}>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Kleinanzeigen-Benutzername</span>
+          <span className="text-sm font-medium text-normal">Kleinanzeigen-Benutzername</span>
           <input
             type="email"
             value={benutzername}
             onChange={e => setBenutzername(e.target.value)}
             autoComplete="off"
             required
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="feld mt-1"
           />
         </label>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Passwort</span>
+          <span className="text-sm font-medium text-normal">Passwort</span>
           <input
             type="password"
             value={passwort}
@@ -356,11 +356,10 @@ function ZugangForm({
             autoComplete="new-password"
             placeholder={vorhanden?.passwort_hinterlegt ? 'unverändert lassen' : ''}
             required={!vorhanden?.passwort_hinterlegt}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="feld mt-1"
           />
           {vorhanden?.passwort_hinterlegt && (
-            <span className="mt-1 block text-xs text-gray-500">
+            <span className="mt-1 block text-xs text-leise">
               Leer lassen, um das gespeicherte Passwort zu behalten.
             </span>
           )}
@@ -370,7 +369,7 @@ function ZugangForm({
       <button
         type="submit"
         disabled={laeuft}
-        className="mt-4 rounded bg-primary-custom px-4 py-2 text-sm font-medium disabled:opacity-50"
+        className="mt-4 btn-primaer"
       >
         {laeuft ? 'Wird gespeichert …' : 'Speichern'}
       </button>
@@ -398,7 +397,7 @@ function ProfilLoeschen({ slug, aufAenderung }: { slug: string; aufAenderung: ()
       <button
         type="button"
         onClick={() => setFrage(true)}
-        className="flex items-center gap-2 rounded border border-gray-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+        className="btn-ghost"
       >
         <Trash2 className="h-4 w-4" />
         Löschen
@@ -410,7 +409,7 @@ function ProfilLoeschen({ slug, aufAenderung }: { slug: string; aufAenderung: ()
   // Anzeigenbestand ist das Wertvollste am Profil. Datenverlust darf kein
   // Nebeneffekt eines Klicks sein.
   return (
-    <div className="w-full rounded border border-red-200 bg-red-50 p-3">
+    <div className="hinweis hinweis-fehler w-full">
       <p className="mb-3 text-sm text-red-900">
         Profil <strong>{slug}</strong> löschen?
       </p>
@@ -419,7 +418,7 @@ function ProfilLoeschen({ slug, aufAenderung }: { slug: string; aufAenderung: ()
           type="button"
           disabled={laeuft}
           onClick={() => void loeschen(false)}
-          className="rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 disabled:opacity-50"
+          className="btn-ghost"
         >
           Nur Profil, Anzeigen behalten
         </button>
@@ -427,7 +426,7 @@ function ProfilLoeschen({ slug, aufAenderung }: { slug: string; aufAenderung: ()
           type="button"
           disabled={laeuft}
           onClick={() => void loeschen(true)}
-          className="rounded bg-red-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="btn-primaer"
         >
           Profil und alle Anzeigen löschen
         </button>
@@ -435,7 +434,7 @@ function ProfilLoeschen({ slug, aufAenderung }: { slug: string; aufAenderung: ()
           type="button"
           disabled={laeuft}
           onClick={() => setFrage(false)}
-          className="rounded px-3 py-2 text-sm text-gray-700"
+          className="rounded px-3 py-2 text-sm text-normal"
         >
           Abbrechen
         </button>

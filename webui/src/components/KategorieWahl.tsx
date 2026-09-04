@@ -79,14 +79,13 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
     return (
       <div>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Kategorie</span>
+          <span className="text-sm font-medium text-normal">Kategorie</span>
           <input
             type="text"
             value={wert}
             onChange={e => aufAenderung(e.target.value)}
             placeholder="Nummernpfad, z. B. 161/278"
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm
-                       focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+            className="feld mt-1"
           />
         </label>
         <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-900">
@@ -102,29 +101,34 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
 
   return (
     <div ref={huelle} className="relative">
-      <span className="text-sm font-medium text-gray-700">Kategorie</span>
+      <span className="text-sm font-medium text-normal">Kategorie</span>
 
-      <div className="mt-1 rounded border border-gray-300 px-3 py-2">
+      <div className="feld mt-1">
+        {/* Umbrechen statt abschneiden (AP-2.35). Ein Kategoriepfad wie
+            „Haus & Garten/Möbel/Kommoden & Sideboards" ist länger als das
+            Feld; `truncate` machte daraus „Haus & Garten/Möbel/Komm…" und
+            verschwieg genau das Ende, an dem die Kategorie sich unterscheidet.
+            In der schmalen 35-%-Spalte trifft das fast jeden Pfad. */}
         {bekannt ? (
-          <span className="block truncate text-sm text-gray-900">{bekannt.name}</span>
+          <span className="block break-words text-sm text-stark">{bekannt.name}</span>
         ) : wert ? (
           <span className="flex items-start gap-1.5 text-sm text-amber-900">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
             <span className="min-w-0">
-              <span className="block truncate">{wert}</span>
+              <span className="block break-words">{wert}</span>
               <span className="block text-xs">
                 Nicht in der Liste. Bleibt so, bis du etwas anderes wählst.
               </span>
             </span>
           </span>
         ) : (
-          <span className="block text-sm text-gray-500">Keine Kategorie gesetzt</span>
+          <span className="block text-sm text-leise">Keine Kategorie gesetzt</span>
         )}
-        <span className="mt-0.5 block text-xs text-gray-500">{wert || '—'}</span>
+        <span className="mt-0.5 block break-words text-xs text-leise">{wert || '—'}</span>
       </div>
 
       <label className="relative mt-2 block">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
         <span className="sr-only">Kategorie suchen</span>
         <input
           type="search"
@@ -133,24 +137,23 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
           onChange={e => { setSuche(e.target.value); setOffen(true); }}
           onKeyDown={e => { if (e.key === 'Escape') setOffen(false); }}
           placeholder="Kategorie suchen …"
-          className="w-full rounded border border-gray-300 py-2 pl-9 pr-3 text-sm
-                     focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+className="feld w-full py-2 pl-9 pr-3"
         />
       </label>
 
       {offen && treffer.length > 0 && (
-        <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded border border-gray-300 bg-white shadow-lg">
+        <ul className="karte absolute z-20 mt-1 max-h-64 w-full overflow-y-auto">
           {treffer.map(k => (
             <li key={k.wert}>
               <button
                 type="button"
                 onClick={() => { aufAenderung(k.wert); setSuche(''); setOffen(false); }}
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm
-                           hover:bg-gray-50"
+                           hover:bg-[var(--primary-light)]"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-gray-900">{k.name}</span>
-                  <span className="block text-xs text-gray-500">{k.wert}</span>
+                  <span className="block truncate text-stark">{k.name}</span>
+                  <span className="block text-xs text-leise">{k.wert}</span>
                 </span>
                 {k.wert === wert && <Check className="h-4 w-4 flex-shrink-0 text-primary-custom" aria-hidden />}
               </button>
@@ -159,7 +162,7 @@ export function KategorieWahl({ wert, aufAenderung }: Props) {
         </ul>
       )}
       {offen && suche.trim() !== '' && treffer.length === 0 && (
-        <p className="absolute z-20 mt-1 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600">
+        <p className="karte absolute z-20 mt-1 w-full px-3 py-2 text-sm text-leise">
           Kein Treffer.
         </p>
       )}

@@ -72,27 +72,30 @@ export function VorlagenListe({
 
   return (
     <section className="mb-6">
-      <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-gray-800">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-normal">
         <Files className="h-4 w-4" aria-hidden />
         Vorlagen
       </h2>
-      <p className="mb-2 text-xs text-gray-600">
+      <p className="mb-2 text-xs text-leise">
         Eine Vorlage geht nie online. Angewendet entsteht daraus eine neue Anzeige –
         die Vorlage bleibt und lässt sich beliebig oft wiederverwenden.
       </p>
 
       {fehler && (
-        <p className="mb-2 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p className="mb-2 hinweis hinweis-fehler">
           {fehler}
         </p>
       )}
 
-      <ul className="divide-y divide-gray-200 overflow-hidden rounded border border-gray-200 bg-white">
+      {/* Unter sm steht der Titel auf eigener Zeile (AP-2.18): neben „Anwenden"
+          und dem Papierkorb blieben ihm auf 375 px rund 110 px, und die Vorlage
+          war nur noch an „Vorlage: Möbe…" zu erkennen. */}
+      <ul className="liste">
         {vorlagen.map(v => (
-          <li key={v.datei} className="flex items-center gap-3 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm text-gray-900">{v.titel}</p>
-              <p className="text-xs text-gray-500">
+          <li key={v.datei} className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+              <p className="truncate text-sm text-stark">{v.titel}</p>
+              <p className="text-xs text-leise">
                 {v.unlesbar
                   ? `Unlesbar: ${v.unlesbar}`
                   : `${v.bilder} ${v.bilder === 1 ? 'Bild' : 'Bilder'}`}
@@ -103,8 +106,7 @@ export function VorlagenListe({
               type="button"
               onClick={() => void anwenden(v)}
               disabled={beschaeftigt !== null || v.unlesbar !== null}
-              className="flex items-center gap-2 rounded border border-gray-300 px-3 py-1.5 text-sm
-                         text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-ghost"
             >
               <Plus className="h-4 w-4" aria-hidden />
               {beschaeftigt === v.datei ? 'Wird angelegt …' : 'Anwenden'}
@@ -115,8 +117,7 @@ export function VorlagenListe({
               onClick={() => setFragtLoeschen(v)}
               disabled={beschaeftigt !== null}
               aria-label={`Vorlage „${v.titel}" löschen`}
-              className="rounded border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-50
-                         disabled:cursor-not-allowed disabled:opacity-60"
+className="btn-leise"
             >
               <Trash2 className="h-4 w-4" aria-hidden />
             </button>
@@ -127,7 +128,7 @@ export function VorlagenListe({
       {/* Rückfrage, weil Löschen die Bilder mitnimmt und nicht rückgängig zu
           machen ist. Die Anzeige, aus der die Vorlage entstand, bleibt. */}
       {fragtLoeschen && (
-        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3">
+        <div className="hinweis hinweis-warn mt-2">
           <p className="text-sm text-amber-900">
             „{fragtLoeschen.titel}" samt Bildern löschen? Anzeigen bleiben unberührt.
           </p>
@@ -136,15 +137,14 @@ export function VorlagenListe({
               type="button"
               onClick={() => void entfernen(fragtLoeschen)}
               disabled={beschaeftigt !== null}
-              className="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700
-                         disabled:cursor-not-allowed disabled:opacity-60"
+className="btn-primaer"
             >
               Löschen
             </button>
             <button
               type="button"
               onClick={() => setFragtLoeschen(null)}
-              className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-white"
+              className="btn-ghost"
             >
               Abbrechen
             </button>

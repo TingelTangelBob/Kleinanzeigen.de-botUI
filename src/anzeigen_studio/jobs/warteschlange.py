@@ -14,13 +14,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from anzeigen_studio.bestand import stand
 from anzeigen_studio.botbridge import konfiguration
+from anzeigen_studio.botbridge.events import Phase
 from anzeigen_studio.botbridge.runner import BotLauf, LaufAuftrag
-from anzeigen_studio.core import db, zugang
+from anzeigen_studio.core import db, nutzerconfig, zugang
+from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.jobs import aufraeumen, speicher
 from anzeigen_studio.jobs.modelle import JobZustand
@@ -45,6 +48,19 @@ STANDARD_PARALLEL: Final[int] = 2
 _SCHREIBENDE_BEFEHLE: Final[frozenset[str]] = frozenset({
     "publish", "update", "delete", "extend",
 })
+
+#: Zeile, mit der der Bot einen Selektor-Skip meldet - Deutsch wie Englisch, je
+#: nachdem ob der Container `LANG=de_DE.UTF-8` gesetzt hat. Deckt alle
+#: Skip-Gruende ab (nicht faellig, schon eine id, inaktiv, nicht in der
+#: ID-Liste); fuer AP-3.11 zaehlt nur, DASS uebersprungen wurde.
+_SKIP_MUSTER: Final[re.Pattern[str]] = re.compile(r"ÜBERSPRUNGEN|SKIPPED", re.IGNORECASE)
+
+#: "0 Anzeigen geladen" / "Loaded 0 ads": nach dem Filtern blieb keine einzige
+#: Anzeige zu tun. Zusammen mit einer Skip-Zeile heisst das: Der Lauf hat nichts
+#: eingestellt, nur uebersprungen (AP-3.11).
+_NICHTS_GELADEN_MUSTER: Final[re.Pattern[str]] = re.compile(
+    r"\b0 Anzeigen geladen\b|\bLoaded 0 ads\b", re.IGNORECASE,
+)
 
 
 class Warteschlange:
@@ -118,13 +134,27 @@ class Warteschlange:
 
     # -- intern --------------------------------------------------------------
 
-    def _nutzer_konfiguration(self, _profil_id: int) -> dict[str, object]:
-        """Der nutzereditierbare Teil der Bot-Konfiguration.
+    def _nutzer_konfiguration(self, profil_id: int) -> dict[str, object]:
+        """Der nutzereditierbare Teil der Bot-Konfiguration (AP-2.9).
 
-        Noch leer: Die Einstellungsoberflaeche ist AP-2.9. Bis dahin laeuft der
-        Bot mit seinen Vorgaben plus der festen Basis.
+        Liegt in nutzer.yaml im Profilverzeichnis. Vor dem Lauf schreibt
+        konfiguration.schreiben daraus config.yaml - inklusive Sperrliste.
         """
-        return {}
+        conn = db.connect(self._settings.database_path)
+        try:
+            profil = profile_dienst.nach_id(conn, profil_id)
+            if profil is None:
+                LOG.warning("Nutzerkonfiguration: Profil %d nicht gefunden", profil_id)
+                return {}
+            pfade = profile_dienst.pfade_fuer(self._settings.profiles_dir, profil.slug)
+            gelesen = nutzerconfig.lesen(pfade.wurzel)
+        finally:
+            conn.close()
+        # Noch einmal die Sperrliste, falls die Datei von Hand beschrieben wurde.
+        entfernt = konfiguration.gesperrte_entfernen(gelesen)
+        if entfernt:
+            LOG.warning("Gesperrte Konfigurationsfelder in nutzer.yaml verworfen: %s", ", ".join(entfernt))
+        return gelesen
 
     async def _takt_abwarten(self, job_id: int, profil_id: int) -> None:
         """Haelt Mindestpause und Zeitfenster ein (AP-1.12).
@@ -234,11 +264,30 @@ class Warteschlange:
         # Datei zu sehen (AP-3.3). Der Schutz liegt damit in der Konfiguration
         # und nicht allein im Argument: Selbst ein falscher Auswahlschalter
         # koennte dann nichts anderes treffen.
+        # Per-Link-Nachladen (AP-3.7) schreibt nach fremde-ads/, nicht in den
+        # eigenen Bestand. Erkennbar am Auswahlschalter --ads=; der Konto-
+        # Download hat keine Nummernliste.
+        nachladen = (
+            job.befehl == "download"
+            and any(a.startswith("--ads=") for a in job.argumente)
+        )
+        # Ein `publish`-Lauf auf genau eine Datei kommt aus der Oberflaeche und
+        # meint eine Anzeige OHNE Nummer (AP-3.8). Fuer die wuerde
+        # `delete_old_ads_by_title` in den veroeffentlichten Anzeigen nach
+        # demselben Titel suchen und den Treffer loeschen - aus "neu einstellen"
+        # wuerde stillschweigend "eine andere Anzeige ersetzen". Hier gesperrt,
+        # nicht in der Einstellung: Von der Laufliste aus gestartete Laeufe
+        # sollen weiter tun, was der Mensch dort eingestellt hat.
+        einzelne_datei = bool(job.anzeigen_glob) and "*" not in (job.anzeigen_glob or "")
+        neue_anzeige = job.befehl == "publish" and einzelne_datei
+
         verworfen = konfiguration.schreiben(
             profil_verzeichnis / "config.yaml",
             self._nutzer_konfiguration(profil_id),
             anzeigen_glob = job.anzeigen_glob or "./ads/**/ad_*.{yaml,yml,json}",
             chromium = self._settings.chromium,
+            download_ordner = "fremde-ads" if nachladen else None,
+            titelloeschen_sperren = neue_anzeige,
         )
         if verworfen:
             LOG.warning("Gesperrte Konfigurationsfelder verworfen: %s", ", ".join(verworfen))
@@ -267,8 +316,25 @@ class Warteschlange:
         # erwischen - es lief zuletzt in einem Container, den es nicht mehr gibt.
         aufraeumen.vor_lauf(profil_verzeichnis / ".temp" / "browser-profile")
 
+        # Hat der Bot mindestens eine Anzeige bis zum Abschluss gebracht? Die
+        # ABSCHLUSS-Phase wird nur an der Bot-Zeile "ERFOLG: Anzeige mit ID ..."
+        # erkannt (events.py). Ein gezielter publish/update-Lauf, der 0-mal
+        # dorthin kommt, hat nichts eingestellt - siehe unten (AP-3.9).
+        abschluss_gesehen = False
+        # Fuer AP-3.11: Hat der Lauf ueberhaupt uebersprungen, und blieb nach
+        # dem Filtern nichts zu tun? Beides zusammen ohne ABSCHLUSS heisst
+        # "nichts eingestellt, nur uebersprungen" - auch bei einem Sammellauf.
+        skip_gesehen = False
+        nichts_geladen = False
+
         await lauf.starten()
         async for ereignis in lauf.ereignisse():
+            if ereignis.phase is Phase.ABSCHLUSS:
+                abschluss_gesehen = True
+            if _SKIP_MUSTER.search(ereignis.text):
+                skip_gesehen = True
+            if _NICHTS_GELADEN_MUSTER.search(ereignis.text):
+                nichts_geladen = True
             with db.transaction(conn):
                 speicher.log_anhaengen(conn, job_id, ereignis)
                 # Woran der Lauf gerade ist (AP-2.8). Sagt die Zeile nichts
@@ -314,6 +380,52 @@ class Warteschlange:
                 f"Der Lauf endete ohne Fehlercode, im Protokoll stehen aber "
                 f"{ergebnis.fehlerzeilen} Fehlerzeilen. Bitte im Protokoll nachsehen, "
                 f"was tatsächlich passiert ist."
+            )
+        elif (
+            ergebnis.rueckgabecode == 0
+            and job.befehl in ("publish", "update")
+            and einzelne_datei
+            and not abschluss_gesehen
+        ):
+            # Rueckgabecode 0, keine Fehlerzeilen - und trotzdem keine einzige
+            # Anzeige eingestellt. Das passiert, wenn `publish` (Standard
+            # --ads=due) die Anzeige als "noch nicht faellig" ueberspringt: im
+            # Protokoll steht dann "UEBERSPRUNGEN ... zuletzt vor N Tagen
+            # veroeffentlicht ... erst nach 7 Tagen" und "0 Anzeigen geladen".
+            # Das als "fertig" zu melden hiesse behaupten, die Anzeige sei
+            # online (AP-3.9). Dieser Zweig fasst den gezielten Einzel-Lauf aus
+            # dem Editor - unabhaengig davon, ob eine Skip-Zeile erkannt wurde;
+            # der Sammellauf, der alles ueberspringt, folgt darunter (AP-3.11).
+            zustand = JobZustand.PRUEFEN
+            meldung = (
+                "Der Lauf endete ohne Fehler, hat aber keine Anzeige veröffentlicht "
+                "oder aktualisiert. Häufigster Grund: Die Anzeige ist noch nicht zur "
+                "erneuten Veröffentlichung fällig (Standard: 7 Tage seit dem letzten "
+                "Mal). Das Protokoll nennt unter „ÜBERSPRUNGEN“ den genauen Grund. "
+                "Steht dort ein Veröffentlichungsdatum, obwohl die Anzeige nie online "
+                "war, „updated_on“ bzw. „created_on“ in der Anzeigendatei "
+                "leeren und erneut hochladen."
+            )
+        elif (
+            ergebnis.rueckgabecode == 0
+            and job.befehl in ("publish", "update")
+            and not abschluss_gesehen
+            and skip_gesehen
+            and nichts_geladen
+        ):
+            # AP-3.11: Auch ein Sammellauf, der jede Anzeige uebersprungen und
+            # nach dem Filtern keine einzige geladen hat, hat auf der Plattform
+            # nichts bewegt. "0 veroeffentlicht, alles uebersprungen" ist
+            # derselbe stille Fehlschlag wie beim gezielten Einzel-Lauf oben
+            # (AP-3.9), nur ohne Dateigrenze - kein gruener Haken. Ein
+            # Sammellauf, der wenigstens eine Anzeige eingestellt hat, erreicht
+            # ABSCHLUSS und faellt hier nicht herein.
+            zustand = JobZustand.PRUEFEN
+            meldung = (
+                "Der Lauf endete ohne Fehler, hat aber keine einzige Anzeige "
+                "veröffentlicht oder aktualisiert – alle wurden übersprungen. "
+                "Das Protokoll nennt unter „ÜBERSPRUNGEN“ für jede Anzeige den "
+                "Grund (meist: noch nicht zur erneuten Veröffentlichung fällig)."
             )
         elif ergebnis.rueckgabecode == 0:
             zustand = JobZustand.FERTIG

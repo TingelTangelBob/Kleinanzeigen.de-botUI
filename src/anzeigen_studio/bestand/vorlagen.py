@@ -153,6 +153,9 @@ def aus_anzeige(profil_wurzel: Path, datei: str) -> Vorlage:
 
     relativ = schreiben(
         profil_wurzel, felder, bilder, unterordner = ORDNER, praefix = PRAEFIX,
+        # Vorlagen sehen die Faelligkeitslogik des Bots nie (AP-3.9); ihr
+        # `created_on` ist rein lokal das "angelegt am" fuer die Vorlagenliste.
+        mit_erstellzeit = True,
     )
     LOG.info("Vorlage aus %s angelegt: %s (%d Bilder)", datei, relativ, len(bilder))
 

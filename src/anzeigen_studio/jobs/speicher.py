@@ -226,6 +226,25 @@ def log_lesen(conn: sqlite3.Connection, job_id: int, *, ab_id: int = 0) -> list[
     return [dict(row) for row in rows]
 
 
+def beendete_loeschen(conn: sqlite3.Connection, profil_id: int) -> int:
+    """Loescht die abgeschlossenen Laeufe eines Profils samt Protokoll (AP-2.32).
+
+    Betroffen ist alles, was nicht mehr laeuft, wartet oder auf eine Eingabe
+    wartet - also FERTIG, PRUEFEN, GESCHEITERT und ABGEBROCHEN. Ein aktiver
+    oder eingereihter Lauf bleibt immer stehen: Er darf nicht unter sich selbst
+    weggeloescht werden. Die Protokollzeilen gehen ueber ON DELETE CASCADE
+    (`job_log.job_id`) mit.
+
+    Die drei Zustaende unten stehen bewusst als vollstaendige Literale, damit
+    keine zusammengesetzte SQL entsteht, die man auf Injektion pruefen muesste.
+    """
+    cursor = conn.execute(
+        "DELETE FROM job WHERE profil_id = ? AND zustand NOT IN (?, ?, ?)",
+        (profil_id, JobZustand.WARTET, JobZustand.LAEUFT, JobZustand.BRAUCHT_EINGABE),
+    )
+    return cursor.rowcount or 0
+
+
 def verwaiste_aufraeumen(conn: sqlite3.Connection) -> int:
     """Markiert Jobs, die den Neustart nicht ueberdauern koennen, als abgebrochen.
 

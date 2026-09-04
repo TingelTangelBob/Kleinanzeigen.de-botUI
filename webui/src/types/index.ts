@@ -51,6 +51,12 @@ export interface Job {
   wartet_bis: string | null;
   wartegrund: string | null;
   /**
+   * Auf welche Anzeigendatei der Lauf eingegrenzt ist (AP-3.3), etwa
+   * `./downloaded-ads/ad_4711/ad_4711.yaml`. `null` heißt: weiter Ausschnitt.
+   * Das Dashboard (AP-2.29) ordnet damit den Lauf einer Anzeige zu.
+   */
+  anzeigen_glob: string | null;
+  /**
    * Woran der Lauf gerade ist (AP-2.8) — Kennung, fertiger Text und seit wann.
    * Reine Anzeige. `null` heißt nur, dass noch nichts erkannt wurde.
    */
@@ -98,6 +104,15 @@ export interface BestandsAnzeige {
   /** Kennungen aus der Verlustanalyse, siehe docs/RUNDLAUF.md. */
   hinweise: string[];
   unlesbar: string | null;
+  /** Aus dem Bestandsordner: downloaded-ads/ads = eigene, fremde-ads = fremde. */
+  herkunft: 'eigene' | 'fremde';
+  /**
+   * Eigene, einst online gestellte Anzeige, die die Plattform nicht mehr als
+   * aktiv führt (AP-3.10): `herkunft === 'eigene'`, hat eine Anzeigennummer und
+   * `active: false`. „Gelöscht", pausiert und „in Prüfung" fallen dabei
+   * zusammen – siehe docs/RUNDLAUF.md.
+   */
+  geloescht: boolean;
 }
 
 /** Eine Anzeige mit allen Feldern - Grundlage des Editors (AP-2.5). */
@@ -250,3 +265,34 @@ export interface Vorlage {
   erstellt_am: string | null;
   unlesbar: string | null;
 }
+
+// ------------------------------------------------------------------ Einstellungen (AP-2.9)
+
+export interface EinstellungsFeld {
+  pfad: string;
+  titel: string;
+  beschreibung: string;
+  typ: 'boolean' | 'integer' | 'number' | 'string' | 'enum' | 'string[]';
+  vorgabe: unknown;
+  null_erlaubt: boolean;
+  langtext?: boolean;
+  enum?: string[];
+  enum_labels?: Record<string, string>;
+}
+
+export interface EinstellungsGruppe {
+  id: string;
+  wurzel: string;
+  titel: string;
+  beschreibung: string;
+  eingeklappt: boolean;
+  warnung?: string;
+  felder: EinstellungsFeld[];
+}
+
+export interface Einstellungen {
+  profil: string;
+  werte: Record<string, unknown>;
+  gruppen: EinstellungsGruppe[];
+}
+

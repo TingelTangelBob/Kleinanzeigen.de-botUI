@@ -68,28 +68,28 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="nachladen-titel"
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="dialog"
       >
-        <h2 id="nachladen-titel" className="mb-1 font-semibold text-gray-900">
-          Ältere Anzeigen holen
+        <h2 id="nachladen-titel" className="mb-1 font-semibold text-stark">
+          Anzeigen per Link holen
         </h2>
-        <p className="mb-3 text-sm text-gray-700">
-          Links oder Anzeigennummern einfügen – eine pro Zeile, Text drumherum stört nicht.
-          Gedacht für Anzeigen, die nicht mehr in deinem Profil stehen.
+        <p className="mb-3 text-sm text-normal">
+          Beliebige Kleinanzeigen-Adressen oder Anzeigennummern einfügen – auch von anderen.
+          Eine pro Zeile, Text drumherum stört nicht. Die Anzeigen landen unter „Von anderen“.
         </p>
 
         {eingereiht ? (
           <>
-            <p className="mb-4 rounded border border-green-200 bg-green-100 p-3 text-sm text-green-800">
+            <p className="mb-4 hinweis">
               Lauf {eingereiht.job_id} ist eingereiht und holt {eingereiht.nummern.length}{' '}
-              {eingereiht.nummern.length === 1 ? 'Anzeige' : 'Anzeigen'}. Unter „Läufe" lässt
-              er sich mitlesen.
+              {eingereiht.nummern.length === 1 ? 'Anzeige' : 'Anzeigen'}. Unter Einstellungen →
+              Läufe lässt er sich mitlesen.
             </p>
             <div className="flex justify-end">
               <button
                 type="button"
                 onClick={aufSchliessen}
-                className="rounded bg-primary-custom px-4 py-2 text-sm font-medium"
+                className="btn-primaer"
               >
                 Schließen
               </button>
@@ -104,27 +104,26 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
                 value={text}
                 onChange={e => void pruefen(e.target.value)}
                 placeholder={'https://www.kleinanzeigen.de/s-anzeige/…/3310837392-161-168\n3275022547'}
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm
-                           focus:border-primary-custom focus:outline-none focus:ring-1 focus:ring-primary-custom"
+className="feld"
               />
             </label>
 
             {fund && (
               <div className="mt-3 space-y-2 text-sm">
-                <p className="text-gray-900">
+                <p className="text-stark">
                   <span className="font-medium">{fund.neu.length}</span>{' '}
                   {fund.neu.length === 1 ? 'Anzeige wird geholt' : 'Anzeigen werden geholt'}
                   {fund.neu.length > 0 && (
-                    <span className="block text-xs text-gray-600">{fund.neu.join(', ')}</span>
+                    <span className="block text-xs text-leise">{fund.neu.join(', ')}</span>
                   )}
                 </p>
                 {fund.schon_vorhanden.length > 0 && (
-                  <p className="text-gray-600">
+                  <p className="text-leise">
                     {fund.schon_vorhanden.length} schon im Bestand, wird übersprungen.
                   </p>
                 )}
                 {fund.unlesbare_zeilen.length > 0 && (
-                  <p className="flex items-start gap-1.5 text-xs text-gray-500">
+                  <p className="flex items-start gap-1.5 text-xs text-leise">
                     <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
                     <span>
                       {fund.unlesbare_zeilen.length}{' '}
@@ -136,7 +135,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
               </div>
             )}
 
-            <p className="mt-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="hinweis hinweis-warn mt-3 flex items-start gap-2 text-xs">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
               <span>
                 Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen.
@@ -146,7 +145,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
             </p>
 
             {fehler && (
-              <p role="alert" className="mt-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p role="alert" className="mt-3 hinweis hinweis-fehler">
                 {fehler}
               </p>
             )}
@@ -155,7 +154,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
               <button
                 type="button"
                 onClick={aufSchliessen}
-                className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="btn-ghost"
               >
                 Abbrechen
               </button>

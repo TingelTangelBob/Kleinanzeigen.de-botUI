@@ -21,6 +21,7 @@ import {
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import type { KiEntwurf, KiKosten, KiStatus } from '../types';
+import { ProfilWarteschlange } from './ProfilWarteschlange';
 
 /** Woran der Vorgang gerade ist. Jede Stufe entspricht etwas Messbarem. */
 type Stufe =
@@ -154,14 +155,25 @@ export function NeueAnzeigeSeite() {
   const offeneFragen = entwurf?.fragen.filter(f => !antworten[f.id]) ?? [];
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <h1 className="mb-1 text-xl font-semibold text-gray-900">Neue Anzeige aus Fotos</h1>
-      <p className="mb-5 text-sm text-gray-600">
+    // Dieselbe breitere Kante wie im Editor (AP-2.24): die Chip-Reihen der
+    // Vorschläge und der Bildstreifen bekommen mehr Platz und brechen später
+    // um. Fließtext bleibt über `.lesebreite` gedeckelt.
+    <div className="seite-breit">
+      <div className="seite-kopf mb-5">
+        <div>
+          <h1 className="sr-only">Neue Anzeige</h1>
+          <p className="seite-beschrieb">
         Fotos hochladen, erkennen lassen, Rückfragen beantworten. Die Anzeige wird
         anschließend <strong>lokal angelegt</strong> – veröffentlicht wird sie nicht.
-      </p>
+          </p>
+        </div>
+      </div>
 
       {kiStatus && !kiStatus.hinterlegt && <SchluesselFehlt />}
+
+      {/* Vor dem Formular, nicht darunter (AP-2.21): Die Auskunft, dass noch
+          ein Lauf aussteht, ist erst danach wertlos. */}
+      {profil && <ProfilWarteschlange profil={profil} />}
 
       <DatenschutzHinweis bildkante={kiStatus?.bildkante ?? 768} />
 
@@ -177,7 +189,7 @@ export function NeueAnzeigeSeite() {
       />
 
       {fehler && (
-        <p role="alert" className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <p role="alert" className="hinweis hinweis-fehler lesebreite mb-4">
           {fehler}
         </p>
       )}
@@ -190,14 +202,14 @@ export function NeueAnzeigeSeite() {
             type="button"
             onClick={() => void erkennen()}
             disabled={dateien.length === 0 || !profil || !kiStatus?.hinterlegt}
-            className="flex w-full items-center justify-center gap-2 rounded bg-primary-custom px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-primaer w-full sm:w-auto"
           >
             <Sparkles className="h-4 w-4" />
             {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
           </button>
           {/* Ein grauer Knopf ohne Begruendung laesst den Nutzer raten. */}
           {(dateien.length === 0 || !profil || !kiStatus?.hinterlegt) && (
-            <p className="mt-2 text-center text-xs text-gray-500">
+            <p className="lesebreite mt-2 text-center text-xs text-leise sm:text-left">
               {kiStatus === null
                 ? 'Der Zustand des KI-Zugangs ließ sich nicht laden – ist das Backend erreichbar?'
                 : !kiStatus.hinterlegt
@@ -234,16 +246,16 @@ export function NeueAnzeigeSeite() {
       )}
 
       {angelegt && (
-        <div className="rounded border border-green-200 bg-green-50 p-4">
-          <p className="flex items-center gap-2 font-medium text-green-900">
+        <div className="hinweis lesebreite">
+          <p className="flex items-center gap-2 font-medium">
             <Check className="h-5 w-5" />
             „{angelegt}“ liegt jetzt im Bestand.
           </p>
-          <p className="mt-2 text-sm text-green-800">
+          <p className="mt-2 text-sm">
             Sie ist <strong>nicht</strong> veröffentlicht. Unter „Anzeigen“ lässt sie sich
             bearbeiten – Kategorie und Versand fehlen noch – und von dort aus hochladen.
           </p>
-          <a href="#bestand" className="mt-3 inline-block text-sm font-medium text-green-900 underline">
+          <a href="#bestand" className="mt-3 inline-block text-sm font-medium underline">
             Zum Bestand
           </a>
         </div>
@@ -254,9 +266,9 @@ export function NeueAnzeigeSeite() {
 
 function SchluesselFehlt() {
   return (
-    <div className="mb-4 flex items-start gap-3 rounded border border-amber-200 bg-amber-50 p-3">
-      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" aria-hidden />
-      <p className="text-sm text-amber-900">
+    <div className="hinweis hinweis-warn lesebreite mb-4 flex items-start gap-3">
+      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden />
+      <p>
         Es ist noch kein OpenAI-Schlüssel hinterlegt. Ohne ihn kann nichts erkannt werden –
         einzutragen unter <a href="#profile" className="font-medium underline">Profile</a>.
       </p>
@@ -268,20 +280,23 @@ function SchluesselFehlt() {
 function DatenschutzHinweis({ bildkante }: { bildkante: number }) {
   const [offen, setOffen] = useState(false);
   return (
-    <div className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+    <div className="karte lesebreite mb-4 p-3 text-sm">
       <button
         type="button"
         onClick={() => setOffen(!offen)}
-        className="flex w-full items-start gap-2 text-left text-gray-800"
+        aria-expanded={offen}
+        // `py-1` bringt die Zeile auf 24px Trefferhöhe (AP-2.34) - vorher 20px
+        // und damit unter dem Mindestmaß aus WCAG 2.5.8.
+        className="flex w-full items-start gap-2 py-1 text-left text-normal"
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-500" aria-hidden />
+        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
         <span>
           Die Fotos werden an OpenAI geschickt.{' '}
           <span className="underline">{offen ? 'Weniger' : 'Was genau passiert?'}</span>
         </span>
       </button>
       {offen && (
-        <ul className="mt-2 list-disc space-y-1 pl-9 text-gray-700">
+        <ul className="mt-2 list-disc space-y-1 pl-9 text-normal">
           <li>Vor dem Versand wird jedes Bild auf höchstens {bildkante} px verkleinert.</li>
           <li>
             Alle Metadaten werden entfernt – auch die GPS-Koordinaten, die Handyfotos
@@ -332,43 +347,55 @@ function BildAuswahl({
 
   return (
     <div
-      className={`mb-4 rounded-lg border-2 border-dashed p-3 transition-colors ${
-        ueberZone ? 'border-primary-custom bg-blue-50/50' : 'border-transparent'
-      }`}
+      className={`mb-4 ${ueberZone ? 'dropzone-aktiv' : ''}`}
       onDragOver={aufDragOver}
       onDragEnter={aufDragOver}
       onDragLeave={() => setUeberZone(false)}
       onDrop={aufDrop}
     >
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {vorschauen.map((url, index) => (
-          <div key={url} className="group relative aspect-square overflow-hidden rounded border border-gray-200">
-            <img src={url} alt={`Foto ${index + 1}`} className="h-full w-full object-cover" />
-            {!gesperrt && (
+      {dateien.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => eingabe.current?.click()}
+          disabled={gesperrt}
+          className={`dropzone ${ueberZone ? 'dropzone-aktiv' : ''}`}
+        >
+          <ImagePlus className="h-8 w-8" />
+          <span className="text-base font-medium text-stark">Fotos hierher ziehen</span>
+          <span className="text-sm text-leise">oder klicken, um Dateien zu wählen. JPEG, PNG oder GIF.</span>
+        </button>
+      ) : (
+        <div className={`karte p-3 ${ueberZone ? 'dropzone-aktiv' : ''}`}>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {vorschauen.map((url, index) => (
+              <div key={url} className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl" style={{ border: '1px solid var(--karte-rand)' }}>
+                <img src={url} alt={`Foto ${index + 1}`} className="h-full w-full object-cover" />
+                {!gesperrt && (
+                  <button
+                    type="button"
+                    onClick={() => aufEntfernen(index)}
+                    aria-label={`Foto ${index + 1} entfernen`}
+                    className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-stark shadow"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {dateien.length < MAX_BILDER && !gesperrt && (
               <button
                 type="button"
-                onClick={() => aufEntfernen(index)}
-                aria-label={`Foto ${index + 1} entfernen`}
-                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-gray-700 shadow"
+                onClick={() => eingabe.current?.click()}
+                className="flex h-24 w-24 flex-shrink-0 flex-col items-center justify-center gap-1 rounded-xl text-leise"
+                style={{ border: '2px dashed var(--karte-rand)' }}
               >
-                <Trash2 className="h-4 w-4" />
+                <ImagePlus className="h-5 w-5" />
+                <span className="text-[11px]">Foto</span>
               </button>
             )}
           </div>
-        ))}
-
-        {dateien.length < MAX_BILDER && !gesperrt && (
-          <button
-            type="button"
-            onClick={() => eingabe.current?.click()}
-            className="flex aspect-square flex-col items-center justify-center gap-1 rounded border-2 border-dashed border-gray-300 text-gray-500 hover:border-primary-custom hover:text-primary-custom"
-          >
-            <ImagePlus className="h-6 w-6" />
-            <span className="text-xs">Foto wählen</span>
-            <span className="text-[10px] text-gray-400">oder hierher ziehen</span>
-          </button>
-        )}
-      </div>
+        </div>
+      )}
       <input
         ref={eingabe}
         type="file"
@@ -381,7 +408,7 @@ function BildAuswahl({
           ereignis.target.value = '';
         }}
       />
-      <p className="mt-2 text-xs text-gray-500">
+      <p className="lesebreite mt-2 text-xs text-leise">
         {dateien.length} von {MAX_BILDER} Fotos. Mehrere Ansichten helfen – Vorderseite,
         Rückseite, Typenschild. JPEG, PNG oder GIF.
       </p>
@@ -396,13 +423,13 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
         : 'Anzeige wird angelegt …';
 
   return (
-    <div className="mb-6 rounded border border-gray-200 bg-white p-4" role="status" aria-live="polite">
-      <p className="flex items-center gap-2 text-sm font-medium text-gray-900">
+    <div className="karte lesebreite mb-6 p-4" role="status" aria-live="polite">
+      <p className="flex items-center gap-2 text-sm font-medium text-stark">
         <Loader2 className="h-4 w-4 animate-spin text-primary-custom" aria-hidden />
         {text}
       </p>
       {stufe.art === 'hochladen' && (
-        <div className="mt-3 h-1.5 overflow-hidden rounded bg-gray-200">
+        <div className="mt-3 h-1.5 overflow-hidden rounded" style={{ background: 'var(--karte-rand)' }}>
           <div
             className="h-full bg-primary-custom transition-[width] duration-200"
             style={{ width: `${Math.round(stufe.anteil * 100)}%` }}
@@ -410,7 +437,7 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
         </div>
       )}
       {stufe.art === 'warten' && (
-        <p className="mt-2 text-xs text-gray-600">
+        <p className="mt-2 text-xs text-leise">
           Das dauert meist 10 bis 30 Sekunden. Der Anbieter meldet keinen Zwischenstand –
           deshalb steht hier eine Uhr und kein Balken.
         </p>
@@ -441,17 +468,17 @@ function Ergebnis({
   return (
     <div className="space-y-4">
       {entwurf.sicherheit === 'niedrig' && (
-        <div className="flex items-start gap-3 rounded border border-amber-200 bg-amber-50 p-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" aria-hidden />
-          <p className="text-sm text-amber-900">
+        <div className="hinweis hinweis-warn lesebreite flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden />
+          <p>
             Das Modell ist sich unsicher, was auf den Fotos zu sehen ist. Sieh dir den
             Vorschlag genau an oder lade deutlichere Fotos hoch.
           </p>
         </div>
       )}
 
-      <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-3 font-medium text-gray-900">Vorschlag</h2>
+      <div className="karte lesebreite p-4">
+        <h2 className="mb-3 font-medium text-stark">Vorschlag</h2>
         <dl className="space-y-3 text-sm">
           <Zeile bezeichnung="Titel">{entwurf.titel}</Zeile>
           <Zeile bezeichnung="Beschreibung">
@@ -463,16 +490,16 @@ function Ergebnis({
               ? `grobe Einordnung: ${euro(entwurf.preis_von_euro)} bis ${euro(entwurf.preis_bis_euro)}`
               : 'keine Einschätzung'}
             {entwurf.preis_begruendung && (
-              <span className="mt-0.5 block text-xs text-gray-500">{entwurf.preis_begruendung}</span>
+              <span className="lesebreite mt-0.5 block text-xs text-leise">{entwurf.preis_begruendung}</span>
             )}
-            <span className="mt-0.5 block text-xs text-gray-500">
+            <span className="lesebreite mt-0.5 block text-xs text-leise">
               Geschätzt, nicht recherchiert – das Modell kennt keine aktuellen Marktpreise.
               Der Preis wird unten gesetzt, nicht hier.
             </span>
           </Zeile>
           <Zeile bezeichnung="Kategorie">
             {entwurf.kategorie ?? 'kein Vorschlag'}
-            <span className="mt-0.5 block text-xs text-gray-500">
+            <span className="lesebreite mt-0.5 block text-xs text-leise">
               Nur ein Hinweis – die Kategorie wird im Editor gesetzt, nicht hier.
             </span>
           </Zeile>
@@ -480,9 +507,9 @@ function Ergebnis({
       </div>
 
       {entwurf.fragen.length > 0 && (
-        <div className="rounded border border-gray-200 bg-white p-4">
-          <h2 className="mb-1 font-medium text-gray-900">Rückfragen</h2>
-          <p className="mb-3 text-xs text-gray-600">
+        <div className="karte p-4">
+          <h2 className="mb-1 font-medium text-stark">Rückfragen</h2>
+          <p className="lesebreite mb-3 text-xs text-leise">
             Das kann man auf Fotos nicht sehen. Antworten kostet nichts – sie werden
             eingesetzt, ohne noch einmal zu fragen.
           </p>
@@ -511,7 +538,7 @@ function Ergebnis({
       />
 
       {kosten && (
-        <div className="space-y-1 text-xs text-gray-500">
+        <div className="lesebreite space-y-1 text-xs text-leise">
           <p>
             {kosten.modell} · {kosten.bilder_gesendet} Bilder ({Math.round(kosten.bytes_gesendet / 1024)} KB)
             {' · '}{kosten.token_eingabe + kosten.token_ausgabe} Token
@@ -533,12 +560,12 @@ function Ergebnis({
         type="button"
         onClick={aufAnlegen}
         disabled={gesperrt}
-        className="flex w-full items-center justify-center gap-2 rounded bg-primary-custom px-4 py-3 text-sm font-medium text-white disabled:opacity-40"
+        className="btn-primaer w-full sm:w-auto"
       >
         <Check className="h-4 w-4" />
         {offen > 0 ? `Anzeige anlegen (${offen} Rückfrage${offen === 1 ? '' : 'n'} offen)` : 'Anzeige anlegen'}
       </button>
-      <p className="text-center text-xs text-gray-500">
+      <p className="lesebreite text-center text-xs text-leise sm:text-left">
         Legt die Anzeige nur lokal an. Nichts geht dabei online.
       </p>
     </div>
@@ -555,8 +582,8 @@ function euro(betrag: number): string {
 function Zeile({ bezeichnung, children }: { bezeichnung: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-gray-500">{bezeichnung}</dt>
-      <dd className="text-gray-900">{children}</dd>
+      <dt className="text-xs uppercase tracking-wide text-leise">{bezeichnung}</dt>
+      <dd className="text-stark">{children}</dd>
     </div>
   );
 }
@@ -578,16 +605,16 @@ function Rueckfrage({
   }, [freitext, aufAntwort]);
 
   return (
-    <fieldset className="rounded border border-gray-200 p-3">
-      <legend className="px-1 text-sm font-medium text-gray-900">{frage.frage}</legend>
+    <fieldset className="karte p-3">
+      <legend className="px-1 text-sm font-medium text-stark">{frage.frage}</legend>
 
       {beantwortet ? (
         <p className="flex items-start justify-between gap-3 text-sm">
-          <span className="flex items-start gap-2 text-gray-800">
+          <span className="flex items-start gap-2 text-normal">
             <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" aria-hidden />
             {antwortAnzeige}
           </span>
-          <button type="button" onClick={aufZuruecknehmen} className="flex-shrink-0 text-xs text-gray-500 underline">
+          <button type="button" onClick={aufZuruecknehmen} className="flex-shrink-0 text-xs text-leise underline">
             ändern
           </button>
         </p>
@@ -599,7 +626,7 @@ function Rueckfrage({
                 key={option.wert}
                 type="button"
                 onClick={() => aufAntwort(option.wert)}
-                className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-800 hover:border-primary-custom hover:bg-gray-50"
+                className="btn-ghost"
               >
                 {option.text}
               </button>
@@ -614,13 +641,13 @@ function Rueckfrage({
                 onKeyDown={ereignis => { if (ereignis.key === 'Enter') { ereignis.preventDefault(); uebernehmen(); } }}
                 placeholder="oder selbst eintragen"
                 aria-label={`Eigene Antwort auf: ${frage.frage}`}
-                className="min-w-0 flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
+                className="feld min-w-0 flex-1"
               />
               <button
                 type="button"
                 onClick={uebernehmen}
                 disabled={!freitext.trim()}
-                className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-800 disabled:opacity-40"
+                className="btn-ghost"
               >
                 Übernehmen
               </button>
@@ -673,16 +700,16 @@ function Vorschlaege({
   ])].sort((a, b) => a - b);
 
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="mb-1 font-medium text-gray-900">Vorschläge zum Übernehmen</h2>
-      <p className="mb-3 text-xs text-gray-600">
+    <div className="karte p-4">
+      <h2 className="mb-1 font-medium text-stark">Vorschläge zum Übernehmen</h2>
+      <p className="lesebreite mb-3 text-xs text-leise">
         Nichts davon wird automatisch gesetzt. Was du hier nicht anklickst, bleibt leer
         und lässt sich später im Editor nachtragen.
       </p>
 
       <fieldset className="mb-4">
-        <legend className="mb-1 text-sm font-medium text-gray-800">Preis</legend>
-        <p className="mb-2 text-xs text-gray-600">
+        <legend className="mb-1 text-sm font-medium text-stark">Preis</legend>
+        <p className="lesebreite mb-2 text-xs text-leise">
           {spanne
             ? `Grobe Einordnung: ${euro(spanne.von)} bis ${euro(spanne.bis)}.`
             : 'Das Modell konnte den Preis nicht einschätzen.'}
@@ -690,7 +717,7 @@ function Vorschlaege({
           Leer lassen ist in Ordnung; dann trägst du ihn später im Editor nach.
         </p>
         {entwurf.eigene_preise.length > 0 && (
-          <p className="mb-2 text-xs text-gray-600">
+          <p className="lesebreite mb-2 text-xs text-leise">
             Deine früheren Anzeigen:{' '}
             {entwurf.eigene_preise.map(p => `${p.titel} (${euro(p.preis)})`).join(', ')}
           </p>
@@ -702,16 +729,12 @@ function Vorschlaege({
               type="button"
               onClick={() => aufPreis(preis === wert ? null : wert)}
               aria-pressed={preis === wert}
-              className={`rounded border px-3 py-1.5 text-sm ${
-                preis === wert
-                  ? 'border-primary-custom bg-blue-50 text-gray-900'
-                  : 'border-gray-300 text-gray-800 hover:bg-gray-50'
-              }`}
+              className={`reiter ${preis === wert ? 'reiter-aktiv' : ''}`}
             >
               {euro(wert)}
             </button>
           ))}
-          <label className="flex items-center gap-2 text-sm text-gray-800">
+          <label className="flex items-center gap-2 text-sm text-normal">
             <span className="sr-only">Preis in Euro</span>
             <input
               type="number"
@@ -724,16 +747,16 @@ function Vorschlaege({
                 const zahl = Number.parseFloat(e.target.value);
                 aufPreis(Number.isFinite(zahl) && zahl > 0 ? zahl : null);
               }}
-              className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
+              className="feld w-32"
             />
-            <span className="text-gray-600">€</span>
+            <span className="text-leise">€</span>
           </label>
         </div>
       </fieldset>
 
       {hatKategorien && (
         <fieldset className="mb-4">
-          <legend className="mb-2 text-sm font-medium text-gray-800">Kategorie</legend>
+          <legend className="mb-2 text-sm font-medium text-stark">Kategorie</legend>
           <div className="flex flex-wrap gap-2">
             {entwurf.kategorie_vorschlaege.map(k => (
               <button
@@ -741,11 +764,7 @@ function Vorschlaege({
                 type="button"
                 onClick={() => aufKategorie(kategorie === k.wert ? null : k.wert)}
                 aria-pressed={kategorie === k.wert}
-                className={`rounded border px-3 py-1.5 text-sm ${
-                  kategorie === k.wert
-                    ? 'border-primary-custom bg-blue-50 text-gray-900'
-                    : 'border-gray-300 text-gray-800 hover:bg-gray-50'
-                }`}
+                className={`reiter ${kategorie === k.wert ? 'reiter-aktiv' : ''}`}
               >
                 {k.name}
               </button>
@@ -756,10 +775,10 @@ function Vorschlaege({
 
       {hatVersand && (
         <fieldset>
-          <legend className="mb-1 text-sm font-medium text-gray-800">
+          <legend className="mb-1 text-sm font-medium text-stark">
             Versand ({entwurf.versand_vorschlaege[0].groesse})
           </legend>
-          <p className="mb-2 text-xs text-gray-600">
+          <p className="lesebreite mb-2 text-xs text-leise">
             Geschätzt nach den Fotos. Miss im Zweifel nach – ein zu kleines Paket fällt
             erst beim Versenden auf.
           </p>
@@ -770,15 +789,11 @@ function Vorschlaege({
                 type="button"
                 onClick={() => paketUmschalten(v.wert)}
                 aria-pressed={versandpakete.includes(v.wert)}
-                className={`rounded border px-3 py-1.5 text-sm ${
-                  versandpakete.includes(v.wert)
-                    ? 'border-primary-custom bg-blue-50 text-gray-900'
-                    : 'border-gray-300 text-gray-800 hover:bg-gray-50'
-                }`}
+                className={`reiter ${versandpakete.includes(v.wert) ? 'reiter-aktiv' : ''}`}
               >
                 {v.wert.replace(/_/g, ' ')}
                 {v.preis !== null && (
-                  <span className="ml-2 text-xs text-gray-500">{euro(v.preis)}</span>
+                  <span className="ml-2 text-xs text-leise">{euro(v.preis)}</span>
                 )}
               </button>
             ))}

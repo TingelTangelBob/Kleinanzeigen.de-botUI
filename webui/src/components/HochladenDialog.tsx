@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Rückfrage vor dem Hochladen einer Anzeige (AP-3.3).
+// Rückfrage vor dem Hochladen einer Anzeige (AP-3.3, AP-3.8).
 //
 // Der erste Vorgang der Oberfläche, der etwas auf kleinanzeigen.de verändert.
 // Deshalb steht hier ausdrücklich, was passiert und was nicht - und zwar
@@ -72,14 +72,14 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
   }, [profil, datei]);
 
   if (laedt) {
-    return <p className="mb-4 text-sm text-gray-500">Vergleich wird geladen …</p>;
+    return <p className="mb-4 text-sm text-leise">Vergleich wird geladen …</p>;
   }
 
   // Ein Fehler hier darf das Hochladen nicht blockieren: Der Vergleich ist
   // zusätzliche Auskunft, nicht Voraussetzung.
   if (fehler || !vergleich) {
     return (
-      <p className="mb-4 text-sm text-gray-600">
+      <p className="mb-4 text-sm text-leise">
         Der Vergleich mit dem letzten Stand ist nicht verfügbar. Hochladen geht trotzdem.
       </p>
     );
@@ -87,7 +87,7 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
 
   if (vergleich.stand_von === null) {
     return (
-      <p className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+      <p className="karte mb-4 p-3 text-sm text-normal">
         Für diese Anzeige ist noch kein Abgleich mit der Plattform bekannt – es lässt sich
         deshalb nicht sagen, was sich ändert. Nach diesem Lauf ist er bekannt.
       </p>
@@ -102,7 +102,7 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
 
   if (vergleich.unterschiede.length === 0) {
     return (
-      <p className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+      <p className="karte mb-4 p-3 text-sm text-normal">
         Gegenüber dem Stand von {gemerkt} hat sich nichts geändert. Der Lauf würde dieselben
         Werte noch einmal schreiben.
       </p>
@@ -110,7 +110,7 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
   }
 
   return (
-    <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-3">
+    <div className="hinweis hinweis-warn mb-4">
       <p className="mb-2 text-sm font-medium text-amber-900">
         {vergleich.unterschiede.length === 1
           ? 'Ein Feld ändert sich'
@@ -120,10 +120,10 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
       <ul className="space-y-1 text-sm">
         {vergleich.unterschiede.map(u => (
           <li key={u.feld} className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-gray-700">{u.beschriftung}:</span>
-            <span className="text-gray-500 line-through">{u.vorher}</span>
-            <span aria-hidden className="text-gray-400">→</span>
-            <span className="font-medium text-gray-900">{u.jetzt}</span>
+            <span className="text-normal">{u.beschriftung}:</span>
+            <span className="text-leise line-through">{u.vorher}</span>
+            <span aria-hidden className="text-leise">→</span>
+            <span className="font-medium text-stark">{u.jetzt}</span>
           </li>
         ))}
       </ul>
@@ -132,64 +132,84 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
 }
 
 export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBestaetigen }: Props) {
+  // Die Anzeigennummer entscheidet, welcher Vorgang das ist (AP-3.8) - dieselbe
+  // Bedingung wie im Backend. Ohne Nummer war die Anzeige nie online; es gibt
+  // nichts zu bearbeiten, also wird eingestellt.
+  const neu = anzeige.id === null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="hochladen-titel"
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        className="dialog"
       >
-        <h2 id="hochladen-titel" className="mb-1 font-semibold text-gray-900">
-          Auf kleinanzeigen.de aktualisieren
+        <h2 id="hochladen-titel" className="mb-1 font-semibold text-stark">
+          {neu ? 'Neu auf kleinanzeigen.de einstellen' : 'Auf kleinanzeigen.de aktualisieren'}
         </h2>
-        <p className="mb-4 text-sm text-gray-700">
-          Der Bot meldet sich an, öffnet diese Anzeige und schreibt den hier gespeicherten
-          Stand hinein.
+        <p className="mb-4 text-sm text-normal">
+          {neu
+            ? 'Der Bot meldet sich an, füllt das Aufgabeformular mit dem hier gespeicherten Stand und stellt die Anzeige ein.'
+            : 'Der Bot meldet sich an, öffnet diese Anzeige und schreibt den hier gespeicherten Stand hinein.'}
         </p>
 
-        <dl className="mb-4 space-y-1 rounded border border-gray-200 bg-gray-50 p-3 text-sm">
+        <dl className="karte mb-4 space-y-1 p-3 text-sm">
           <div className="flex justify-between gap-3">
-            <dt className="text-gray-600">Anzeige</dt>
-            <dd className="min-w-0 truncate text-gray-900">{anzeige.titel}</dd>
+            <dt className="text-leise">Anzeige</dt>
+            <dd className="min-w-0 truncate text-stark">{anzeige.titel}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-gray-600">Nummer</dt>
-            <dd className="text-gray-900">{anzeige.id}</dd>
+            <dt className="text-leise">Nummer</dt>
+            <dd className="text-stark">
+              {neu ? 'noch keine – wird beim Einstellen vergeben' : anzeige.id}
+            </dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-gray-600">Preis</dt>
-            <dd className="text-gray-900">{preisZeile(anzeige)}</dd>
+            <dt className="text-leise">Preis</dt>
+            <dd className="text-stark">{preisZeile(anzeige)}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-gray-600">Versand</dt>
-            <dd className="min-w-0 truncate text-gray-900">
+            <dt className="text-leise">Versand</dt>
+            <dd className="min-w-0 truncate text-stark">
               {anzeige.versandpakete.length > 0
                 ? anzeige.versandpakete.join(', ')
                 : anzeige.versandart === 'PICKUP' ? 'nur Abholung' : 'kein Paket'}
             </dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-gray-600">Bilder</dt>
-            <dd className="text-gray-900">{anzeige.bilder}</dd>
+            <dt className="text-leise">Bilder</dt>
+            <dd className="text-stark">{anzeige.bilder}</dd>
           </div>
         </dl>
 
-        <Vergleichsteil profil={profil} datei={anzeige.datei} />
+        {/* Ein Vergleich mit dem letzten Plattformstand ergibt nur Sinn, wenn es
+            einen gibt. Bei einer nie veröffentlichten Anzeige gibt es keinen. */}
+        {!neu && <Vergleichsteil profil={profil} datei={anzeige.datei} />}
 
-        <div className="mb-4 flex items-start gap-2 rounded border border-blue-200 bg-blue-100 p-3 text-sm text-blue-900">
+        <div className="hinweis mb-4 flex items-start gap-2">
           <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-          <p>
-            Die Anzeige wird <span className="font-medium">bearbeitet, nicht neu eingestellt</span>.
-            Anzeigennummer, Aufrufe, Merker und das Alter bleiben erhalten.
-          </p>
+          {neu ? (
+            <p>
+              Die Anzeige wird <span className="font-medium">neu eingestellt</span>. Sie ist
+              danach öffentlich sichtbar und bekommt ihre Anzeigennummer. Bestehende
+              Anzeigen bleiben unberührt – auch eine gleichnamige wird nicht ersetzt.
+            </p>
+          ) : (
+            <p>
+              Die Anzeige wird <span className="font-medium">bearbeitet, nicht neu eingestellt</span>.
+              Anzeigennummer, Aufrufe, Merker und das Alter bleiben erhalten.
+            </p>
+          )}
         </div>
 
-        <p className="mb-4 text-xs text-gray-600">
-          Verglichen wird mit dem letzten Stand, den der Bot geschrieben hat – hat jemand die
-          Anzeige seither auf kleinanzeigen.de selbst bearbeitet, weiß das hier niemand.
-          Überschrieben wird in jedem Fall mit dem Stand von hier. Der Lauf erscheint
-          anschließend unter „Läufe" und lässt sich dort mitlesen und abbrechen.
+        <p className="mb-4 text-xs text-leise">
+          {neu
+            ? 'Der Lauf sieht nur diese eine Datei – kein anderer Entwurf geht mit online. '
+            : 'Verglichen wird mit dem letzten Stand, den der Bot geschrieben hat – hat jemand die '
+              + 'Anzeige seither auf kleinanzeigen.de selbst bearbeitet, weiß das hier niemand. '
+              + 'Überschrieben wird in jedem Fall mit dem Stand von hier. '}
+          Der Lauf erscheint anschließend unter „Läufe" und lässt sich dort mitlesen und abbrechen.
         </p>
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -197,7 +217,7 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
             type="button"
             onClick={aufAbbrechen}
             disabled={laeuft}
-            className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="btn-ghost"
           >
             Abbrechen
           </button>
@@ -209,7 +229,9 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
                        text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
           >
             <ArrowUpFromLine className="h-4 w-4" aria-hidden />
-            {laeuft ? 'Wird eingereiht …' : 'Jetzt aktualisieren'}
+            {laeuft
+              ? 'Wird eingereiht …'
+              : neu ? 'Jetzt veröffentlichen' : 'Jetzt aktualisieren'}
           </button>
         </div>
       </div>

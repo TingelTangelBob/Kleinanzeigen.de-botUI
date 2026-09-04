@@ -10,9 +10,18 @@
 # unsichtbar - genau der Fehler, an dem der Rundlauf am 2026-08-25 schon einmal
 # gescheitert ist.
 #
-# Ohne `id` und ohne `content_hash`. Beide setzt der Bot nach dem ersten
-# erfolgreichen Veroeffentlichen selbst. Eine erfundene Nummer waere schlimmer
-# als keine: Der Bot haelt eine Anzeige mit `id` fuer bereits online.
+# Ohne `id`, ohne `content_hash` und ohne `created_on`. Alle drei setzt der Bot
+# nach dem ersten erfolgreichen Veroeffentlichen selbst. Eine erfundene Nummer
+# waere schlimmer als keine: Der Bot haelt eine Anzeige mit `id` fuer bereits
+# online.
+#
+# `created_on` frueh zu setzen war der Fehler hinter AP-3.9: Der Bot liest
+# `updated_on or created_on` als "zuletzt (erneut) veroeffentlicht" und
+# ueberspringt bei `publish --ads=due` (Standard) jede Anzeige, deren Datum
+# juenger als `republication_interval` (Standard 7 Tage) ist. Eine gerade
+# angelegte, nie online gewesene Anzeige galt damit als "nicht faellig" und
+# wurde stillschweigend nicht eingestellt. Ohne `created_on` greift stattdessen
+# `is_ad_due_for_republication`s Sofort-Zweig (kein Datum -> faellig).
 
 from __future__ import annotations
 
@@ -107,6 +116,7 @@ def schreiben(
     *,
     unterordner: str = "ads",
     praefix: str = "ad",
+    mit_erstellzeit: bool = False,
 ) -> str:
     """Schreibt eine Anzeigendatei samt Bildern und gibt ihren relativen Pfad.
 
@@ -120,6 +130,11 @@ def schreiben(
     unter `vorlagen/` und heisst `vorlage_*`. Beides einzeln reicht schon:
     Der Bot sucht unter `./ads/**/ad_*.{yaml,yml,json}`. Zusammen ueberlebt
     die Trennung auch, dass jemand den Ordner spaeter woanders hin kopiert.
+
+    `mit_erstellzeit` schreibt ein `created_on`. Fuer Anzeigen bleibt es aus
+    (siehe Kopfkommentar, AP-3.9) - der Bot setzt es selbst nach dem ersten
+    Veroeffentlichen. Nur Vorlagen bekommen es: Sie kommen nie an die
+    Faelligkeitslogik des Bots, brauchen aber ein "angelegt am" fuer ihre Liste.
     """
     titel = str(felder.get("title") or "").strip()
     if not titel:
@@ -146,10 +161,25 @@ def schreiben(
     # bleiben deshalb leer: Ein geratener Versandweg waere teuer im Wortsinn,
     # und die Wahl haengt an Groesse und Gewicht, die auf keinem Foto stehen.
     daten: dict[str, Any] = dict(felder)
+
+    # AP-3.11: Kein Aufrufer darf einen dieser Stempel durchreichen. `id` waere
+    # der schlimmste - der Bot haelt eine Anzeige mit Nummer fuer online und
+    # ueberschreibt sie beim naechsten Lauf, statt die neue einzustellen.
+    # `updated_on`/`created_on` liest er als "zuletzt (erneut) veroeffentlicht"
+    # und ueberspringt bei `publish --ads=due` still alles, was juenger als
+    # `republication_interval` ist (AP-3.9). `duplizieren` und die Vorlagen
+    # streifen die Stempel schon in `kopierbares_lesen` ab; hier ist die
+    # strukturelle Zusicherung, die auch fuer jeden kuenftigen Aufrufer gilt.
+    for stempel in ("id", "updated_on", "content_hash"):
+        daten.pop(stempel, None)
+    if not mit_erstellzeit:
+        daten.pop("created_on", None)
+
     daten["title"] = titel
     daten["description"] = str(felder.get("description") or "")
     daten["images"] = bildnamen
-    daten["created_on"] = datetime.now(UTC).isoformat(timespec = "seconds")
+    if mit_erstellzeit:
+        daten["created_on"] = datetime.now(UTC).isoformat(timespec = "seconds")
 
     for schluessel, vorgabe in (
         ("active", True),

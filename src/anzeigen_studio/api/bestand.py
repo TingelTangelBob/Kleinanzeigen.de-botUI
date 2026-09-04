@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -79,6 +79,10 @@ class AnzeigeAusgabe(BaseModel):
     lokal_geaendert: bool
     hinweise: list[str]
     unlesbar: str | None
+    herkunft: str
+    #: Eigene, einst online gestellte Anzeige, die die Plattform nicht mehr als
+    #: aktiv fuehrt (AP-3.10). Regel in `bestand.lesen.BestandsAnzeige.geloescht`.
+    geloescht: bool
 
 
 def _profil_wurzel(conn: sqlite3.Connection, cfg: Settings, slug: str) -> Path:
@@ -97,7 +101,7 @@ def _ausgabe(a: bestand_dienst.BestandsAnzeige) -> AnzeigeAusgabe:
         bilder = a.bilder, vorschaubild = a.vorschaubild, erstellt_am = a.erstellt_am,
         aktualisiert_am = a.aktualisiert_am, neueinstellung_am = a.neueinstellung_am,
         faellig = a.faellig, lokal_geaendert = a.lokal_geaendert, hinweise = a.hinweise,
-        unlesbar = a.unlesbar,
+        unlesbar = a.unlesbar, herkunft = a.herkunft, geloescht = a.geloescht,
     )
 
 
@@ -333,6 +337,10 @@ class HochladenEingabe(BaseModel):
 class HochladenAusgabe(BaseModel):
     job_id: int
     anzeige: AnzeigeAusgabe
+    #: "update" oder "publish" (AP-3.8). Die Oberflaeche soll hinterher sagen
+    #: koennen, was eingereiht wurde - "aktualisiert" und "neu eingestellt"
+    #: sind zwei verschiedene Vorgaenge.
+    befehl: str
 
 
 def _hochladbar(anzeige: bestand_dienst.BestandsAnzeige, felder: dict[str, object]) -> None:
@@ -344,13 +352,6 @@ def _hochladbar(anzeige: bestand_dienst.BestandsAnzeige, felder: dict[str, objec
     """
     if anzeige.unlesbar:
         raise FachlicherFehler("Diese Anzeige ist nicht lesbar.", status = 422)
-
-    if anzeige.id is None:
-        raise FachlicherFehler(
-            "Diese Anzeige hat keine Anzeigennummer – sie war nie veröffentlicht. "
-            "Bestehende Anzeigen lassen sich aktualisieren, neue einzustellen kommt später.",
-            status = 422,
-        )
 
     if "direktkauf_ohne_paket" in anzeige.hinweise:
         raise FachlicherFehler(
@@ -385,16 +386,27 @@ async def hochladen(
     cfg: Konfiguration,
     ws: Schlange,
 ) -> HochladenAusgabe:
-    """Reiht einen Lauf ein, der genau diese eine Anzeige aktualisiert (AP-3.3).
+    """Reiht einen Lauf ein, der genau diese eine Anzeige auf die Plattform bringt.
 
-    Bewusst `update` und nicht `publish`: `update` bearbeitet die bestehende
-    Anzeige. `publish` löscht sie und stellt sie neu ein - Anzeigennummer,
-    Aufrufe, Merker und Alter wären weg (siehe `docs/RUNDLAUF.md`).
+    **Die Anzeigennummer entscheidet, welcher Befehl läuft** (AP-3.8):
 
-    Der Lauf sieht ausschließlich diese eine Datei: Die Anzeigennummer steht im
-    Auswahlschalter, und der Dateiausschnitt der erzeugten Konfiguration nennt
-    nur sie. Zwei Grenzen für einen Vorgang, der etwas auf der Plattform
-    verändert.
+    * **Mit Nummer → `update`.** Die Anzeige steht online und wird bearbeitet.
+      Niemals `publish`: Das löscht die alte und stellt eine neue ein -
+      Anzeigennummer, Aufrufe, Merker und Alter wären weg (`docs/RUNDLAUF.md`,
+      Abschnitt 4). Zusätzlich grenzt `--ads=<id>` den Lauf auf sie ein.
+    * **Ohne Nummer → `publish --ads=new`.** Die Anzeige war nie online; es
+      gibt nichts zu bearbeiten. `--ads=new` wählt genau die Anzeigen **ohne**
+      Nummer aus und ignoriert `republication_interval`. Der `publish`-Standard
+      `--ads=due` würde stattdessen `updated_on or created_on` als „zuletzt
+      online" lesen und eine nie eingestellte Anzeige mit einem `created_on`
+      jünger als sieben Tage stillschweigend überspringen (der Samsung-SSD-Fall,
+      AP-3.9/AP-3.11). Ein von Hand gesetzter oder aus einer älteren Fassung
+      stammender Stempel kann so nicht mehr zum stillen Skip führen.
+
+    In beiden Fällen sieht der Lauf **ausschließlich diese eine Datei**: Der
+    Dateiausschnitt der erzeugten Konfiguration nennt nur sie. Das ist die
+    Grenze, die auch neben `--ads=new` hält - und der Grund, warum ein
+    `publish`-Lauf von hier nicht den halben Bestand einstellt.
     """
     p = profile_dienst.nach_slug(conn, profil)
     if p is None:
@@ -410,15 +422,24 @@ async def hochladen(
 
     _hochladbar(anzeige, dict(felder))
 
+    neu = anzeige.id is None
+    befehl = "publish" if neu else "update"
+    # AP-3.11: `--ads=new` statt leer. `new` grenzt auf Anzeigen ohne Nummer ein
+    # und ignoriert `republication_interval`; der `publish`-Standard `--ads=due`
+    # überspringt eine nie online gewesene Anzeige still, sobald sie ein
+    # `created_on` jünger als sieben Tage trägt (AP-3.9). Die Dateigrenze aus
+    # `anzeigen_glob` hält den Lauf trotzdem auf genau diese eine Anzeige.
+    argumente = ["--ads=new"] if neu else [f"--ads={anzeige.id}"]
+
     job_id = await ws.einreihen(
-        conn, p.id, "update", [f"--ads={anzeige.id}"],
+        conn, p.id, befehl, argumente,
         profil_verzeichnis = wurzel,
         anzeigen_glob = f"./{daten.datei}",
     )
     if speicher.holen(conn, job_id) is None:  # pragma: no cover - Schutz gegen stille Fehlschlaege
         raise FachlicherFehler("Der Lauf konnte nicht eingereiht werden.", status = 500)
 
-    return HochladenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige))
+    return HochladenAusgabe(job_id = job_id, anzeige = _ausgabe(anzeige), befehl = befehl)
 
 
 class LinksEingabe(BaseModel):
@@ -533,6 +554,69 @@ def vorlage_entfernen(
     vorlagen_dienst.entfernen(wurzel, datei)
 
 
+
+class LoeschenEingabe(BaseModel):
+    """Welche Anzeigen von der Platte sollen (AP-2.20).
+
+    Immer eine Liste, auch fuer eine einzelne Anzeige: Einzel- und
+    Sammelloeschen sind derselbe Vorgang, und zwei Endpunkte fuer dieselbe
+    Wirkung waeren zwei Stellen, an denen die Zusage "nur lokal" haengt.
+    """
+
+    dateien: list[str] = Field(min_length = 1, max_length = 200)
+
+
+class GeloeschtAusgabe(BaseModel):
+    datei: str
+    titel: str
+    bilder: int
+    ordner_entfernt: bool
+
+
+class LoeschenAusgabe(BaseModel):
+    geloescht: list[GeloeschtAusgabe]
+
+
+@router.post("/loeschen", response_model = LoeschenAusgabe)
+def anzeigen_loeschen(
+    profil: str, daten: LoeschenEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> LoeschenAusgabe:
+    """Loescht Anzeigen von der Platte. Auf kleinanzeigen.de aendert sich nichts.
+
+    POST statt DELETE, weil eine Liste im Rumpf steht: Ein DELETE mit Rumpf ist
+    nach RFC 9110 zwar nicht verboten, aber sein Rumpf hat keine definierte
+    Bedeutung, und Zwischenschichten duerfen ihn verwerfen. Zweihundert
+    Dateinamen in die Adresszeile zu haengen ist die schlechtere Alternative.
+
+    Kein Bot-Aufruf, keine Warteschlange - siehe `bestand/loeschen.py`.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    fertig = bestand_dienst.mehrere_entfernen(wurzel, daten.dateien)
+    return LoeschenAusgabe(
+        geloescht = [
+            GeloeschtAusgabe(
+                datei = g.datei, titel = g.titel,
+                bilder = g.bilder, ordner_entfernt = g.ordner_entfernt,
+            )
+            for g in fertig
+        ],
+    )
+
+
+class HerkunftEingabe(BaseModel):
+    datei: str = Field(min_length = 1, max_length = 400)
+    herkunft: Literal["eigene", "fremde"]
+
+
+@router.post("/herkunft", response_model = AnzeigeAusgabe)
+def herkunft_aendern(
+    profil: str, daten: HerkunftEingabe, conn: Verbindung, cfg: Konfiguration,
+) -> AnzeigeAusgabe:
+    """Ordnet eine Anzeige den eigenen oder den fremden zu (Ordnerwechsel)."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    return _ausgabe(bestand_dienst.herkunft_setzen(wurzel, daten.datei, daten.herkunft))
+
+
 @router.post("/links-lesen", response_model = LinksAusgabe)
 def links_lesen(
     profil: str, daten: LinksEingabe, conn: Verbindung, cfg: Konfiguration,
@@ -551,7 +635,8 @@ async def nachladen(
     """Holt Anzeigen zu eingefügten Links in den Bestand (AP-3.7).
 
     Nur lesend: Der Lauf ist derselbe `download`, den die Oberfläche schon
-    kennt, nur mit einer Liste von Nummern statt „alle". Anzeigen, die es nicht
+    kennt, nur mit einer Liste von Nummern statt „alle". Die Dateien landen
+    in `fremde-ads/` (nicht im eigenen Konto-Bestand). Anzeigen, die es nicht
     mehr gibt, meldet er einzeln - zurückholen kann sie niemand.
     """
     p = profile_dienst.nach_slug(conn, profil)

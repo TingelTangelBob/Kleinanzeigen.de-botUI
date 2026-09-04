@@ -8,36 +8,31 @@
 
 import { useEffect, useState } from 'react';
 import { AuthProvider } from './context/AuthContext';
+import { MeldungenProvider } from './context/MeldungenContext';
 import { ProfilProvider } from './context/ProfilContext';
 import { useAuth } from './context/useAuth';
 import { AuthSeite } from './components/AuthSeite';
 import { BestandSeite } from './components/BestandSeite';
-import { JobSeite } from './components/JobSeite';
-import { Layout, type Seite } from './components/Layout';
+import { EinstellungenSeite } from './components/EinstellungenSeite';
+import { Layout } from './components/Layout';
 import { NeueAnzeigeSeite } from './components/NeueAnzeigeSeite';
-import { ProfilSeite } from './components/ProfilSeite';
 import { UebersichtSeite } from './components/UebersichtSeite';
-
-const SEITEN: Seite[] = ['uebersicht', 'bestand', 'neu', 'profile', 'jobs', 'browsersicht'];
-
-function seiteAusHash(): Seite {
-  const roh = window.location.hash.replace(/^#/, '') as Seite;
-  return SEITEN.includes(roh) ? roh : 'uebersicht';
-}
+import { WarteschlangeSeite } from './components/WarteschlangeSeite';
+import { routeAusHash, type Route } from './routing';
 
 function Inhalt() {
   const { status, laedt } = useAuth();
-  const [seite, setSeite] = useState<Seite>(seiteAusHash);
+  const [route, setRoute] = useState<Route>(routeAusHash);
 
   useEffect(() => {
-    const aufHash = () => setSeite(seiteAusHash());
+    const aufHash = () => setRoute(routeAusHash());
     window.addEventListener('hashchange', aufHash);
     return () => window.removeEventListener('hashchange', aufHash);
   }, []);
 
   if (laedt) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-gray-500">
+      <div className="flex min-h-screen items-center justify-center text-leise">
         Wird geladen …
       </div>
     );
@@ -48,7 +43,7 @@ function Inhalt() {
   if (status === null) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <p className="max-w-md rounded border border-red-200 bg-red-50 p-4 text-center text-sm text-red-800">
+        <p className="hinweis hinweis-fehler max-w-md text-center">
           Das Backend ist nicht erreichbar. Läuft der Dienst?
         </p>
       </div>
@@ -60,49 +55,23 @@ function Inhalt() {
 
   // Ein Seitenwechsel aus dem Inhalt heraus muss auch den Hash setzen, sonst
   // zeigt die Adresszeile auf die vorige Seite.
-  const wechseln = (ziel: Seite) => {
+  const wechseln = (ziel: string) => {
     window.location.hash = ziel;
-    setSeite(ziel);
+    setRoute(routeAusHash(`#${ziel}`));
   };
 
   return (
-    <Layout seite={seite} aufSeitenwechsel={setSeite}>
-      {seite === 'uebersicht' && <UebersichtSeite aufSeite={wechseln} />}
-      {seite === 'bestand' && <BestandSeite />}
-      {seite === 'neu' && <NeueAnzeigeSeite />}
-      {seite === 'profile' && <ProfilSeite />}
-      {seite === 'jobs' && <JobSeite />}
-      {seite === 'browsersicht' && <Browsersicht />}
+    <Layout route={route} aufZiel={wechseln}>
+      {route.seite === 'uebersicht' && <UebersichtSeite aufZiel={wechseln} />}
+      {route.seite === 'anzeigen' && (
+        <BestandSeite herkunft={route.anzeigen} aufZiel={wechseln} />
+      )}
+      {route.seite === 'neu' && <NeueAnzeigeSeite />}
+      {route.seite === 'warteschlange' && <WarteschlangeSeite />}
+      {route.seite === 'einstellungen' && (
+        <EinstellungenSeite abschnitt={route.einstellung} aufZiel={wechseln} />
+      )}
     </Layout>
-  );
-}
-
-function Browsersicht() {
-  return (
-    <div className="mx-auto max-w-5xl">
-      <h1 className="mb-2 text-2xl font-bold text-gray-900">Browsersicht</h1>
-      <p className="mb-4 text-sm text-gray-600">
-        Der Browser, in dem der Bot arbeitet. Hier lässt sich ein Captcha oder eine
-        Bestätigung von Hand lösen, wenn ein Lauf darauf wartet.
-      </p>
-      {/* Eigenes Fenster statt eingebettet: Ein Captcha in einem kleinen
-          Rahmen ist mühsam, und noVNC braucht die volle Tastatur. */}
-      <a
-        href="/browsersicht/vnc.html?autoconnect=1&resize=scale"
-        target="_blank"
-        rel="noreferrer"
-        className="inline-block rounded bg-primary-custom px-4 py-2 text-sm font-medium"
-      >
-        In neuem Fenster öffnen
-      </a>
-      <div className="mt-6 overflow-hidden rounded border border-gray-200 bg-black">
-        <iframe
-          title="Browsersicht"
-          src="/browsersicht/vnc.html?autoconnect=1&resize=scale"
-          className="h-[60vh] w-full"
-        />
-      </div>
-    </div>
   );
 }
 
@@ -110,7 +79,9 @@ export default function App() {
   return (
     <AuthProvider>
       <ProfilProvider>
-        <Inhalt />
+        <MeldungenProvider>
+          <Inhalt />
+        </MeldungenProvider>
       </ProfilProvider>
     </AuthProvider>
   );

@@ -38,6 +38,9 @@ GESCHUETZT = [
     ("GET", "/api/profile/x/zugang"),
     ("PUT", "/api/profile/x/zugang"),
     ("GET", "/api/auth/pruefen"),
+    ("GET", "/api/einstellungen"),
+    ("PUT", "/api/einstellungen"),
+    ("POST", "/api/einstellungen/browserprofil-zuruecksetzen"),
 ]
 
 

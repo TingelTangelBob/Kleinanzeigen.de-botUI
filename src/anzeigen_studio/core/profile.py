@@ -128,6 +128,11 @@ def nach_slug(conn: sqlite3.Connection, slug: str) -> Profil | None:
     return _zeile_zu_profil(row) if row else None
 
 
+def nach_id(conn: sqlite3.Connection, profil_id: int) -> Profil | None:
+    row = conn.execute("SELECT * FROM profil WHERE id = ?", (profil_id,)).fetchone()
+    return _zeile_zu_profil(row) if row else None
+
+
 def anlegen(conn: sqlite3.Connection, profiles_dir: Path, slug: str, anzeigename: str) -> Profil:
     slug_pruefen(slug)
     anzeigename = anzeigename.strip()

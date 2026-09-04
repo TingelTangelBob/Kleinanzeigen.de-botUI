@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from ruamel.yaml import YAML
 
@@ -84,6 +84,40 @@ def rohdaten_lesen(profil_wurzel: Path, datei: str) -> dict[str, Any]:
     return daten
 
 
+#: Deutsche Feldnamen fuer die Meldung (AP-2.37).
+#:
+#: Was hier steht, liest ein Mensch in der Oberflaeche. "category" ist der
+#: Schluessel im YAML des Bots; im Editor heisst dasselbe Feld "Kategorie".
+_FELDNAME: Final[dict[str, str]] = {
+    "title": "Titel",
+    "description": "Beschreibung",
+    "category": "Kategorie",
+    "price": "Preis",
+    "price_type": "Preistyp",
+    "shipping_type": "Versandart",
+    "shipping_options": "Versandpakete",
+    "shipping_costs": "Versandkosten",
+    "contact": "Kontakt",
+    "contact.zipcode": "Postleitzahl",
+    "type": "Art",
+}
+
+#: Pydantics eingebaute Meldungen sind englisch (AP-2.37).
+#:
+#: Der Upstream schreibt seine eigenen Pruefungen auf Deutsch - die kommen als
+#: "Value error, ..." durch und bleiben unveraendert. Was hier uebersetzt wird,
+#: sind die Standardmeldungen des Modells. "Input should be a valid string" bei
+#: einer fehlenden Kategorie erklaert niemandem, dass er eine waehlen muss.
+_FEHLERTEXT: Final[dict[str, str]] = {
+    "Input should be a valid string": "Es fehlt eine Angabe.",
+    "Input should be a valid number": "Es fehlt eine Zahl.",
+    "Input should be a valid integer": "Es fehlt eine ganze Zahl.",
+    "Field required": "Das Feld muss gefüllt sein.",
+    "Input should be a valid list": "Es fehlt eine Liste.",
+    "none is not an allowed value": "Das Feld darf nicht leer bleiben.",
+}
+
+
 def _lesbar(fehler: Exception) -> list[str]:
     """Macht aus einer Pydantic-Meldung einen Satz, den man lesen kann.
 
@@ -103,10 +137,12 @@ def _lesbar(fehler: Exception) -> list[str]:
     if callable(einzelne):
         try:
             for eintrag in einzelne():
-                text = str(eintrag.get("msg", "")).removeprefix("Value error, ").strip()
+                roh = str(eintrag.get("msg", "")).removeprefix("Value error, ").strip()
                 ort = ".".join(str(t) for t in eintrag.get("loc", ()))
+                text = _FEHLERTEXT.get(roh, roh)
+                feld = _FELDNAME.get(ort, ort)
                 if text:
-                    saetze.append(f"{ort}: {text}" if ort else text)
+                    saetze.append(f"{feld}: {text}" if feld else text)
         except Exception:  # noqa: BLE001 - dann eben die Rohfassung
             saetze = []
     if not saetze:

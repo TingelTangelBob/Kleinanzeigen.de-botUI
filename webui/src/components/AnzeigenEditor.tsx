@@ -319,7 +319,16 @@ export function AnzeigenEditor({
    * der Lauf lief bis in den 422 des Backends (AP-2.34).
    */
   const titelZuLang = titel.length > TITEL_MAX;
+  /*
+   * Ohne Kategorie weist das Backend mit 422 ab (AP-2.37) - kleinanzeigen.de
+   * verlangt eine, und das Modell des Bots auch. Gefunden beim Live-Test: Die
+   * Wegwerf-Anzeige hatte keine, der Knopf war offen, und die Meldung lautete
+   * „category: Input should be a valid string". Jetzt steht die Bedingung
+   * dort, wo man sie beheben kann - vor dem Klick, nicht danach.
+   */
+  const kategorieFehlt = text(felder.category).trim() === '';
   const titelUngueltig = titelZuKurz || titelZuLang;
+  const nichtUebertragbar = titelUngueltig || kategorieFehlt;
   const bilder = (felder.images as string[] | null) ?? [];
   const sonderfelder = (felder.special_attributes as Record<string, unknown> | null) ?? {};
   const kontakt = (felder.contact as Record<string, unknown> | null) ?? {};
@@ -743,16 +752,19 @@ export function AnzeigenEditor({
             <button
               type="button"
               onClick={() => setFragtHochladen(true)}
-              disabled={speichert || schmutzig || titelUngueltig}
+              disabled={speichert || schmutzig || nichtUebertragbar}
               title={schmutzig
                 ? 'Erst speichern - übertragen wird der gespeicherte Stand.'
-                : titelZuLang
+                : kategorieFehlt
+                  ? 'Ohne Kategorie weist kleinanzeigen.de die Anzeige ab. Rechts unter „Art und Kategorie" eine wählen.'
+                  : titelZuLang
                   ? `Der Titel ist ${titel.length - TITEL_MAX} Zeichen zu lang - der Lauf würde abgewiesen.`
                   : titelZuKurz
                     ? `Der Titel braucht mindestens ${TITEL_MIN} Zeichen.`
                     : inhalt.kopf.id === null
                       ? 'Stellt die Anzeige neu auf kleinanzeigen.de ein.'
-                      : 'Schreibt den gespeicherten Stand in die bestehende Anzeige.'}
+                      : 'Schreibt den gespeicherten Stand in die bestehende Anzeige.'
+                }
               className="btn-ghost"
             >
               <ArrowUpFromLine className="h-4 w-4" aria-hidden />

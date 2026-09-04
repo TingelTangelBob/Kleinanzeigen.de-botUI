@@ -157,8 +157,10 @@ describe('Zu langer Titel führt nicht mehr in den 422', () => {
   it('lässt einen gültigen Titel durch', async () => {
     anzeigeLesen.mockResolvedValue({
       kopf: { ...anzeige('Gut', 'eigene'), titel: 'Ein guter Anzeigentitel', id: 4711 },
-      felder: { title: 'Ein guter Anzeigentitel', description: 'Text', images: [] },
-      aenderbar: ['title', 'description'],
+      // Kategorie gehört dazu: Seit AP-2.37 sperrt ihr Fehlen den Knopf, und
+      // dieser Test prüft den Titel, nicht die Kategorie.
+      felder: { title: 'Ein guter Anzeigentitel', description: 'Text', category: '161/225', images: [] },
+      aenderbar: ['title', 'description', 'category'],
     });
     render(
       <MeldungenProvider>
@@ -168,6 +170,42 @@ describe('Zu langer Titel führt nicht mehr in den 422', () => {
 
     await waitFor(() => expect(screen.getByText(/23 von 65 Zeichen/)).toBeTruthy());
     const knopf = screen.getByRole('button', { name: /Aktualisieren/ });
+    expect((knopf as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('Fehlende Kategorie sperrt das Veröffentlichen (AP-2.37)', () => {
+
+  it('sperrt den Knopf und sagt, wo die Kategorie steht', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Ohne', 'eigene'), titel: 'Esstisch mit Stühlen', id: null },
+      felder: { title: 'Esstisch mit Stühlen', description: 'Text', category: null, images: [] },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor profil="test" datei="a.yaml" aufZurueck={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    const knopf = await screen.findByRole('button', { name: /Veröffentlichen/ });
+    expect((knopf as HTMLButtonElement).disabled).toBe(true);
+    expect(knopf.getAttribute('title')).toMatch(/Ohne Kategorie/);
+  });
+
+  it('gibt den Knopf mit Kategorie frei', async () => {
+    anzeigeLesen.mockResolvedValue({
+      kopf: { ...anzeige('Mit', 'eigene'), titel: 'Esstisch mit Stühlen', id: null },
+      felder: { title: 'Esstisch mit Stühlen', description: 'Text', category: '161/225', images: [] },
+      aenderbar: ['title', 'description', 'category'],
+    });
+    render(
+      <MeldungenProvider>
+        <AnzeigenEditor profil="test" datei="a.yaml" aufZurueck={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    const knopf = await screen.findByRole('button', { name: /Veröffentlichen/ });
     expect((knopf as HTMLButtonElement).disabled).toBe(false);
   });
 });

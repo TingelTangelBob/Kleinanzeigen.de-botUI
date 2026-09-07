@@ -82,12 +82,27 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
   // Slot für die Seiten-Aktionsknöpfe in der Topleiste. Die Seite füllt ihn per
   // Portal (useKopfAktionen); leer bleibt er unsichtbar.
   const [kopfZiel, setKopfZiel] = useState<HTMLElement | null>(null);
+  // AP-2.55: Profilname in der Topbar nur zeigen, wenn der Aktions-Slot leer
+  // ist. Mit Holen/⋯ bleibt sonst auf ~375 px vom Seitentitel nur „Mei…".
+  const [kopfHatInhalt, setKopfHatInhalt] = useState(false);
 
   // Beim Seitenwechsel das Mobilmenü schließen - sonst verdeckt es die Seite,
   // auf die man gerade gewechselt ist.
   useEffect(() => {
     setMenuOffen(false);
   }, [route]);
+
+  useEffect(() => {
+    if (!kopfZiel) {
+      setKopfHatInhalt(false);
+      return;
+    }
+    const sync = () => setKopfHatInhalt(kopfZiel.childElementCount > 0);
+    sync();
+    const beobachter = new MutationObserver(sync);
+    beobachter.observe(kopfZiel, { childList: true });
+    return () => beobachter.disconnect();
+  }, [kopfZiel]);
 
   // Der Seitentitel steht seit AP-2.33 direkt in der Kopfleiste. Die Seiten
   // behalten dafür einen semantischen, visuell versteckten h1.
@@ -271,7 +286,7 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           ein höheres Kind den Slot doch wieder aufziehen.
         */}
         <header
-          className="topbar safe-oben sticky top-0 z-20 flex items-center gap-3 px-4 lg:px-8"
+          className="topbar safe-oben sticky top-0 z-20 flex items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-8"
           style={{ background: 'var(--karte)', borderBottom: '1px solid var(--karte-rand)' }}
         >
           <button
@@ -282,7 +297,13 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <span className="min-w-0 truncate font-semibold tracking-tight" style={{ color: 'var(--text-stark)' }}>
+          {/* flex-1 + min-w unter sm: Titel bekommt Vorrang vor Aktionen/Glocke
+              (AP-2.55), statt auf „Mei…" zusammenzuschrumpfen. */}
+          <span
+            className="min-w-[7.5rem] flex-1 truncate font-semibold tracking-tight sm:min-w-0 sm:flex-initial"
+            style={{ color: 'var(--text-stark)' }}
+            title={seitenTitel(route)}
+          >
             {seitenTitel(route)}
           </span>
           {/* Aktionsknöpfe der Seite (Portal-Ziel), dann die Glocke mit dezenter
@@ -290,8 +311,8 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           <div ref={setKopfZiel} className="kopf-aktionen" />
           <div className="topbar-glocke ml-auto flex min-w-0 items-center gap-2">
             <Glocke aufZiel={wechseln} />
-            {aktiv && (
-              <span className="truncate text-sm lg:hidden" style={{ color: 'var(--text-schwach)' }}>
+            {aktiv && !kopfHatInhalt && (
+              <span className="topbar-profilname truncate text-sm lg:hidden" style={{ color: 'var(--text-schwach)' }}>
                 {aktiv.anzeigename}
               </span>
             )}

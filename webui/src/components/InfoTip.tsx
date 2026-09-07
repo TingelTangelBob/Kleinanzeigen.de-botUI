@@ -11,7 +11,9 @@
 // unter der Sidebar (`z-40`) neben „Steht an", und `.liste` schnitt sie an
 // den runden Ecken ab (`overflow: hidden`). Seit AP-2.53 wird die Lage so
 // geklemmt bzw. nach rechts geklappt, dass die Blase im Hauptbereich bleibt
-// und die dunkelgrüne Sidebar weder unterlegt noch überdeckt.
+// und die dunkelgrüne Sidebar weder unterlegt noch überdeckt. AP-2.56 engt
+// auf schmalen Viewports maxWidth/maxHeight ein und klappt bei wenig Platz
+// nach oben, damit Listenzeilen und Formularfelder weniger verdeckt werden.
 
 import { useCallback, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
@@ -37,12 +39,15 @@ export function InfoTip({ text, label = 'Erklärung anzeigen', className = '' }:
     if (!el) return;
     const r = el.getBoundingClientRect();
     const breite = blaseRef.current?.offsetWidth ?? 0;
+    const hoehe = blaseRef.current?.offsetHeight ?? 0;
     setPos(
       blasenLage({
         anker: r,
         blasenBreite: breite,
+        blasenHoehe: hoehe,
         sidebarRechts: sidebarRechtsPx(),
         viewportBreite: window.innerWidth,
+        viewportHoehe: window.innerHeight,
       }),
     );
   }, []);
@@ -54,7 +59,8 @@ export function InfoTip({ text, label = 'Erklärung anzeigen', className = '' }:
     }
     messen();
     // Zweiter Pass: nach dem ersten setPos hat die Blase oft erst ihre
-    // max-content-Breite; ohne Nachmessen bliebe ein Überhang über der Sidebar.
+    // max-content-Breite/Höhe; ohne Nachmessen bliebe ein Überhang über der
+    // Sidebar bzw. eine zu tiefe Blase unter dem Anker (AP-2.53 / AP-2.56).
     const idRahmen = window.requestAnimationFrame(() => messen());
     const on = () => messen();
     window.addEventListener('scroll', on, true);
@@ -71,6 +77,7 @@ export function InfoTip({ text, label = 'Erklärung anzeigen', className = '' }:
         top: pos.top,
         ...(pos.left != null ? { left: pos.left, right: 'auto' } : { right: pos.right ?? 0 }),
         ...(pos.maxWidth != null ? { maxWidth: pos.maxWidth } : {}),
+        ...(pos.maxHeight != null ? { maxHeight: pos.maxHeight } : {}),
       }
     : { top: 0, right: 0 };
 

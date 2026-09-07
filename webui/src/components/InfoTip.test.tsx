@@ -1,16 +1,21 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// InfoTip: Portal-Blase über der Sidebar (AP-2.49) und Clamp rechts davon (AP-2.53).
+// InfoTip: Portal-Blase über der Sidebar (AP-2.49), Clamp rechts davon (AP-2.53),
+// mobil engere maxWidth/maxHeight + Flip nach oben (AP-2.56).
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InfoTip } from './InfoTip';
 import {
+  BLASEN_MAX_HEIGHT_PX,
+  BLASEN_MAX_MOBIL_REM_PX,
+  BLASEN_MAX_REM_PX,
   INFOTIP_RAND_PX,
   SIDEBAR_BREITE_FALLBACK_PX,
   blasenLage,
+  blasenVertikal,
 } from './infoTipLage';
 
 describe('blasenLage (AP-2.53)', () => {
@@ -39,6 +44,7 @@ describe('blasenLage (AP-2.53)', () => {
     expect(pos.right).toBeUndefined();
     expect(pos.left).toBe(SIDEBAR_BREITE_FALLBACK_PX + INFOTIP_RAND_PX);
     expect(pos.maxWidth).toBeGreaterThan(0);
+    expect(pos.maxWidth).toBeLessThanOrEqual(BLASEN_MAX_REM_PX);
     // Überhang gegen Sidebar: left - sidebarRechts == Rand (8px), Ziel <= 8px.
     expect((pos.left ?? 0) - SIDEBAR_BREITE_FALLBACK_PX).toBeLessThanOrEqual(INFOTIP_RAND_PX);
   });
@@ -52,6 +58,60 @@ describe('blasenLage (AP-2.53)', () => {
     });
     expect(pos.right).toBe(1440 - 280);
     expect(pos.left).toBeUndefined();
+  });
+});
+
+describe('blasenLage / blasenVertikal (AP-2.56)', () => {
+  it('engt maxWidth auf ~375 px ohne Sidebar (Drawer) ein', () => {
+    const pos = blasenLage({
+      anker: { top: 200, bottom: 224, right: 120 },
+      blasenBreite: 288,
+      sidebarRechts: 0,
+      viewportBreite: 375,
+      viewportHoehe: 812,
+    });
+    expect(pos.maxWidth).toBeLessThanOrEqual(BLASEN_MAX_MOBIL_REM_PX);
+    expect(pos.maxWidth).toBeLessThanOrEqual(375 - 2 * INFOTIP_RAND_PX);
+    // Links geklemmt bzw. rechts am Anker — jedenfalls im Viewport.
+    if (pos.left != null) {
+      expect(pos.left).toBeGreaterThanOrEqual(INFOTIP_RAND_PX);
+    } else {
+      expect(pos.right).toBeGreaterThanOrEqual(INFOTIP_RAND_PX);
+    }
+  });
+
+  it('setzt maxHeight und klappt nach oben, wenn unten zu wenig Platz ist', () => {
+    const vert = blasenVertikal({
+      anker: { top: 700, bottom: 724 },
+      blasenHoehe: 160,
+      viewportHoehe: 812,
+    });
+    expect(vert.maxHeight).toBeDefined();
+    expect(vert.maxHeight!).toBeLessThanOrEqual(BLASEN_MAX_HEIGHT_PX);
+    // Oben mehr Platz → Blase über dem Anker.
+    expect(vert.top).toBeLessThan(700);
+
+    const pos = blasenLage({
+      anker: { top: 700, bottom: 724, right: 200 },
+      blasenBreite: 200,
+      blasenHoehe: 160,
+      sidebarRechts: 0,
+      viewportBreite: 375,
+      viewportHoehe: 812,
+    });
+    expect(pos.top).toBeLessThan(700);
+    expect(pos.maxHeight).toBeDefined();
+    expect(pos.maxHeight!).toBeLessThanOrEqual(BLASEN_MAX_HEIGHT_PX);
+  });
+
+  it('bleibt unter dem Anker, wenn unten genug Platz ist', () => {
+    const vert = blasenVertikal({
+      anker: { top: 200, bottom: 224 },
+      blasenHoehe: 80,
+      viewportHoehe: 812,
+    });
+    expect(vert.top).toBe(230);
+    expect(vert.maxHeight).toBeDefined();
   });
 });
 
@@ -121,6 +181,7 @@ describe('InfoTip (AP-2.49 / AP-2.53)', () => {
     });
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
 
     const { unmount } = render(
       <InfoTip
@@ -149,6 +210,7 @@ describe('InfoTip (AP-2.49 / AP-2.53)', () => {
       const tipId = knopf.getAttribute('aria-describedby')!;
       const tipEl = document.getElementById(tipId) as HTMLSpanElement;
       Object.defineProperty(tipEl, 'offsetWidth', { configurable: true, get: () => 280 });
+      Object.defineProperty(tipEl, 'offsetHeight', { configurable: true, get: () => 72 });
 
       await user.hover(knopf);
       const tip = await screen.findByRole('tooltip');
@@ -165,6 +227,55 @@ describe('InfoTip (AP-2.49 / AP-2.53)', () => {
     } finally {
       unmount();
       aside.remove();
+    }
+  });
+
+  it('setzt mobil maxWidth/maxHeight an der sichtbaren Blase (AP-2.56)', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 812 });
+
+    const { unmount } = render(
+      <InfoTip
+        text="Fällig heißt: Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht."
+        label="Was fällig bedeutet"
+      />,
+    );
+
+    try {
+      const knopf = screen.getByRole('button', { name: 'Was fällig bedeutet' });
+      const anker = knopf.parentElement as HTMLSpanElement;
+      vi.spyOn(anker, 'getBoundingClientRect').mockReturnValue({
+        x: 96,
+        y: 200,
+        top: 200,
+        left: 96,
+        bottom: 224,
+        right: 120,
+        width: 24,
+        height: 24,
+        toJSON() {
+          return {};
+        },
+      });
+
+      const tipId = knopf.getAttribute('aria-describedby')!;
+      const tipEl = document.getElementById(tipId) as HTMLSpanElement;
+      Object.defineProperty(tipEl, 'offsetWidth', { configurable: true, get: () => 288 });
+      Object.defineProperty(tipEl, 'offsetHeight', { configurable: true, get: () => 120 });
+
+      await user.hover(knopf);
+      const tip = await screen.findByRole('tooltip');
+
+      await waitFor(() => {
+        expect(Number.parseFloat(tip.style.maxWidth)).toBeGreaterThan(0);
+      });
+
+      expect(Number.parseFloat(tip.style.maxWidth)).toBeLessThanOrEqual(BLASEN_MAX_MOBIL_REM_PX);
+      expect(Number.parseFloat(tip.style.maxHeight)).toBeGreaterThan(0);
+      expect(Number.parseFloat(tip.style.maxHeight)).toBeLessThanOrEqual(BLASEN_MAX_HEIGHT_PX);
+    } finally {
+      unmount();
     }
   });
 });

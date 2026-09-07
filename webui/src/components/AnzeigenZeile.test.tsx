@@ -122,7 +122,7 @@ describe('AnzeigenZeile: „Gelöscht"-Badge (AP-3.10)', () => {
 });
 
 describe('AnzeigenZeile: Aktionsspalte (AP-2.50)', () => {
-  it('legt Aktualisieren, Öffnen und Umsortieren in eine gemeinsame Spalte', () => {
+  it('legt Aktualisieren, Öffnen und Umsortieren in eine gemeinsame Icon-Reihe', () => {
     const { container } = render(
       <AnzeigenZeile
         anzeige={anzeige({})}
@@ -135,7 +135,9 @@ describe('AnzeigenZeile: Aktionsspalte (AP-2.50)', () => {
 
     const aktionen = container.querySelector('.zeile-aktionen');
     expect(aktionen).not.toBeNull();
-    expect(aktionen!.querySelectorAll('button')).toHaveLength(3);
+    const reihe = aktionen!.querySelector('.zeile-aktionen-reihe');
+    expect(reihe).not.toBeNull();
+    expect(reihe!.querySelectorAll('button')).toHaveLength(3);
     // Kein Text-Knopf „Zu Von anderen" mehr – nur Icon mit aria-label.
     expect(screen.queryByRole('button', { name: /^Zu / })).toBeNull();
   });
@@ -172,5 +174,59 @@ describe('AnzeigenZeile: Aktionsspalte (AP-2.50)', () => {
       screen.getByRole('button', { name: /Amazon Fire TV Stick.*zu meinen Anzeigen/ }),
     );
     expect(aufUmsortieren).toHaveBeenCalledWith(daten);
+  });
+});
+
+describe('AnzeigenZeile: ⋯-Menü auf schmalen Viewports (AP-2.54)', () => {
+  it('öffnet Aktualisieren, Öffnen und Umsortieren über das Kebab-Menü', () => {
+    const aufAktualisieren = vi.fn();
+    const aufOeffnen = vi.fn();
+    const aufUmsortieren = vi.fn();
+    const daten = anzeige({});
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufAktualisieren={aufAktualisieren}
+        aufOeffnen={aufOeffnen}
+        aufUmsortieren={aufUmsortieren}
+      />,
+    );
+
+    const kebab = screen.getByRole('button', { name: /Aktionen für .*Amazon Fire TV Stick/ });
+    expect(kebab.getAttribute('aria-haspopup')).toBe('menu');
+    expect(kebab.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(kebab);
+    expect(kebab.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('menu', { name: /Aktionen für .*Amazon Fire TV Stick/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Aktualisieren' }));
+    expect(aufAktualisieren).toHaveBeenCalledWith(daten);
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    fireEvent.click(kebab);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Öffnen' }));
+    expect(aufOeffnen).toHaveBeenCalledWith(daten);
+
+    fireEvent.click(kebab);
+    fireEvent.click(screen.getByRole('menuitem', { name: /Von anderen/ }));
+    expect(aufUmsortieren).toHaveBeenCalledWith(daten);
+  });
+
+  it('schließt das Menü mit Escape', () => {
+    render(
+      <AnzeigenZeile
+        anzeige={anzeige({})}
+        profil="test"
+        aufOeffnen={vi.fn()}
+      />,
+    );
+
+    const kebab = screen.getByRole('button', { name: /Aktionen für / });
+    fireEvent.click(kebab);
+    expect(screen.getByRole('menu')).toBeDefined();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

@@ -369,18 +369,28 @@ export function BestandSeite({
           onClick={() => void kontoHolen()}
           disabled={startetDownload}
           className="btn-primaer"
+          aria-label={startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
         >
           <Download className="h-4 w-4" aria-hidden />
-          {startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
+          {startetDownload ? (
+            'Wird eingereiht …'
+          ) : (
+            <>
+              <span className="sm:hidden">Holen</span>
+              <span className="hidden sm:inline">Vom Konto holen</span>
+            </>
+          )}
         </button>
       ) : (
         <button
           type="button"
           onClick={() => setHoltNach(true)}
           className="btn-primaer"
+          aria-label="Anzeigen per Link holen"
         >
           <Download className="h-4 w-4" aria-hidden />
-          Anzeigen per Link holen
+          <span className="sm:hidden">Per Link</span>
+          <span className="hidden sm:inline">Anzeigen per Link holen</span>
         </button>
       )}
 

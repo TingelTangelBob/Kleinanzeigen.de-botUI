@@ -7,7 +7,8 @@
 // das Bild das, woran man seine Anzeige erkennt - nicht der Titel, den man
 // selbst getippt hat und der bei drei Webcams dreimal ähnlich klingt.
 
-import { AlertTriangle, ArrowLeftRight, Eye, ImageOff, Pencil, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, ArrowLeftRight, Eye, ImageOff, MoreVertical, Pencil, RefreshCw } from 'lucide-react';
 import type { BestandsAnzeige } from '../types';
 import { api } from '../services/api';
 import { titelFuerAnzeige } from '../titel';
@@ -142,6 +143,149 @@ function merkmaleVon(anzeige: BestandsAnzeige): MerkmalDaten[] {
   return liste;
 }
 
+function umsortierenLabel(anzeige: BestandsAnzeige, titel: string): { aria: string; titel: string; menue: string } {
+  if (anzeige.herkunft === 'eigene') {
+    return {
+      aria: '„' + titel + '“ nach „Von anderen“ verschieben',
+      titel: 'Nach „Von anderen“ verschieben',
+      menue: 'Nach „Von anderen“',
+    };
+  }
+  return {
+    aria: '„' + titel + '“ zu meinen Anzeigen',
+    titel: 'Zu meinen Anzeigen',
+    menue: 'Zu meinen Anzeigen',
+  };
+}
+
+/**
+ * Zeilenaktionen: Icon-Reihe ab md (AP-2.50), ⋯-Menü darunter (AP-2.54).
+ * Schließen bei Klick daneben und Escape – dieselbe Sprache wie der Bestandskopf.
+ */
+function ZeileAktionen({
+  titel, anzeige, aufOeffnen, aufAktualisieren, aufUmsortieren,
+}: {
+  titel: string;
+  anzeige: BestandsAnzeige;
+  aufOeffnen?: (anzeige: BestandsAnzeige) => void;
+  aufAktualisieren?: (anzeige: BestandsAnzeige) => void;
+  aufUmsortieren?: (anzeige: BestandsAnzeige) => void;
+}) {
+  const [menueOffen, setMenueOffen] = useState(false);
+  const menueRef = useRef<HTMLDivElement>(null);
+  const umsortieren = aufUmsortieren ? umsortierenLabel(anzeige, titel) : null;
+
+  useEffect(() => {
+    if (!menueOffen) return undefined;
+    const ausserhalb = (ereignis: MouseEvent) => {
+      if (menueRef.current && !menueRef.current.contains(ereignis.target as Node)) {
+        setMenueOffen(false);
+      }
+    };
+    const escape = (ereignis: KeyboardEvent) => {
+      if (ereignis.key === 'Escape') setMenueOffen(false);
+    };
+    document.addEventListener('mousedown', ausserhalb);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', ausserhalb);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menueOffen]);
+
+  return (
+    <div className="zeile-aktionen">
+      <div className="zeile-aktionen-reihe hidden md:flex">
+        {aufAktualisieren && (
+          <button
+            type="button"
+            onClick={() => aufAktualisieren(anzeige)}
+            aria-label={'„' + titel + '“ aktualisieren'}
+            title="Anzeige aktualisieren"
+            className="btn-icon zeile-aktualisieren"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+          </button>
+        )}
+        {aufOeffnen && (
+          <button
+            type="button"
+            onClick={() => aufOeffnen(anzeige)}
+            aria-label={'„' + titel + '“ öffnen'}
+            title="Anzeige öffnen"
+            className="btn-icon zeile-oeffnen"
+          >
+            <Eye className="h-4 w-4" aria-hidden />
+          </button>
+        )}
+        {aufUmsortieren && umsortieren && (
+          <button
+            type="button"
+            onClick={() => aufUmsortieren(anzeige)}
+            aria-label={umsortieren.aria}
+            title={umsortieren.titel}
+            className="btn-icon zeile-umsortieren"
+          >
+            <ArrowLeftRight className="h-4 w-4" aria-hidden />
+          </button>
+        )}
+      </div>
+
+      <div ref={menueRef} className="plattform-menue zeile-aktionen-menue md:hidden">
+        <button
+          type="button"
+          className="btn-icon"
+          aria-haspopup="menu"
+          aria-expanded={menueOffen}
+          aria-label={'Aktionen für „' + titel + '“'}
+          title="Weitere Aktionen"
+          onClick={() => setMenueOffen(o => !o)}
+        >
+          <MoreVertical className="h-4 w-4" aria-hidden />
+        </button>
+        {menueOffen && (
+          <div
+            className="plattform-menue-panel"
+            role="menu"
+            aria-label={'Aktionen für „' + titel + '“'}
+          >
+            {aufAktualisieren && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenueOffen(false); aufAktualisieren(anzeige); }}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                Aktualisieren
+              </button>
+            )}
+            {aufOeffnen && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenueOffen(false); aufOeffnen(anzeige); }}
+              >
+                <Eye className="h-4 w-4" aria-hidden />
+                Öffnen
+              </button>
+            )}
+            {aufUmsortieren && umsortieren && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenueOffen(false); aufUmsortieren(anzeige); }}
+              >
+                <ArrowLeftRight className="h-4 w-4" aria-hidden />
+                {umsortieren.menue}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AnzeigenZeile({
   anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren, aufUmsortieren,
 }: Props) {
@@ -228,51 +372,20 @@ export function AnzeigenZeile({
       ) : (
         <div className="zeile-inhalt">{zeilenInhalt}</div>
       )}
-      {/* Eine Aktionsspalte: Icons in einer Reihe, kein Extra-Block darunter (AP-2.50). */}
+      {/*
+        Aktionsspalte (AP-2.50 / AP-2.54).
+        Ab md: drei Icon-Knöpfe in einer Reihe. Darunter: ein ⋯-Menü wie im
+        Bestandskopf, damit Titel und Preis auf dem Handy nicht unter drei
+        44-px-Quadraten verschwinden.
+      */}
       {(aufOeffnen || aufAktualisieren || aufUmsortieren) && (
-        <div className="zeile-aktionen">
-          {aufAktualisieren && (
-            <button
-              type="button"
-              onClick={() => aufAktualisieren(anzeige)}
-              aria-label={'„' + titel + '“ aktualisieren'}
-              title="Anzeige aktualisieren"
-              className="btn-icon zeile-aktualisieren"
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden />
-            </button>
-          )}
-          {aufOeffnen && (
-            <button
-              type="button"
-              onClick={() => aufOeffnen(anzeige)}
-              aria-label={'„' + titel + '“ öffnen'}
-              title="Anzeige öffnen"
-              className="btn-icon zeile-oeffnen"
-            >
-              <Eye className="h-4 w-4" aria-hidden />
-            </button>
-          )}
-          {aufUmsortieren && (
-            <button
-              type="button"
-              onClick={() => aufUmsortieren(anzeige)}
-              aria-label={
-                anzeige.herkunft === 'eigene'
-                  ? '„' + titel + '“ nach „Von anderen“ verschieben'
-                  : '„' + titel + '“ zu meinen Anzeigen'
-              }
-              title={
-                anzeige.herkunft === 'eigene'
-                  ? 'Nach „Von anderen“ verschieben'
-                  : 'Zu meinen Anzeigen'
-              }
-              className="btn-icon zeile-umsortieren"
-            >
-              <ArrowLeftRight className="h-4 w-4" aria-hidden />
-            </button>
-          )}
-        </div>
+        <ZeileAktionen
+          titel={titel}
+          anzeige={anzeige}
+          aufOeffnen={aufOeffnen}
+          aufAktualisieren={aufAktualisieren}
+          aufUmsortieren={aufUmsortieren}
+        />
       )}
     </div>
   );

@@ -19,6 +19,7 @@ import type { Route } from '../routing';
 import { hashFuer } from '../routing';
 import type { JobZustand } from '../types';
 import { useThema } from '../hooks/useThema';
+import { KopfAktionenKontext } from '../context/kopfAktionenKontext';
 import { Glocke } from './Glocke';
 
 const AKTIVE_ZUSTAENDE = new Set<JobZustand>(['wartet', 'laeuft', 'braucht_eingabe']);
@@ -78,6 +79,9 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
   // Die Theme-*Wahl* sitzt seit AP-2.32 allein unter Einstellungen › Darstellung.
   const { effektiv: themaEffektiv } = useThema();
   const aktiveLaeufe = useAktiveLaufAnzahl();
+  // Slot für die Seiten-Aktionsknöpfe in der Topleiste. Die Seite füllt ihn per
+  // Portal (useKopfAktionen); leer bleibt er unsichtbar.
+  const [kopfZiel, setKopfZiel] = useState<HTMLElement | null>(null);
 
   // Beim Seitenwechsel das Mobilmenü schließen - sonst verdeckt es die Seite,
   // auf die man gerade gewechselt ist.
@@ -279,7 +283,10 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           <span className="min-w-0 truncate font-semibold tracking-tight" style={{ color: 'var(--text-stark)' }}>
             {seitenTitel(route)}
           </span>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
+          {/* Aktionsknöpfe der Seite (Portal-Ziel), dann die Glocke mit dezenter
+              Trennlinie davor. Ist der Slot leer, verschwinden Slot und Linie. */}
+          <div ref={setKopfZiel} className="kopf-aktionen" />
+          <div className="topbar-glocke ml-auto flex min-w-0 items-center gap-2">
             <Glocke aufZiel={wechseln} />
             {aktiv && (
               <span className="truncate text-sm lg:hidden" style={{ color: 'var(--text-schwach)' }}>
@@ -289,7 +296,11 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden px-6 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden px-6 py-6 sm:px-8 sm:py-8">
+          <KopfAktionenKontext.Provider value={kopfZiel}>
+            {children}
+          </KopfAktionenKontext.Provider>
+        </main>
       </div>
     </div>
   );

@@ -177,6 +177,31 @@ html:has(#app-shell[data-theme='dark']) {
     flex-shrink: 0;
   }
 
+  /*
+   * Slot für die Seiten-Aktionsknöpfe in der Topleiste (2026-09-07). Die Seite
+   * rendert sie per Portal hier hinein; leer bleibt der Slot unsichtbar und die
+   * Trennlinie zur Glocke ebenfalls. Die Knöpfe sind etwas flacher, damit sie
+   * in den festen 3.5rem-Slot passen, ohne ihn aufzuziehen.
+   */
+  .kopf-aktionen {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .kopf-aktionen:empty { display: none; }
+  .kopf-aktionen .btn-primaer,
+  .kopf-aktionen .btn-ghost,
+  .kopf-aktionen .btn-icon {
+    min-height: 36px;
+  }
+  .kopf-aktionen .btn-icon { min-width: 36px; }
+  .kopf-aktionen:not(:empty) + .topbar-glocke {
+    border-left: 1px solid var(--karte-rand);
+    padding-left: 0.75rem;
+    margin-left: 0.5rem;
+  }
+
   .text-stark { color: var(--text-stark); }
   .text-normal { color: var(--text); }
   .text-leise { color: var(--text-schwach); }

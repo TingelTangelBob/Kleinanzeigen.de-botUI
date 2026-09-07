@@ -22,6 +22,7 @@ import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { useMeldungenQuelle } from '../context/useMeldungen';
 import type { Meldung } from '../context/meldungenKontext';
+import { useKopfAktionen } from '../context/kopfAktionenKontext';
 import { hashFuer, hashFuerAnzeige, type AnzeigenHerkunft } from '../routing';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
@@ -355,6 +356,87 @@ export function BestandSeite({
   }, [downloadHinweis, aktualisierungsHinweis]);
   useMeldungenQuelle('bestand', meldungen);
 
+  const eigene = herkunft === 'eigene';
+
+  // Die Aktionsknöpfe der Seite stehen in der App-Topleiste, nicht in einem
+  // eigenen Kopfbereich (2026-09-07). `md+` alle nebeneinander, darunter
+  // Primärknopf + Kebab.
+  const kopfAktionen = useKopfAktionen(
+    <>
+      {eigene ? (
+        <button
+          type="button"
+          onClick={() => void kontoHolen()}
+          disabled={startetDownload}
+          className="btn-primaer"
+        >
+          <Download className="h-4 w-4" aria-hidden />
+          {startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setHoltNach(true)}
+          className="btn-primaer"
+        >
+          <Download className="h-4 w-4" aria-hidden />
+          Anzeigen per Link holen
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={() => void laden()}
+        className="btn-ghost hidden md:inline-flex"
+      >
+        <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
+        Neu einlesen
+      </button>
+      <button
+        type="button"
+        onClick={() => aufZiel('einstellungen/anzeigen')}
+        aria-label="Anzeigen-Einstellungen"
+        title="Anzeigen-Einstellungen"
+        className="btn-icon hidden md:inline-flex"
+      >
+        <Settings className="h-4 w-4" aria-hidden />
+      </button>
+
+      <div ref={menueRef} className="plattform-menue md:hidden">
+        <button
+          type="button"
+          className="btn-icon"
+          aria-haspopup="menu"
+          aria-expanded={menueOffen}
+          aria-label="Weitere Aktionen"
+          onClick={() => setMenueOffen(o => !o)}
+        >
+          <MoreVertical className="h-4 w-4" aria-hidden />
+        </button>
+        {menueOffen && (
+          <div className="plattform-menue-panel" role="menu" aria-label="Weitere Aktionen">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenueOffen(false); void laden(); }}
+            >
+              <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
+              Neu einlesen
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenueOffen(false); aufZiel('einstellungen/anzeigen'); }}
+            >
+              <Settings className="h-4 w-4" aria-hidden />
+              Anzeigen-Einstellungen
+            </button>
+          </div>
+        )}
+      </div>
+    </>,
+  );
+
   if (profileLaden) return <p className="text-sm text-leise">Wird geladen …</p>;
 
   if (!aktiv) {
@@ -397,95 +479,15 @@ export function BestandSeite({
     );
   }
 
-  const eigene = herkunft === 'eigene';
-
   return (
     <div className="seite">
-      <div className="seite-kopf">
-        <div className="min-w-0">
-          <h1 className="sr-only">{eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
-          {!eigene && (
-            <p className="seite-beschrieb">
-              Anzeigen, die du per Link geholt hast – nicht aus deinem Konto.
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {eigene ? (
-            <button
-              type="button"
-              onClick={() => void kontoHolen()}
-              disabled={startetDownload}
-              className="btn-primaer"
-            >
-              <Download className="h-4 w-4" aria-hidden />
-              {startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setHoltNach(true)}
-              className="btn-primaer"
-            >
-              <Download className="h-4 w-4" aria-hidden />
-              Anzeigen per Link holen
-            </button>
-          )}
-
-          {/* Ab md nebeneinander; darunter wandern „Neu einlesen" und die
-              Anzeigen-Einstellungen ins Kebab, damit der Kopf schmal bleibt. */}
-          <button
-            type="button"
-            onClick={() => void laden()}
-            className="btn-ghost hidden md:inline-flex"
-          >
-            <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-            Neu einlesen
-          </button>
-          <button
-            type="button"
-            onClick={() => aufZiel('einstellungen/anzeigen')}
-            aria-label="Anzeigen-Einstellungen"
-            title="Anzeigen-Einstellungen"
-            className="btn-icon hidden md:inline-flex"
-          >
-            <Settings className="h-4 w-4" aria-hidden />
-          </button>
-
-          <div ref={menueRef} className="plattform-menue md:hidden">
-            <button
-              type="button"
-              className="btn-icon"
-              aria-haspopup="menu"
-              aria-expanded={menueOffen}
-              aria-label="Weitere Aktionen"
-              onClick={() => setMenueOffen(o => !o)}
-            >
-              <MoreVertical className="h-4 w-4" aria-hidden />
-            </button>
-            {menueOffen && (
-              <div className="plattform-menue-panel" role="menu" aria-label="Weitere Aktionen">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setMenueOffen(false); void laden(); }}
-                >
-                  <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-                  Neu einlesen
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { setMenueOffen(false); aufZiel('einstellungen/anzeigen'); }}
-                >
-                  <Settings className="h-4 w-4" aria-hidden />
-                  Anzeigen-Einstellungen
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <h1 className="sr-only">{eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
+      {kopfAktionen}
+      {!eigene && (
+        <p className="seite-beschrieb mb-4">
+          Anzeigen, die du per Link geholt hast – nicht aus deinem Konto.
+        </p>
+      )}
 
       {holtNach && (
         <NachladenDialog profil={aktiv.slug} aufSchliessen={() => { setHoltNach(false); void laden(); }} />
@@ -548,8 +550,8 @@ export function BestandSeite({
         />
       )}
 
-      {/* Suche und Reiter in einer Zeile (2026-09-07). Auf dem Desktop steht die
-          Suche schmal links neben der Reiter-Leiste; unter sm klappt sie auf ein
+      {/* Reiter links, Suche rechts (2026-09-07). Ab sm steht die Suche schmal
+          rechtsbündig neben der Reiter-Leiste; unter sm klappt sie auf ein
           Lupen-Icon zusammen und öffnet sich bei Bedarf als eigene Zeile. */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
@@ -557,13 +559,13 @@ export function BestandSeite({
           onClick={() => setSucheOffen(o => !o)}
           aria-label="Suche ein- oder ausblenden"
           aria-expanded={sucheOffen}
-          className="btn-icon flex-shrink-0 sm:hidden"
+          className="btn-icon order-first flex-shrink-0 sm:hidden"
         >
           <Search className="h-4 w-4" aria-hidden />
         </button>
 
         <label
-          className={`relative flex-shrink-0 sm:order-first sm:block sm:w-64 ${
+          className={`relative flex-shrink-0 sm:order-last sm:ml-auto sm:block sm:w-64 ${
             sucheOffen ? 'order-last block w-full' : 'hidden'
           }`}
         >
@@ -578,7 +580,7 @@ export function BestandSeite({
           />
         </label>
 
-        <div className="reiter-leiste min-w-0 flex-1 overflow-x-auto sm:flex-none">
+        <div className="reiter-leiste order-first min-w-0 flex-1 overflow-x-auto sm:order-none sm:flex-none">
           {FILTER.map(f => {
             const anzahl = zaehler[f.id] ?? null;
             return (

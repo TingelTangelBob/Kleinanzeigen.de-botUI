@@ -130,7 +130,7 @@ GRUPPEN: Final[tuple[dict[str, Any], ...]] = (
         "wurzel": "captcha",
         "titel": "Captcha",
         "beschreibung": "Wie der Bot reagiert, wenn die Plattform ein Captcha zeigt.",
-        "eingeklappt": False,
+        "eingeklappt": True,
     },
     {
         "id": "update_check",
@@ -161,6 +161,7 @@ BEZEICHNUNGEN: Final[dict[str, str]] = {
     "ad_defaults.auto_price_reduction.delay_reposts": "Neueinstellungen abwarten",
     "ad_defaults.auto_price_reduction.delay_days": "Tage abwarten",
     "ad_defaults.auto_price_reduction.on_update": "Auch beim Aktualisieren",
+    "ad_defaults.images": "Standard-Bilder",
     "ad_defaults.contact.name": "Kontaktname",
     "ad_defaults.contact.street": "Straße",
     "ad_defaults.contact.zipcode": "Postleitzahl",
@@ -217,6 +218,116 @@ BEZEICHNUNGEN: Final[dict[str, str]] = {
     "update_check.enabled": "Prüfung einschalten",
     "update_check.channel": "Kanal",
     "update_check.interval": "Abstand",
+}
+
+#: Deutsche Kurzbeschreibung je Feld. Ersetzt die englischen `Field(description=…)`
+#: aus dem Upstream-Schema: eine englische Zeile ist in dieser Oberfläche
+#: schlechter als keine. Fehlt hier ein Pfad, steht unter dem Feld nichts - der
+#: `titel` benennt es dann allein.
+BESCHREIBUNGEN: Final[dict[str, str]] = {
+    "ad_defaults.active": "Neue Anzeigen werden veröffentlicht. Aus: Anzeige wird übersprungen.",
+    "ad_defaults.type": "Angebot oder Gesuch.",
+    "ad_defaults.description_prefix": "Text, der jeder Beschreibung vorangestellt wird.",
+    "ad_defaults.description_suffix": "Text, der an jede Beschreibung angehängt wird.",
+    "ad_defaults.price_type": "Preisart: Festpreis, Verhandlungsbasis, zu verschenken oder ohne Preis.",
+    "ad_defaults.auto_price_reduction.enabled": "Bei jeder Neueinstellung den Preis automatisch senken.",
+    "ad_defaults.auto_price_reduction.strategy": "Senken um einen Prozentsatz oder einen festen Betrag.",
+    "ad_defaults.auto_price_reduction.amount": "Prozentsatz oder Betrag der Senkung.",
+    "ad_defaults.auto_price_reduction.min_price": "Untergrenze für den Preis. 0 = keine Grenze.",
+    "ad_defaults.auto_price_reduction.delay_reposts":
+        "So viele Neueinstellungen abwarten, bevor zum ersten Mal gesenkt wird.",
+    "ad_defaults.auto_price_reduction.delay_days":
+        "So viele Tage nach der Veröffentlichung abwarten, bevor gesenkt wird.",
+    "ad_defaults.auto_price_reduction.on_update": "Auch bei Aktualisierungsläufen senken.",
+    "ad_defaults.shipping_type": "Nur Abholung oder Versand möglich.",
+    "ad_defaults.sell_directly":
+        "Direktkauf anbieten (braucht Versand, eine Versandoption und Festpreis oder VB).",
+    "ad_defaults.images": "Standard-Bildmuster für neue Anzeigen. Leer = keine.",
+    "ad_defaults.republication_interval": "Tage zwischen zwei automatischen Neueinstellungen.",
+    "ad_defaults.contact.name": "Kontaktname auf der Anzeige.",
+    "ad_defaults.contact.street": "Straße der Anzeige.",
+    "ad_defaults.contact.zipcode": "Postleitzahl des Anzeigenorts.",
+    "ad_defaults.contact.location": "Ort der Anzeige (mehrere Stadtteile möglich).",
+    "ad_defaults.contact.phone":
+        "Telefonnummer. Nur für gewerbliche Konten; private Konten unterstützen das nicht mehr.",
+    "publishing.delete_old_ads": "Wann die alte Fassung einer neu eingestellten Anzeige gelöscht wird.",
+    "publishing.delete_old_ads_by_title":
+        "Alte Anzeigen am Titel erkennen, wenn keine Nummer vorliegt. Mehrdeutige Titel werden übersprungen.",
+    "publishing.local_path_renaming.mode":
+        "Ob lokale Datei- und Ordnernamen nach dem Einstellen an die neue Anzeigennummer angepasst werden. "
+        "Aus: unverändert. An der Vorlage: nur Namen, die den Download-Vorlagen entsprechen.",
+    "deleting.after_delete":
+        "Was mit der lokalen Anzeigendatei nach einem Löschversuch geschieht "
+        "(bei Erfolg wie bei „nicht gefunden“).",
+    "download.dir": "Ordner, in den heruntergeladene Anzeigen geschrieben werden.",
+    "download.include_all_matching_shipping_options":
+        "Alle Versandoptionen der passenden Paketgröße übernehmen.",
+    "download.excluded_shipping_options":
+        "Versandoptionen, die nicht übernommen werden (z. B. „DHL_2“). Leer = alle.",
+    "download.folder_name_max_length": "Höchstlänge für Ordnernamen heruntergeladener Anzeigen.",
+    "download.folder_name_template":
+        "Vorlage für Ordnernamen. Platzhalter {id} (Pflicht) und {title}.",
+    "download.ad_file_name_template":
+        "Vorlage für Dateinamen und Bild-Präfix. Platzhalter {id} (Pflicht) und {title}.",
+    "download.rename_existing_folders": "Vorhandene Ordner ohne Titel um den Titel ergänzen.",
+    "download.preserve_local_settings":
+        "Beim erneuten Herunterladen lokale Werte behalten "
+        "(Preissenkung, Neueinstellungs-Intervall …).",
+    "browser.suppress_unsupported_flag_warning":
+        "Chromium-Warnung zu unbekannten Schaltern unterdrücken (--test-type). "
+        "In ptrace-beschränkten Containern auf „aus“ lassen.",
+    "timeouts.multiplier": "Faktor auf alle Wartezeiten.",
+    "timeouts.default": "Grund-Wartezeit für DOM-Interaktionen.",
+    "timeouts.page_load": "Wartezeit für das Laden einer Seite.",
+    "timeouts.captcha_detection": "Wartezeit für das Erkennen eines Captchas.",
+    "timeouts.sms_verification": "Wartezeit für die SMS-Bestätigung.",
+    "timeouts.email_verification": "Wartezeit für die E-Mail-Bestätigung.",
+    "timeouts.login_detection": "Wartezeit für das Erkennen einer bestehenden Anmeldung.",
+    "timeouts.publishing_result": "Wartezeit für die Prüfung des Veröffentlichungsergebnisses.",
+    "timeouts.publishing_confirmation": "Wartezeit für die Weiterleitung nach dem Veröffentlichen.",
+    "timeouts.image_upload": "Wartezeit für den Bild-Upload und die serverseitige Verarbeitung.",
+    "timeouts.pagination_initial": "Wartezeit für die erste Seite der Anzeigenliste.",
+    "timeouts.pagination_follow_up": "Wartezeit für weitere Seiten der Anzeigenliste.",
+    "timeouts.quick_dom": "Kurze Wartezeit für flüchtige Oberflächenelemente.",
+    "timeouts.update_check": "Wartezeit für die Update-Prüfung bei GitHub.",
+    "timeouts.chrome_remote_probe": "Wartezeit für lokale Remote-Debugging-Sonden.",
+    "timeouts.chrome_remote_debugging":
+        "Wartezeit für Aufrufe der Remote-Debugging-Schnittstelle.",
+    "timeouts.chrome_binary_detection": "Wartezeit für „chrome --version“-Aufrufe.",
+    "timeouts.retry_enabled": "Fehlgeschlagene DOM-Aktionen automatisch wiederholen.",
+    "timeouts.retry_max_attempts": "Höchstzahl der Wiederholungen.",
+    "timeouts.retry_backoff_factor": "Faktor, um den die Wartezeit je Wiederholung wächst.",
+    "humanization.enabled":
+        "Zusätzliche Humanisierung einschalten; die Grundtaktung bleibt ohnehin erhalten.",
+    "humanization.typing_jitter":
+        "Text Zeichen für Zeichen mit wechselnden Pausen tippen statt am Stück.",
+    "humanization.typing_delay_min_ms": "Kürzeste Pause zwischen zwei Anschlägen (ms).",
+    "humanization.typing_delay_max_ms": "Längste Pause zwischen zwei Anschlägen (ms).",
+    "humanization.action_delay_min_ms": "Kürzeste Pause nach einer Aktion (ms).",
+    "humanization.action_delay_max_ms": "Längste Pause nach einer Aktion (ms).",
+    "humanization.randomize_viewport":
+        "Nach dem Seitenaufruf eine zufällige Fenstergröße aus der Liste wählen.",
+    "humanization.viewport_sizes":
+        "Erlaubte Fenstergrößen (BxH), aus denen zufällig gewählt wird.",
+    "diagnostics.capture_on.login_detection":
+        "Bildschirmfoto und HTML sichern, wenn die Anmeldung nicht erkannt wird.",
+    "diagnostics.capture_on.publish":
+        "Bildschirmfoto, HTML und JSON bei fehlgeschlagener Veröffentlichung sichern.",
+    "diagnostics.capture_log_copy":
+        "Bei jeder Diagnose das komplette Bot-Protokoll mitkopieren.",
+    "diagnostics.pause_on_login_detection_failure":
+        "Nach der Diagnose anhalten (nur interaktive Läufe), damit du den Browser ansehen kannst. "
+        "Braucht „Bei fehlender Anmeldungserkennung“.",
+    "diagnostics.timing_collection":
+        "Lokale Zeitmessungen sammeln und in die Diagnose-JSON schreiben.",
+    "captcha.auto_restart":
+        "Bei Captcha abbrechen und nach der Wartezeit automatisch neu starten. "
+        "Aus: auf manuelles Lösen warten.",
+    "captcha.restart_delay": "Wartezeit vor dem Neustart (z. B. 1h30m, 6h, 30m).",
+    "update_check.channel": "Welcher Veröffentlichungskanal geprüft wird (Stabil oder Vorschau).",
+    "update_check.interval":
+        "Wie oft auf Updates geprüft wird (z. B. 7d, 1d). Ungültige oder unpassende Werte "
+        "fallen auf die Vorgabe zurück.",
 }
 
 ENUM_LABELS: Final[dict[str, str]] = {
@@ -359,7 +470,9 @@ def _felder_sammeln(
         feld: dict[str, Any] = {
             "pfad": pfad,
             "titel": BEZEICHNUNGEN.get(pfad) or str(aufgeloest.get("title") or name),
-            "beschreibung": str(aufgeloest.get("description") or roh.get("description") or ""),
+            # Deutsche Kurzbeschreibung aus BESCHREIBUNGEN; die englische
+            # Schema-Beschreibung wird bewusst nicht als Rueckfall genommen.
+            "beschreibung": BESCHREIBUNGEN.get(pfad, ""),
             "typ": typ,
             "vorgabe": aufgeloest.get("default", roh.get("default")),
             "null_erlaubt": _null_erlaubt(aufgeloest) or _null_erlaubt(roh),

@@ -12,6 +12,7 @@ import { ArrowRight, KeyRound, Settings } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useProfil } from '../context/useProfil';
+import { useKopfAktionen } from '../context/kopfAktionenKontext';
 import { hashFuerAnzeige } from '../routing';
 import type { BestandsAnzeige, Job, ZugangStatus } from '../types';
 import { AnzeigenZeile } from './AnzeigenZeile';
@@ -102,6 +103,20 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
     void laden();
   }, [laden]);
 
+  // Zahnrad zu den Anzeigen-Einstellungen steht in der App-Topleiste
+  // (Studio-Vorgaben für Anzeigen, nicht die Bot-Konfiguration).
+  const kopfAktionen = useKopfAktionen(
+    <button
+      type="button"
+      onClick={() => aufZiel('einstellungen/anzeigen')}
+      aria-label="Anzeigen-Einstellungen"
+      title="Anzeigen-Einstellungen"
+      className="btn-icon"
+    >
+      <Settings className="h-4 w-4" aria-hidden />
+    </button>,
+  );
+
   if (profileLaden) return <p className="text-sm text-leise">Wird geladen …</p>;
 
   // Eine Störung darf nicht als „noch kein Profil" erscheinen. Das sah aus wie
@@ -164,23 +179,12 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
 
   return (
     <div className="seite">
+      {kopfAktionen}
       <div className="seite-kopf">
         <div>
           <h1 className="sr-only">Übersicht</h1>
           <p className="seite-beschrieb">{aktiv.anzeigename}</p>
         </div>
-        {/* Studio-Einstellungen für Anzeigen (z. B. der Standard-Abstand zur
-            Neueinstellung). Nicht die Bot-Konfiguration - die liegt unter
-            Einstellungen. */}
-        <button
-          type="button"
-          onClick={() => aufZiel('einstellungen/anzeigen')}
-          aria-label="Anzeigen-Einstellungen"
-          title="Anzeigen-Einstellungen"
-          className="btn-icon flex-shrink-0"
-        >
-          <Settings className="h-4 w-4" aria-hidden />
-        </button>
       </div>
 
       {fehler && (

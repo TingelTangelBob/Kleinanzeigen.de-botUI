@@ -168,10 +168,10 @@ export function NeueAnzeigeSeite({
   const offeneFragen = entwurf?.fragen.filter(f => !antworten[f.id]) ?? [];
 
   return (
-    // Dieselbe breitere Kante wie im Editor (AP-2.24): die Chip-Reihen der
-    // Vorschläge und der Bildstreifen bekommen mehr Platz und brechen später
-    // um. Fließtext bleibt über `.lesebreite` gedeckelt.
-    <div className="seite-breit">
+    // Gleiche Inhaltskante wie Bestand/Übersicht (AP-2.51): `.seite` = 72rem.
+    // `.seite-breit` bleibt dem Editor vorbehalten (AP-2.24). Fließtext bleibt
+    // über `.lesebreite` gedeckelt.
+    <div className="seite">
       <div className="seite-kopf mb-5">
         <div>
           <h1 className="sr-only">Neue Anzeige</h1>

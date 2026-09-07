@@ -214,38 +214,40 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
               label="Neue Anzeige"
               onClick={() => wechseln('neu')}
             />
-            {/* Ein Menüpunkt für die Läufe (AP-2.31): die frühere Mini-Liste
-                unter der Nav ist weg, der Zähler zeigt nur an, wenn gerade
-                etwas läuft oder wartet. */}
-            <NavKnopf
-              aktiv={route.seite === 'warteschlange'}
-              icon={ListOrdered}
-              label="Warteschlange"
-              badge={aktiveLaeufe}
-              onClick={() => wechseln('warteschlange')}
-            />
-            <NavKnopf
-              aktiv={route.seite === 'einstellungen'}
-              icon={Settings}
-              label="Einstellungen"
-              onClick={() => wechseln('einstellungen')}
-            />
           </div>
         </nav>
 
-        {/* `mt-auto` hält den Fuß auch dann unten, wenn die Navigation darüber
-            einmal nicht mehr wachsen sollte. Nur noch Abmelden hier (AP-2.32):
-            Die Theme-Wahl ist nach Einstellungen › Darstellung gewandert -
-            ein Ort statt zwei. */}
-        <div className="safe-unten mt-auto p-2" style={{ borderTop: '1px solid var(--sidebar-rand)' }}>
-          <button
-            type="button"
-            onClick={() => void abmelden()}
-            className="nav-link"
-          >
-            <LogOut className="h-4 w-4 flex-shrink-0" />
-            <span className="truncate">Abmelden{status?.name ? ` (${status.name})` : ''}</span>
-          </button>
+        {/* Fuß unten (AP-2.49): Warteschlange und Einstellungen kleben mit
+            `mt-auto` am unteren Rand, Abmelden darunter. Vorher standen beide
+            mitten in der Nav unter „Neue Anzeige" - der Fuß war nur Abmelden
+            (AP-2.32, Theme nach Einstellungen › Darstellung). */}
+        <div className="safe-unten mt-auto p-2">
+          {/* Ein Menüpunkt für die Läufe (AP-2.31): die frühere Mini-Liste
+              unter der Nav ist weg, der Zähler zeigt nur an, wenn gerade
+              etwas läuft oder wartet. */}
+          <NavKnopf
+            aktiv={route.seite === 'warteschlange'}
+            icon={ListOrdered}
+            label="Warteschlange"
+            badge={aktiveLaeufe}
+            onClick={() => wechseln('warteschlange')}
+          />
+          <NavKnopf
+            aktiv={route.seite === 'einstellungen'}
+            icon={Settings}
+            label="Einstellungen"
+            onClick={() => wechseln('einstellungen')}
+          />
+          <div className="mt-1 pt-1" style={{ borderTop: '1px solid var(--sidebar-rand)' }}>
+            <button
+              type="button"
+              onClick={() => void abmelden()}
+              className="nav-link"
+            >
+              <LogOut className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">Abmelden{status?.name ? ` (${status.name})` : ''}</span>
+            </button>
+          </div>
         </div>
       </aside>
 

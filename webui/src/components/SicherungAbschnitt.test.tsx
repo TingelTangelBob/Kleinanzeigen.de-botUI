@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Sicherung, Export und Import (AP-3.6).
+// Sicherung, Export und Import (AP-3.6), kurze Kartentexte (AP-2.52).
 //
 // Der wichtigste Test hier ist `bietet Einspielen erst nach der Vorschau an`:
 // Ein Import ohne vorherige Vorschau wäre ein Knopf, hinter dem sich der
@@ -40,9 +40,11 @@ describe('SicherungAbschnitt', () => {
     einspielen.mockReset();
   });
 
-  it('nennt ausdrücklich, was nicht mitgeht', () => {
+  it('hält die Karte kurz und legt die Sicherheitsdetails in den InfoTip', () => {
     render(<SicherungAbschnitt profil="haushalt" />);
-    expect(screen.getByText(/Zugangsdaten, LLM-Schlüssel und das/)).toBeTruthy();
+    expect(screen.getByText('Anzeigen, Bilder, Vorlagen und Bot-Einstellungen als ZIP.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Erklärung zur Sicherung' })).toBeTruthy();
+    expect(screen.queryByText(/Sichert Anzeigen mit Bildern/)).toBeNull();
   });
 
   it('verlinkt den Export auf das aktive Profil', () => {

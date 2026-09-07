@@ -306,3 +306,22 @@ describe('Kategorievorschlag', () => {
     expect(anlegen.mock.calls[0][4]).toMatchObject({ kategorie: '161/278' });
   });
 });
+
+
+// --------------------------------------------------------- Seitenbreite (AP-2.51)
+//
+// Neue Anzeige gehört zur gemeinsamen 72rem-Kante (.seite) wie Bestand und
+// Übersicht. .seite-breit (86rem) bleibt dem Editor vorbehalten.
+
+describe('Seitenbreite', () => {
+  it('nutzt .seite wie Bestand/Übersicht, nicht .seite-breit', async () => {
+    const { container } = render(<NeueAnzeigeSeite />);
+    await waitFor(() => {
+      expect(screen.getByText(/Fotos hochladen/)).toBeDefined();
+    });
+    const schale = container.querySelector('.seite');
+    expect(schale).not.toBeNull();
+    expect(schale?.classList.contains('seite-breit')).toBe(false);
+    expect(container.querySelector('.seite-breit')).toBeNull();
+  });
+});

@@ -43,7 +43,6 @@ export function ProfilSeite({ ohneTitel = false }: { ohneTitel?: boolean } = {})
             Profile
           </h1>
         )}
-        {ohneTitel && <p className="seite-beschrieb m-0">Kleinanzeigen-Konten dieser Installation.</p>}
         <button
           type="button"
           onClick={() => setFormOffen(o => !o)}

@@ -321,18 +321,18 @@ html:has(#app-shell[data-theme='dark']) {
   }
 
   /*
-   * Breitere Kante, nur für den Editor und die Neue-Anzeige-Maske (AP-2.24).
-   * Beide sind zweispaltig - Fotos neben Feldern - und gewinnen mit mehr Platz
-   * echte Dichte: die Feldraster füllen sich, Chip-Reihen brechen später um,
-   * es bleibt weniger zu scrollen. Fließtext wird davon nicht breiter, der
-   * bleibt über `.lesebreite` gedeckelt.
+   * Breitere Kante, nur für den Editor (AP-2.24). Der Editor ist zweispaltig -
+   * Fotos neben Feldern - und gewinnt mit mehr Platz echte Dichte: die
+   * Feldraster füllen sich, Chip-Reihen brechen später um, es bleibt weniger
+   * zu scrollen. Fließtext wird davon nicht breiter, der bleibt über
+   * `.lesebreite` gedeckelt.
    *
-   * Listen und Übersicht behalten ihre gemeinsame 72rem-Kante aus AP-2.14 -
-   * die wird hier nicht angefasst. Und bis rund 1440 px Fensterbreite greift
-   * dieser Deckel ohnehin nicht: nach Abzug von Seitenleiste (15rem) und
-   * Seitenrand bleiben keine 72rem übrig, also ist die Seite dort schon so
-   * breit wie hier. Der gewonnene Platz liegt erst darüber, zwischen 72 und
-   * 86rem.
+   * Neue Anzeige nutzt wieder `.seite` wie Bestand/Übersicht (AP-2.51). Listen
+   * und Übersicht behalten ihre gemeinsame 72rem-Kante aus AP-2.14 - die wird
+   * hier nicht angefasst. Und bis rund 1440 px Fensterbreite greift dieser
+   * Deckel ohnehin nicht: nach Abzug von Seitenleiste (15rem) und Seitenrand
+   * bleiben keine 72rem übrig, also ist die Seite dort schon so breit wie
+   * hier. Der gewonnene Platz liegt erst darüber, zwischen 72 und 86rem.
    */
   .seite-breit {
     width: 100%;
@@ -555,14 +555,26 @@ html:has(#app-shell[data-theme='dark']) {
   button.zeile-klick:hover {
     background: var(--primary-light);
   }
+  /*
+   * Aktionsspalte der Listenzeile (AP-2.50).
+   *
+   * Früher saßen Aktualisieren/Öffnen in `.zeile-aktionen` und „Zu Von anderen"
+   * als breiter Ghost-Knopf in einem eigenen Listen-Zellenblock darunter - auf
+   * dem Handy zwei kleine Quadrate über einem volle-Breite-Knopf. Alle
+   * Zeilenaktionen sind jetzt gleichgroße Icon-Knöpfe in einer Reihe.
+   */
   .zeile-aktionen {
     display: flex;
     flex-shrink: 0;
-    align-items: flex-start;
-    gap: 0.4rem;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    align-self: center;
+    gap: 0.35rem;
   }
   .btn-icon {
     display: inline-flex;
+    width: 44px;
     min-width: 44px;
     min-height: 44px;
     flex-shrink: 0;
@@ -572,13 +584,11 @@ html:has(#app-shell[data-theme='dark']) {
     border: 1px solid var(--karte-rand);
     background: var(--karte);
     color: var(--text);
+    padding: 0;
   }
   .btn-icon:hover {
     background: var(--primary-light);
     color: var(--primary-color);
-  }
-  .zeile-aktualisieren {
-    align-self: flex-start;
   }
 
   .feld {
@@ -1082,15 +1092,18 @@ html:has(#app-shell[data-theme='dark']) {
   /*
    * Die Blase hing an `left: 0` und lief auf 375 px rechts aus dem Bild
    * (AP-2.34). Jetzt klebt sie am rechten Rand ihres Ankers und darf höchstens
-   * so breit werden, wie im Sichtfeld Platz ist. `right: 0` statt `left: 0`,
-   * weil die Kurzhilfen am Zeilenende stehen - links ist immer Platz, rechts
-   * die Kante.
+   * so breit werden, wie im Sichtfeld Platz ist. Seit AP-2.49 hängt sie per
+   * Portal an `document.body` mit `position: fixed` und z-index 50 - über
+   * der Sidebar (z-40), damit Hover neben „Steht an" nicht unter dem Grün
+   * verschwindet. AP-2.53: JS klemmt/`left`-klappt die Blase zusätzlich rechts
+   * der Sidebar (Overlap <= 8 px), statt sie über dem Grün liegen zu lassen.
+   * Sichtbarkeit steuert `.info-tip-blase-sichtbar` (JS), nicht mehr
+   * `:hover`/`:focus-within` am Anker - der Anker und die Blase liegen in
+   * getrennten DOM-Zweigen.
    */
   .info-tip-blase {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 0.4rem);
-    z-index: 30;
+    position: fixed;
+    z-index: 50;
     width: max-content;
     max-width: min(18rem, calc(100vw - 2rem));
     border-radius: var(--radius-kontrolle);
@@ -1105,10 +1118,10 @@ html:has(#app-shell[data-theme='dark']) {
     text-align: left;
     opacity: 0;
     visibility: hidden;
+    pointer-events: none;
     transition: opacity 0.12s ease;
   }
-  .info-tip:hover .info-tip-blase,
-  .info-tip:focus-within .info-tip-blase {
+  .info-tip-blase-sichtbar {
     opacity: 1;
     visibility: visible;
   }
@@ -1180,6 +1193,21 @@ html:has(#app-shell[data-theme='dark']) {
   .glocke-zeile-fertig .glocke-zeile-titel { color: var(--text); }
   .glocke-zeile:hover { background: var(--primary-light); }
   .glocke-zeile + .glocke-zeile { border-top: 1px solid var(--karte-rand); }
+  .glocke-zeile-inhalt {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+  }
+  .wartehinweis-kompakt {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.35rem;
+    color: var(--hinweis-ok-text);
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
   .glocke-fuss {
     display: block;
     width: 100%;

@@ -136,4 +136,44 @@ describe('Glocke – Laufzeilen (AP-2.39)', () => {
     expect(bestandListe).toHaveBeenCalledWith('eins');
     expect(bestandListe).toHaveBeenCalledWith('zwei');
   });
+
+  it('erklärt eine absichtliche Wartezeit mit Restzeit und Grund', async () => {
+    jobsListe.mockResolvedValue([
+      job({
+        zustand: 'wartet',
+        wartet_bis: new Date(Date.now() + 120_000).toISOString(),
+        wartegrund: 'Mindestpause zwischen Läufen',
+      }),
+    ]);
+
+    render(
+      <MeldungenProvider>
+        <Glocke aufZiel={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Benachrichtigungen/ }));
+    const menue = await screen.findByRole('menu', { name: 'Benachrichtigungen' });
+    const zeile = within(menue).getByRole('menuitem', { name: /Wartet absichtlich/ });
+
+    expect(within(zeile).getByText('wartet absichtlich')).toBeDefined();
+    expect(within(zeile).getByText('noch 2 Minuten')).toBeDefined();
+    expect(within(zeile).getByText(/Mindestpause zwischen Läufen/)).toBeDefined();
+    expect(zeile.getAttribute('aria-label')).toMatch(/noch 2 Minuten.*Grund: Mindestpause/);
+    expect(zeile.getAttribute('title')).toMatch(/Kein Fehler/);
+  });
+
+  it('zeigt für wartend ohne wartet_bis keinen Wartehinweis', async () => {
+    jobsListe.mockResolvedValue([job({ zustand: 'wartet' })]);
+
+    render(
+      <MeldungenProvider>
+        <Glocke aufZiel={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Benachrichtigungen/ }));
+    const menue = await screen.findByRole('menu', { name: 'Benachrichtigungen' });
+    expect(within(menue).queryByText('wartet absichtlich')).toBeNull();
+  });
 });

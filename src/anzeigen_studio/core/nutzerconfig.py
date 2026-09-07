@@ -225,7 +225,7 @@ BEZEICHNUNGEN: Final[dict[str, str]] = {
 #: schlechter als keine. Fehlt hier ein Pfad, steht unter dem Feld nichts - der
 #: `titel` benennt es dann allein.
 BESCHREIBUNGEN: Final[dict[str, str]] = {
-    "ad_defaults.active": "Neue Anzeigen werden veröffentlicht. Aus: Anzeige wird übersprungen.",
+    "ad_defaults.active": "An: neue Anzeigen veröffentlichen. Aus: überspringen.",
     "ad_defaults.type": "Angebot oder Gesuch.",
     "ad_defaults.description_prefix": "Text, der jeder Beschreibung vorangestellt wird.",
     "ad_defaults.description_suffix": "Text, der an jede Beschreibung angehängt wird.",

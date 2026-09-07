@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Test der Übersicht: „Letzte Läufe" detaillierter (AP-2.29).
+// Test der Übersicht: „Letzte Läufe" detaillierter (AP-2.29);
+// Kacheln ohne „Fällig" und gelöschte Anzeigen nicht unter „Steht an" (AP-2.48).
 //
 // Geprüft: je Eintrag steht der lesbare Lauf-Typ, und wo die Job-Metadaten eine
 // Anzeige benennen (Glob beim Hochladen, `--ads=` sonst), steht deren Titel;
@@ -147,5 +148,78 @@ describe('UebersichtSeite – Letzte Läufe (AP-2.29)', () => {
     expect(aufZiel).toHaveBeenCalledWith(
       'anzeigen/eigene?datei=downloaded-ads%2Fad_4711%2Fad_4711.yaml',
     );
+  });
+
+  it('erklärt eine absichtliche Wartezeit mit Restzeit und Grund', async () => {
+    jobsListe.mockResolvedValue([
+      job({
+        zustand: 'wartet',
+        wartet_bis: new Date(Date.now() + 120_000).toISOString(),
+        wartegrund: 'Mindestpause zwischen Läufen',
+      }),
+    ]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    const zeile = await screen.findByRole('button', { name: /Wartet absichtlich/ });
+    expect(screen.getByText('wartet absichtlich')).toBeDefined();
+    expect(screen.getByText('noch 2 Minuten')).toBeDefined();
+    expect(screen.getByText(/Mindestpause zwischen Läufen/)).toBeDefined();
+    expect(zeile.getAttribute('aria-label')).toMatch(/noch 2 Minuten.*Grund: Mindestpause/);
+    expect(zeile.getAttribute('title')).toMatch(/Kein Fehler/);
+  });
+
+  it('zeigt für wartend ohne wartet_bis keinen Wartehinweis', async () => {
+    jobsListe.mockResolvedValue([job({ zustand: 'wartet' })]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    await screen.findByRole('button', { name: /wartet/ });
+    expect(screen.queryByText('wartet absichtlich')).toBeNull();
+  });
+});
+
+describe('UebersichtSeite – Kacheln und Steht an (AP-2.48)', () => {
+  it('zeigt keine Fällig-Kachel mehr', async () => {
+    jobsListe.mockResolvedValue([]);
+    bestandListe.mockResolvedValue([anzeige({ faellig: true })]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    await screen.findByText('Anzeigen');
+    const labels = [...document.querySelectorAll('.kachel-label')].map(el => el.textContent);
+    expect(labels).toEqual(['Anzeigen', 'Lokal geändert', 'Mit Hinweis']);
+    // InfoTip „Was fällig bedeutet" bleibt – nur die Kachel ist weg.
+    expect(document.querySelectorAll('.kachel')).toHaveLength(3);
+  });
+
+  it('listet fällige Anzeigen unter Steht an', async () => {
+    jobsListe.mockResolvedValue([]);
+    bestandListe.mockResolvedValue([
+      anzeige({ titel: 'Roter Sessel', faellig: true, geloescht: false }),
+    ]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    expect(await screen.findByRole('heading', { name: /Steht an/ })).toBeDefined();
+    expect(screen.getByText('Roter Sessel')).toBeDefined();
+    expect(screen.queryByText('Keine Anzeige ist zur Neueinstellung fällig.')).toBeNull();
+  });
+
+  it('lässt gelöschte Anzeigen unter Steht an weg – auch wenn faellig', async () => {
+    jobsListe.mockResolvedValue([]);
+    bestandListe.mockResolvedValue([
+      anzeige({
+        titel: 'Amazon Fire TV Stick',
+        faellig: true,
+        geloescht: true,
+        aktiv: false,
+      }),
+    ]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    expect(await screen.findByText('Keine Anzeige ist zur Neueinstellung fällig.')).toBeDefined();
+    expect(screen.queryByText('Amazon Fire TV Stick')).toBeNull();
   });
 });

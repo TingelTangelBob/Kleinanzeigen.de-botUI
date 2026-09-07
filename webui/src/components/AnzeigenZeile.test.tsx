@@ -120,3 +120,57 @@ describe('AnzeigenZeile: „Gelöscht"-Badge (AP-3.10)', () => {
     expect(oeffnen.querySelector('svg')).not.toBeNull();
   });
 });
+
+describe('AnzeigenZeile: Aktionsspalte (AP-2.50)', () => {
+  it('legt Aktualisieren, Öffnen und Umsortieren in eine gemeinsame Spalte', () => {
+    const { container } = render(
+      <AnzeigenZeile
+        anzeige={anzeige({})}
+        profil="test"
+        aufAktualisieren={vi.fn()}
+        aufOeffnen={vi.fn()}
+        aufUmsortieren={vi.fn()}
+      />,
+    );
+
+    const aktionen = container.querySelector('.zeile-aktionen');
+    expect(aktionen).not.toBeNull();
+    expect(aktionen!.querySelectorAll('button')).toHaveLength(3);
+    // Kein Text-Knopf „Zu Von anderen" mehr – nur Icon mit aria-label.
+    expect(screen.queryByRole('button', { name: /^Zu / })).toBeNull();
+  });
+
+  it('ruft aufUmsortieren für eigene Anzeigen mit Verschieben-Label', () => {
+    const aufUmsortieren = vi.fn();
+    const daten = anzeige({ herkunft: 'eigene' });
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufUmsortieren={aufUmsortieren}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Amazon Fire TV Stick.*Von anderen.*verschieben/ }),
+    );
+    expect(aufUmsortieren).toHaveBeenCalledWith(daten);
+  });
+
+  it('beschriftet Umsortieren bei fremden Anzeigen als „zu meinen Anzeigen"', () => {
+    const aufUmsortieren = vi.fn();
+    const daten = anzeige({ herkunft: 'fremde' });
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufUmsortieren={aufUmsortieren}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /Amazon Fire TV Stick.*zu meinen Anzeigen/ }),
+    );
+    expect(aufUmsortieren).toHaveBeenCalledWith(daten);
+  });
+});

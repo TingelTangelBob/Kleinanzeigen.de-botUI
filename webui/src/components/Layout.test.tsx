@@ -54,3 +54,31 @@ describe('Layout: Seitentitel in der Topbar (AP-2.33)', () => {
     expect(topbar?.textContent).not.toContain('Anzeigen-Studio');
   });
 });
+
+describe('Layout: Nav-Fuß (AP-2.49)', () => {
+  it('stellt Warteschlange und Einstellungen unter die Hauptnav, über Abmelden', () => {
+    const { container } = render(
+      <Layout route={route('uebersicht')} aufZiel={vi.fn()}>
+        <p>Inhalt</p>
+      </Layout>,
+    );
+    const aside = container.querySelector('aside.sidebar-schale');
+    expect(aside).toBeTruthy();
+
+    const nav = aside!.querySelector('nav');
+    expect(nav?.textContent).toContain('Neue Anzeige');
+    expect(nav?.textContent).not.toContain('Warteschlange');
+    expect(nav?.textContent).not.toContain('Einstellungen');
+
+    const labels = [...aside!.querySelectorAll('button')].map(b => b.textContent ?? '');
+    const iNeu = labels.findIndex(t => t.includes('Neue Anzeige'));
+    const iWart = labels.findIndex(t => t.includes('Warteschlange'));
+    const iEinst = labels.findIndex(t => t.includes('Einstellungen'));
+    const iAb = labels.findIndex(t => t.includes('Abmelden'));
+
+    expect(iNeu).toBeGreaterThanOrEqual(0);
+    expect(iWart).toBeGreaterThan(iNeu);
+    expect(iEinst).toBeGreaterThan(iWart);
+    expect(iAb).toBeGreaterThan(iEinst);
+  });
+});

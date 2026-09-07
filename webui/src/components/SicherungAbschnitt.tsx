@@ -3,6 +3,9 @@
 //
 // Sicherung, Export und Import eines Profils (AP-3.6).
 //
+// AP-2.52: Die Karte bleibt auf eine kurze Zeile reduziert; Sicherheitsdetails
+// stehen im InfoTip am Titel.
+//
 // Eigene Datei statt eines weiteren Blocks in EinstellungenSeite.tsx: Der
 // Import ist ein Massenvorgang mit eigenem Zustand (Datei gewählt, Vorschau
 // geholt, eingespielt, Protokoll da), und der gehört nicht in eine Datei, die
@@ -19,6 +22,7 @@ import { useState } from 'react';
 import { AlertTriangle, Archive, Check, Download, Upload } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { ArchivErgebnis, ArchivVorschau } from '../types';
+import { InfoTip } from './InfoTip';
 
 /** Höchstzahl Pfade, die eine Liste einzeln zeigt. Darüber wird gezählt. */
 const NAMEN_GRENZE = 8;
@@ -96,13 +100,12 @@ export function SicherungAbschnitt({ profil }: { profil: string }) {
       <h2 className="flex items-center gap-2 font-medium text-stark">
         <Archive className="h-5 w-5 text-primary-custom" />
         Sicherung
+        <InfoTip
+          label="Erklärung zur Sicherung"
+          text="Das ZIP enthält Anzeigen mit Bildern, Vorlagen und Bot-Einstellungen. Zugangsdaten, LLM-Schlüssel und das Browserprofil bleiben aus Sicherheitsgründen draußen."
+        />
       </h2>
-      <p className="lesebreite mt-1 text-sm text-leise">
-        Sichert Anzeigen mit Bildern, Vorlagen und die Bot-Einstellungen dieses Profils
-        als ZIP. <span className="text-stark">Zugangsdaten, LLM-Schlüssel und das
-        Browserprofil gehen nicht mit</span> – ein Archiv landet erfahrungsgemäß in
-        einer Cloud.
-      </p>
+      <p className="mt-1 text-sm text-leise">Anzeigen, Bilder, Vorlagen und Bot-Einstellungen als ZIP.</p>
 
       <a
         href={api.archiv.exportUrl(profil)}
@@ -116,10 +119,7 @@ export function SicherungAbschnitt({ profil }: { profil: string }) {
       <hr className="my-4 border-t" style={{ borderColor: 'var(--karte-rand)' }} />
 
       <h3 className="text-sm font-medium text-stark">Archiv einspielen</h3>
-      <p className="lesebreite mt-1 text-xs text-leise">
-        Erst ansehen, dann einspielen. Vorhandene Dateien bleiben unangetastet, solange
-        das Ersetzen nicht ausdrücklich eingeschaltet ist.
-      </p>
+      <p className="mt-1 text-xs text-leise">Erst ansehen, dann einspielen.</p>
 
       <label className="mt-3 block">
         <span className="sr-only">Archivdatei wählen</span>

@@ -27,6 +27,8 @@ import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useMeldungen } from '../context/useMeldungen';
 import type { MeldungTon } from '../context/meldungenKontext';
 import type { BestandsAnzeige, Job, JobZustand } from '../types';
+import { useWartezeit, warteHinweisText } from './Wartezeit';
+import { Wartehinweis } from './Wartehinweis';
 
 const AKTIV = new Set<JobZustand>(['wartet', 'laeuft', 'braucht_eingabe']);
 
@@ -70,6 +72,46 @@ function zeitText(iso: string | null): string {
   const zeitpunkt = new Date(iso);
   if (Number.isNaN(zeitpunkt.getTime())) return '';
   return zeitpunkt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+function GlockeLaufzeile({
+  job,
+  titel,
+  bezug,
+  aufOeffnen,
+}: {
+  job: Job;
+  titel: string;
+  bezug: string | null;
+  aufOeffnen: () => void;
+}) {
+  const wartezeit = useWartezeit(job.wartet_bis);
+  const warteText = wartezeit ? `, ${warteHinweisText(wartezeit, job.wartegrund)}` : '';
+  const Icon = befehlIcon(job.befehl);
+  const istAktiv = AKTIV.has(job.zustand);
+
+  return (
+    <button
+      type="button"
+      onClick={aufOeffnen}
+      className={`glocke-zeile ${job.zustand === 'fertig' ? 'glocke-zeile-fertig' : ''}`}
+      role="menuitem"
+      aria-label={`${titel}, ${befehlText(job.befehl)}, ${ZUSTAND_TEXT[job.zustand]}${warteText}`}
+      title={`${befehlText(job.befehl)}${bezug ? ` · ${bezug}` : ''} · ${ZUSTAND_TEXT[job.zustand]}${warteText}`}
+    >
+      <span
+        className={`status-punkt ${ZUSTAND_PUNKT[job.zustand]} ${istAktiv ? 'status-punkt-aktiv' : ''}`}
+        role="img"
+        aria-label={ZUSTAND_TEXT[job.zustand]}
+      />
+      <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
+      <span className="glocke-zeile-inhalt min-w-0 flex-1">
+        <span className="glocke-zeile-titel block truncate text-stark">{titel}</span>
+        {wartezeit && <Wartehinweis restzeit={wartezeit} grund={job.wartegrund} kompakt />}
+      </span>
+      <span className="flex-shrink-0 self-start text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
+    </button>
+  );
 }
 
 export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
@@ -219,34 +261,19 @@ export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
           {juengste.length === 0 ? (
             <p className="glocke-leer">Noch kein Lauf.</p>
           ) : (
-            juengste.map(job => (
-              (() => {
-                const bezug = anzeigeBezug(job, anzeigen);
-                const titel = (bezug ?? befehlText(job.befehl)).replace(/ · #\d+$/, '');
-                const Icon = befehlIcon(job.befehl);
-                const istAktiv = AKTIV.has(job.zustand);
-                return (
-                  <button
-                    key={job.id}
-                    type="button"
-                    onClick={zumProtokoll}
-                    className={`glocke-zeile ${job.zustand === 'fertig' ? 'glocke-zeile-fertig' : ''}`}
-                    role="menuitem"
-                    aria-label={`${titel}, ${befehlText(job.befehl)}, ${ZUSTAND_TEXT[job.zustand]}`}
-                    title={`${befehlText(job.befehl)}${bezug ? ` · ${bezug}` : ''} · ${ZUSTAND_TEXT[job.zustand]}`}
-                  >
-                    <span
-                      className={`status-punkt ${ZUSTAND_PUNKT[job.zustand]} ${istAktiv ? 'status-punkt-aktiv' : ''}`}
-                      role="img"
-                      aria-label={ZUSTAND_TEXT[job.zustand]}
-                    />
-                    <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
-                    <span className="glocke-zeile-titel min-w-0 flex-1 truncate text-stark">{titel}</span>
-                    <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
-                  </button>
-                );
-              })()
-            ))
+            juengste.map(job => {
+              const bezug = anzeigeBezug(job, anzeigen);
+              const titel = (bezug ?? befehlText(job.befehl)).replace(/ · #\d+$/, '');
+              return (
+                <GlockeLaufzeile
+                  key={job.id}
+                  job={job}
+                  titel={titel}
+                  bezug={bezug}
+                  aufOeffnen={zumProtokoll}
+                />
+              );
+            })
           )}
           <button type="button" onClick={zumProtokoll} className="glocke-fuss" role="menuitem">
             Zur Warteschlange

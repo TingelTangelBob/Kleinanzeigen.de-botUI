@@ -78,9 +78,10 @@ beforeEach(() => {
 
 describe('Kachelzahlen zählen nur eigene Anzeigen', () => {
 
-  it('lässt fremde Anzeigen aus allen vier Zahlen heraus', async () => {
+  it('lässt fremde Anzeigen aus allen drei Zahlen heraus', async () => {
     // Zwei eigene, eine fremde. Alle drei sind „lokal geändert" und tragen
     // einen Hinweis - die fremde darf trotzdem nirgends mitzählen.
+    // Kacheln ohne „Fällig" (AP-2.48): Anzeigen, Lokal geändert, Mit Hinweis.
     bestandListe.mockResolvedValue([
       anzeige('Eigen1', 'eigene'), anzeige('Eigen2', 'eigene'), anzeige('Fremd', 'fremde'),
     ]);
@@ -89,8 +90,8 @@ describe('Kachelzahlen zählen nur eigene Anzeigen', () => {
     await waitFor(() => expect(screen.getByText('Anzeigen')).toBeTruthy());
     const kacheln = document.querySelectorAll('.kachel');
     const zahlen = [...kacheln].map(k => k.querySelector('.kachel-zahl')?.textContent);
-    // Anzeigen, Fällig, Lokal geändert, Mit Hinweis
-    expect(zahlen).toEqual(['2', '0', '2', '2']);
+    // Anzeigen, Lokal geändert, Mit Hinweis
+    expect(zahlen).toEqual(['2', '2', '2']);
   });
 
   it('die Kachel führt auf dieselbe Liste, die sie zählt', async () => {

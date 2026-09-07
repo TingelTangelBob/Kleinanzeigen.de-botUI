@@ -9,12 +9,14 @@
 // diese Teile queue-first zusammen. „Neue Anzeige" nutzt `JobKarte` kompakt.
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Ban, Hand, Hourglass, Loader2, Play } from 'lucide-react';
+import { AlertTriangle, Ban, Hand, Loader2, Play } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { befehlIcon, befehlText } from '../jobText';
 import type { BestandsAnzeige, Job, JobZustand, LogZeile } from '../types';
 import { Hinweis } from './Hinweis';
+import { useWartezeit } from './Wartezeit';
+import { Wartehinweis } from './Wartehinweis';
 
 /** Nur Befehle, die ohne weitere Eingaben sinnvoll sind. */
 const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean }[] = [
@@ -291,6 +293,7 @@ export function JobKarte({
   const zustand = ZUSTAND_TEXT[job.zustand];
   const punktKlasse = ZUSTAND_PUNKT[job.zustand] ?? 'status-punkt-grau';
   const laeuftNoch = ['wartet', 'laeuft', 'braucht_eingabe'].includes(job.zustand);
+  const wartezeit = useWartezeit(job.wartet_bis);
   const Icon = befehlIcon(job.befehl);
   // Primärzeile ist der Anzeigentitel (AP-2.32); fehlt der Bezug - ein Lauf
   // fürs ganze Profil wie „Herunterladen" -, tritt der Befehlsname an seine
@@ -365,7 +368,7 @@ export function JobKarte({
         </div>
       </div>
 
-      {job.wartet_bis && <Wartehinweis bis={job.wartet_bis} grund={job.wartegrund} />}
+      {wartezeit && <Wartehinweis restzeit={wartezeit} grund={job.wartegrund} />}
 
       {!kompakt && job.zustand === 'braucht_eingabe' && (
         <div className="hinweis hinweis-warn" style={{ borderRadius: 0, border: 0, borderTop: '1px solid var(--hinweis-warn-rand)' }}>
@@ -396,45 +399,6 @@ export function JobKarte({
       )}
 
       {!kompakt && offen && <JobLog jobId={job.id} laeuftNoch={laeuftNoch} />}
-    </div>
-  );
-}
-
-/**
- * Zeigt an, dass ein Lauf ABSICHTLICH wartet, und wie lange noch.
- *
- * Ohne das steht ein Job minutenlang auf "wartet", ohne Grund. Eine Funktion,
- * die bremst, muss sagen dass und warum sie bremst.
- */
-function Wartehinweis({ bis, grund }: { bis: string; grund: string | null }) {
-  const [rest, setRest] = useState(() => Math.max(0, (Date.parse(bis) - Date.now()) / 1000));
-
-  useEffect(() => {
-    const timer = window.setInterval(
-      () => setRest(Math.max(0, (Date.parse(bis) - Date.now()) / 1000)),
-      1000,
-    );
-    return () => window.clearInterval(timer);
-  }, [bis]);
-
-  const sekunden = Math.ceil(rest);
-  const minuten = Math.ceil(rest / 60);
-  const text = rest >= 90
-    ? `noch ${minuten} Minuten`
-    : `noch ${sekunden} ${sekunden === 1 ? 'Sekunde' : 'Sekunden'}`;
-
-  return (
-    <div className="hinweis" style={{ borderRadius: 0, border: 0, borderTop: '1px solid var(--hinweis-ok-rand)' }}>
-      <p className="flex items-start gap-2 text-sm text-blue-900">
-        <Hourglass className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <span>
-          <strong>Wartet absichtlich – {text}.</strong>
-          {grund && <span className="mt-1 block">{grund}</span>}
-          <span className="mt-1 block text-blue-800">
-            Kein Fehler. Der Abstand lässt sich in den Einstellungen ändern.
-          </span>
-        </span>
-      </p>
     </div>
   );
 }

@@ -483,12 +483,6 @@ export function BestandSeite({
     <div className="seite">
       <h1 className="sr-only">{eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
       {kopfAktionen}
-      {!eigene && (
-        <p className="seite-beschrieb mb-4">
-          Anzeigen, die du per Link geholt hast – nicht aus deinem Konto.
-        </p>
-      )}
-
       {holtNach && (
         <NachladenDialog profil={aktiv.slug} aufSchliessen={() => { setHoltNach(false); void laden(); }} />
       )}
@@ -691,8 +685,8 @@ export function BestandSeite({
           {gefiltert.length > 0 && (
           <ul className="liste">
             {gefiltert.map(a => (
-              <li key={a.datei} className="sm:flex sm:items-stretch">
-                <div className="flex items-center pl-4 pt-4 sm:pt-0">
+              <li key={a.datei} className="flex items-stretch">
+                <div className="flex flex-shrink-0 items-center pl-4">
                   <input
                     type="checkbox"
                     checked={auswahl.has(a.datei)}
@@ -712,18 +706,8 @@ export function BestandSeite({
                         ? () => aktualisieren(a)
                         : undefined
                     }
+                    aufUmsortieren={() => void umsortieren(a)}
                   />
-                </div>
-                <div className="flex items-center px-3 pb-3 sm:pb-0">
-                  <button
-                    type="button"
-                    onClick={() => void umsortieren(a)}
-                    className="btn-ghost w-full text-xs sm:w-auto"
-                    title={eigene ? 'Nach „Von anderen“ verschieben' : 'Zu meinen Anzeigen'}
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-                    {eigene ? 'Zu „Von anderen“' : 'Zu meinen'}
-                  </button>
                 </div>
               </li>
             ))}

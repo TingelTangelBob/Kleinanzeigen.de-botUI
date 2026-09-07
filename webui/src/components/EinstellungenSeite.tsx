@@ -11,6 +11,12 @@
 // UI-Anpassung 2026-09-07: Reiter „Anzeigen" - die Gruppe „Standardwerte für
 // Anzeigen" (u. a. der Standard-Abstand zur Neueinstellung) liegt jetzt dort
 // statt unter „Bot". Gleiche Lade-/Speicherwege, nur andere Einsortierung.
+//
+// AP-2.46/2.52: Abgleich gehört in denselben Speichern-Entwurf wie die
+// Bot-Felder; Feldhilfen und lange Kartenerklärungen liegen in InfoTips.
+//
+// AP-2.47: Seitenintros über den Reitern entfernt. Reiterleiste wie Meine
+// Anzeigen (nicht vollbreit, Suche rechts, filtert Gruppen/Felder).
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -24,10 +30,12 @@ import { useThema, type ThemaWahl } from '../hooks/useThema';
 import type { EinstellungsAbschnitt } from '../routing';
 import type { AbgleichStand, EinstellungsFeld, EinstellungsGruppe, ZugangStatus } from '../types';
 import { BrowsersichtSeite } from './BrowsersichtSeite';
+import { InfoTip } from './InfoTip';
 import { ProfilSeite } from './ProfilSeite';
 import { SicherungAbschnitt } from './SicherungAbschnitt';
 
 const MIN_PASSWORTLAENGE = 12;
+const ABGLEICH_PFAD = 'abgleich.eingeschaltet';
 
 // Gruppen, die zum Reiter „Anzeigen" gehören statt zu „Bot": Studio-Vorgaben
 // für Anzeigen (u. a. der Standard-Abstand zur Neueinstellung). Sie werden
@@ -89,10 +97,12 @@ function Feld({
           className="mt-1 h-4 w-4"
         />
         <span>
-          <span className="block text-sm font-medium text-stark">{feld.titel}</span>
-          {feld.beschreibung && (
-            <span className="lesebreite mt-0.5 block text-xs text-leise">{feld.beschreibung}</span>
-          )}
+          <span className="block text-sm font-medium text-stark">
+            {feld.titel}
+            {feld.beschreibung && (
+              <InfoTip text={feld.beschreibung} label={`Erklärung zu ${feld.titel}`} className="ml-1" />
+            )}
+          </span>
         </span>
       </label>
     );
@@ -172,16 +182,15 @@ function Feld({
   }
 
   return (
-    // Zwei Deckel, mit Absicht (AP-2.16): `.lesebreite` am Label begrenzt das
-    // Eingabefeld, `.lesebreite` an der Beschreibung noch einmal den Text. Der
-    // Deckel rechnet in `ch` und damit in der Schriftgröße des Elements, an dem
-    // er hängt - eine 12px-Beschreibung im 16px-Label bekäme sonst 87 Zeichen
-    // je Zeile statt 70.
+    // `.lesebreite` am Label begrenzt das Eingabefeld. Die ausführliche
+    // Feldhilfe steckt im InfoTip am Titel, damit die Karten überfliegbar bleiben.
     <label htmlFor={id} className="lesebreite block">
-      <span className="beschriftung">{feld.titel}</span>
-      {feld.beschreibung && (
-        <span className="lesebreite mt-0.5 block text-xs text-leise">{feld.beschreibung}</span>
-      )}
+      <span className="beschriftung">
+        {feld.titel}
+        {feld.beschreibung && (
+          <InfoTip text={feld.beschreibung} label={`Erklärung zu ${feld.titel}`} className="ml-1" />
+        )}
+      </span>
       {steuer}
     </label>
   );
@@ -306,20 +315,31 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   const [speichert, setSpeichert] = useState(false);
   const [gespeichert, setGespeichert] = useState(false);
   const [schmutzig, setSchmutzig] = useState(false);
+  const [urspruenglicheWerte, setUrspruenglicheWerte] = useState<Record<string, unknown>>({});
+  const [abgleichStand, setAbgleichStand] = useState<AbgleichStand | null>(null);
+  const [urspruenglicherAbgleich, setUrspruenglicherAbgleich] = useState<boolean | null>(null);
+  const [abgleichLaedt, setAbgleichLaedt] = useState(true);
+  const [abgleichFehler, setAbgleichFehler] = useState<string | null>(null);
   // AP-2.19: Suche, Klappzustand je Gruppe und die Pfade, die seit dem Laden
   // angefasst wurden. Letztere nur, damit eine zugeklappte Gruppe zeigen kann,
   // dass in ihr etwas hängt - gespeichert wird unverändert alles.
   const [suche, setSuche] = useState('');
+  // AP-2.47: unter sm klappt die Suche wie in Meine Anzeigen auf ein Lupen-Icon.
+  const [sucheOffen, setSucheOffen] = useState(false);
   const [offeneGruppen, setOffeneGruppen] = useState<Record<string, boolean>>({});
   const [angefasst, setAngefasst] = useState<Set<string>>(new Set());
 
   const laden = useCallback(async () => {
     if (!aktiv) {
       setLaedt(false);
+      setAbgleichStand(null);
+      setUrspruenglicherAbgleich(null);
       return;
     }
     setLaedt(true);
+    setAbgleichLaedt(true);
     setFehler(null);
+    setAbgleichFehler(null);
     try {
       const [daten, zugangsdaten] = await Promise.all([
         api.einstellungen.lesen(aktiv.slug),
@@ -327,6 +347,7 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       ]);
       setGruppen(daten.gruppen);
       setWerte(daten.werte);
+      setUrspruenglicheWerte(daten.werte);
       setZugang(zugangsdaten);
       setSchmutzig(false);
       setGespeichert(false);
@@ -334,10 +355,19 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       // Der Startzustand kommt weiter aus den Daten (`eingeklappt`), nicht aus
       // einer eigenen Vorliebe der Oberfläche.
       setOffeneGruppen(Object.fromEntries(daten.gruppen.map(g => [g.id, !g.eingeklappt])));
+
+      try {
+        const abgleich = await api.abgleich.stand(aktiv.slug);
+        setAbgleichStand(abgleich);
+        setUrspruenglicherAbgleich(abgleich.eingeschaltet);
+      } catch (ursache) {
+        setAbgleichFehler(ursache instanceof ApiFehler ? ursache.message : 'Stand nicht abrufbar.');
+      }
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
       setLaedt(false);
+      setAbgleichLaedt(false);
     }
   }, [aktiv]);
 
@@ -350,20 +380,41 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     setGespeichert(false);
   };
 
+  const abgleichAendern = (eingeschaltet: boolean) => {
+    setAbgleichStand(vorher => vorher ? { ...vorher, eingeschaltet } : vorher);
+    setAngefasst(vorher => new Set(vorher).add(ABGLEICH_PFAD));
+    setSchmutzig(true);
+    setGespeichert(false);
+  };
+
   const speichern = async () => {
     if (!aktiv) return;
     setFehler(null);
     setSpeichert(true);
     try {
-      let payload: Record<string, unknown> = {};
-      for (const gruppe of gruppen) {
-        for (const feld of gruppe.felder) {
-          const wert = holen(werte, feld.pfad);
-          if (wert !== undefined) payload = setzen(payload, feld.pfad, wert);
+      const einstellungenGeaendert = [...angefasst].some(pfad => pfad !== ABGLEICH_PFAD);
+      const abgleichGeaendert = angefasst.has(ABGLEICH_PFAD)
+        && abgleichStand !== null
+        && urspruenglicherAbgleich !== null
+        && abgleichStand.eingeschaltet !== urspruenglicherAbgleich;
+
+      if (einstellungenGeaendert) {
+        let payload: Record<string, unknown> = {};
+        for (const gruppe of gruppen) {
+          for (const feld of gruppe.felder) {
+            const wert = holen(werte, feld.pfad);
+            if (wert !== undefined) payload = setzen(payload, feld.pfad, wert);
+          }
         }
+        const antwort = await api.einstellungen.speichern(aktiv.slug, payload);
+        setWerte(antwort.werte);
+        setUrspruenglicheWerte(antwort.werte);
       }
-      const antwort = await api.einstellungen.speichern(aktiv.slug, payload);
-      setWerte(antwort.werte);
+      if (abgleichGeaendert && abgleichStand) {
+        const antwort = await api.abgleich.schalten(aktiv.slug, abgleichStand.eingeschaltet);
+        setAbgleichStand(antwort);
+        setUrspruenglicherAbgleich(antwort.eingeschaltet);
+      }
       setSchmutzig(false);
       setAngefasst(new Set());
       setGespeichert(true);
@@ -372,6 +423,17 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     } finally {
       setSpeichert(false);
     }
+  };
+
+  const zuruecksetzen = () => {
+    setWerte(urspruenglicheWerte);
+    setAbgleichStand(vorher => vorher && urspruenglicherAbgleich !== null
+      ? { ...vorher, eingeschaltet: urspruenglicherAbgleich }
+      : vorher);
+    setAngefasst(new Set());
+    setSchmutzig(false);
+    setGespeichert(false);
+    setFehler(null);
   };
 
   /**
@@ -451,27 +513,65 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     { id: 'darstellung', label: 'Darstellung', hash: 'einstellungen/darstellung' },
   ];
 
+  // AP-2.47: Reiter links, Suche rechts – dieselbe Zeile wie in Meine Anzeigen.
+  // Suche nur auf Bot/Anzeigen (dort gibt es Gruppen/Felder zum Filtern).
+  const sucheSichtbar = abschnitt === 'bot' || abschnitt === 'anzeigen';
+
   const unternav = (
-    <nav className="reiter-leiste mb-8 overflow-x-auto" aria-label="Einstellungsbereiche">
-      {tabs.map(tab => (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      {sucheSichtbar && (
         <button
-          key={tab.id}
           type="button"
-          onClick={() => aufZiel(tab.hash)}
-          aria-current={abschnitt === tab.id ? 'page' : undefined}
-          className={`reiter ${abschnitt === tab.id ? 'reiter-aktiv' : ''}`}
+          onClick={() => setSucheOffen(o => !o)}
+          aria-label="Suche ein- oder ausblenden"
+          aria-expanded={sucheOffen}
+          className="btn-icon order-first flex-shrink-0 sm:hidden"
         >
-          {tab.label}
+          <Search className="h-4 w-4" aria-hidden />
         </button>
-      ))}
-    </nav>
+      )}
+
+      {sucheSichtbar && (
+        <label
+          className={`relative flex-shrink-0 sm:order-last sm:ml-auto sm:block sm:w-64 ${
+            sucheOffen ? 'order-last block w-full' : 'hidden sm:block'
+          }`}
+        >
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
+          <span className="sr-only">Einstellungen durchsuchen</span>
+          <input
+            type="search"
+            value={suche}
+            onChange={e => setSuche(e.target.value)}
+            placeholder="Einstellung oder Beschreibung suchen"
+            className="feld py-2 pl-9 pr-3"
+          />
+        </label>
+      )}
+
+      <nav
+        className="reiter-leiste order-first min-w-0 flex-1 overflow-x-auto sm:order-none sm:flex-none"
+        aria-label="Einstellungsbereiche"
+      >
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => aufZiel(tab.hash)}
+            aria-current={abschnitt === tab.id ? 'page' : undefined}
+            className={`reiter ${abschnitt === tab.id ? 'reiter-aktiv' : ''}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 
   if (abschnitt === 'profile') {
     return (
       <div className="seite">
         <h1 className="sr-only">Einstellungen</h1>
-        <p className="seite-beschrieb mb-6">Kleinanzeigen-Konten und KI-Zugang.</p>
         {unternav}
         <ProfilSeite ohneTitel />
       </div>
@@ -482,7 +582,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return (
       <div className="seite">
         <h1 className="sr-only">Einstellungen</h1>
-        <p className="seite-beschrieb mb-6">Eingebetteter Browser und Profilreset.</p>
         {unternav}
         <BrowsersichtSeite ohneTitel />
         {aktiv && <BrowserprofilReset profil={aktiv.slug} />}
@@ -494,7 +593,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return (
       <div className="seite">
         <h1 className="sr-only">Einstellungen</h1>
-        <p className="seite-beschrieb mb-6">Passwort dieser Oberfläche, nicht das Kleinanzeigen-Konto.</p>
         {unternav}
         <Anwendungspasswort />
       </div>
@@ -505,7 +603,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return (
       <div className="seite">
         <h1 className="sr-only">Einstellungen</h1>
-        <p className="seite-beschrieb mb-6">Thema dieser Oberfläche – gilt je Browser, nicht je Konto.</p>
         {unternav}
         <DarstellungAbschnitt />
       </div>
@@ -516,7 +613,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return (
       <div className="seite">
         <h1 className="sr-only">Einstellungen</h1>
-        <p className="seite-beschrieb mb-6">Bot-Konfiguration gilt je Konto.</p>
         {unternav}
         <p className="leer">
           Erst ein Profil anlegen – die Bot-Einstellungen gelten je Konto.
@@ -530,8 +626,8 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   }
 
   // Reiter „Anzeigen": nur die Studio-Vorgaben für Anzeigen. Die Bot-Karten
-  // darüber (Zugangsdaten, Abgleich, Sicherung, KI, Diagnose-Hinweis) und die
-  // Suchzeile gehören zum Bot-Reiter.
+  // darüber (Zugangsdaten, Abgleich, Sicherung, KI, Diagnose-Hinweis) gehören
+  // zum Bot-Reiter. Die Suche in der Reiterzeile filtert Gruppen/Felder.
   const istAnzeigen = abschnitt === 'anzeigen';
 
   return (
@@ -542,21 +638,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         Einstellungen
       </h1>
 
-      <p className="seite-beschrieb mb-6">
-        {istAnzeigen ? (
-          <>
-            Studio-Vorgaben für Anzeigen von{' '}
-            <span className="font-medium text-stark">{aktiv.anzeigename}</span>. Der
-            Standard-Abstand gilt für neue Anzeigen; einzelne Anzeigen übersteuern ihn
-            über das Zahnrad im Editor.
-          </>
-        ) : (
-          <>
-            Gilt für <span className="font-medium text-stark">{aktiv.anzeigename}</span>.
-            Gespeichert wird in diesem Profil; der nächste Lauf übernimmt die Werte.
-          </>
-        )}
-      </p>
       {unternav}
 
       {fehler && (
@@ -582,12 +663,13 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         <section className="karte mb-4 p-4">
           <h2 className="flex items-center gap-2 font-medium text-stark">
             <KeyRound className="h-5 w-5 text-primary-custom" />
-            Zugangsdaten kleinanzeigen.de
+            Zugangsdaten
+            <InfoTip
+              label="Erklärung zu den Zugangsdaten"
+              text="Der Plattformzugang wird je Profil verschlüsselt unter Profile verwaltet und nicht in der Bot-Konfiguration abgelegt."
+            />
           </h2>
-          <p className="lesebreite mt-1 text-sm text-leise">
-            Die Anmeldung an der Plattform steht nicht in der Bot-Konfiguration –
-            nur als Platzhalter. Hinterlegt wird sie unter Profile, verschlüsselt.
-          </p>
+          <p className="mt-1 text-sm text-leise">Für dieses Profil.</p>
           <p className="lesebreite mt-2 text-sm text-normal">
             {zugang?.passwort_hinterlegt
               ? `Zugang hinterlegt (${zugang.benutzername}).`
@@ -603,35 +685,32 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         </section>
       )}
 
-      {!istAnzeigen && <TaeglicherAbgleich profil={aktiv.slug} />}
+      {!istAnzeigen && (
+        <TaeglicherAbgleich
+          stand={abgleichStand}
+          laedt={abgleichLaedt}
+          fehler={abgleichFehler}
+          deaktiviert={speichert}
+          aufAenderung={abgleichAendern}
+        />
+      )}
 
       {!istAnzeigen && <SicherungAbschnitt profil={aktiv.slug} />}
 
-      {/* Suchzeile über den Gruppen (AP-2.19). Der Bot-Reiter führt gut vier
-          Dutzend Felder in zehn Gruppen; wer eine Zeitgrenze sucht, soll nicht
-          scrollen, sondern tippen. Der Reiter „Anzeigen" hat nur eine Gruppe -
-          dort braucht es weder Suche noch Alle-auf/zu. */}
+      {/* Zählzeile + Alle auf/zu unter der Reiterzeile (AP-2.19/2.47). Die Suche
+          sitzt seit AP-2.47 rechts neben den Reitern wie in Meine Anzeigen. */}
       {!istAnzeigen && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {/* `basis-full` unter sm: neben dem Klappknopf blieb dem Suchfeld auf
-              375 px so wenig übrig, dass der Platzhalter nach „Einstellung suc"
-              abriss. */}
-          <label className="relative block min-w-0 flex-1 basis-full sm:basis-auto">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
-            <span className="sr-only">Einstellungen durchsuchen</span>
-            <input
-              type="search"
-              value={suche}
-              onChange={e => setSuche(e.target.value)}
-              placeholder="Einstellung oder Beschreibung suchen"
-              className="feld py-2 pl-9 pr-3"
-            />
-          </label>
+          <p className="text-xs text-leise">
+            {sucheAktiv
+              ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
+              : `${felderGesamt} Einstellungen in ${reiterGruppen.length} Gruppen`}
+          </p>
           {!sucheAktiv && (
             <button
               type="button"
               onClick={() => alleKlappen(!alleOffen)}
-              className="btn-ghost flex-shrink-0"
+              className="btn-ghost ml-auto flex-shrink-0"
             >
               {alleOffen
                 ? <><ChevronsDownUp className="h-4 w-4" aria-hidden /> Alle zuklappen</>
@@ -639,14 +718,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
             </button>
           )}
         </div>
-      )}
-
-      {!istAnzeigen && (
-        <p className="mb-2 text-xs text-leise">
-          {sucheAktiv
-            ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
-            : `${felderGesamt} Einstellungen in ${reiterGruppen.length} Gruppen`}
-        </p>
       )}
 
       {sichtbareGruppen.length === 0 ? (
@@ -688,9 +759,15 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
             </span>
           )}
           {schmutzig && (
-            <span className="text-sm text-leise">
+            <span className="mr-auto text-sm text-leise">
               {angefasst.size === 1 ? '1 Änderung' : `${angefasst.size} Änderungen`} ungespeichert
             </span>
+          )}
+          {schmutzig && (
+            <button type="button" onClick={zuruecksetzen} className="btn-ghost">
+              <RotateCcw className="h-4 w-4" aria-hidden />
+              Zurücksetzen
+            </button>
           )}
           <button
             type="button"
@@ -718,36 +795,15 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
  * kommen aus dem Upstream-Schema und werden in `nutzer.yaml` gespeichert;
  * dieser Schalter gehört dem Studio und liegt in der Datenbank.
  */
-function TaeglicherAbgleich({ profil }: { profil: string }) {
-  const [stand, setStand] = useState<AbgleichStand | null>(null);
-  const [laedt, setLaedt] = useState(true);
-  const [schaltet, setSchaltet] = useState(false);
-  const [fehler, setFehler] = useState<string | null>(null);
-
-  useEffect(() => {
-    let tot = false;
-    setLaedt(true);
-    api.abgleich.stand(profil)
-      .then(neu => { if (!tot) { setStand(neu); setFehler(null); } })
-      .catch((e: unknown) => {
-        if (!tot) setFehler(e instanceof ApiFehler ? e.message : 'Stand nicht abrufbar.');
-      })
-      .finally(() => { if (!tot) setLaedt(false); });
-    return () => { tot = true; };
-  }, [profil]);
-
-  const schalten = async (an: boolean) => {
-    setSchaltet(true);
-    setFehler(null);
-    try {
-      setStand(await api.abgleich.schalten(profil, an));
-    } catch (e: unknown) {
-      setFehler(e instanceof ApiFehler ? e.message : 'Konnte nicht gespeichert werden.');
-    } finally {
-      setSchaltet(false);
-    }
-  };
-
+function TaeglicherAbgleich({
+  stand, laedt, fehler, deaktiviert, aufAenderung,
+}: {
+  stand: AbgleichStand | null;
+  laedt: boolean;
+  fehler: string | null;
+  deaktiviert: boolean;
+  aufAenderung: (eingeschaltet: boolean) => void;
+}) {
   const zeit = (iso: string | null) => {
     if (!iso) return null;
     const wann = new Date(iso);
@@ -760,12 +816,12 @@ function TaeglicherAbgleich({ profil }: { profil: string }) {
       <h2 className="flex items-center gap-2 font-medium text-stark">
         <CalendarClock className="h-5 w-5 text-primary-custom" />
         Täglicher Abgleich
+        <InfoTip
+          label="Erklärung zum täglichen Abgleich"
+          text="Einmal am Tag prüft ein Browserlauf die eigenen Anzeigen und meldet echte Änderungen in der Glocke. Der Lauf nutzt die Warteschlange und braucht einen hinterlegten Plattformzugang."
+        />
       </h2>
-      <p className="lesebreite mt-1 text-sm text-leise">
-        Holt einmal am Tag den Stand der eigenen Anzeigen vom Konto und meldet in der
-        Glocke, was sich geändert hat – etwa eine Anzeige, die auf kleinanzeigen.de
-        nicht mehr online ist. Ohne Änderung kommt keine Meldung.
-      </p>
+      <p className="mt-1 text-sm text-leise">Eigene Anzeigen automatisch täglich prüfen.</p>
 
       {laedt ? (
         <p className="mt-3 text-sm text-leise">Wird geladen …</p>
@@ -776,26 +832,21 @@ function TaeglicherAbgleich({ profil }: { profil: string }) {
               id="abgleich-an"
               type="checkbox"
               checked={stand?.eingeschaltet === true}
-              disabled={schaltet}
-              onChange={e => void schalten(e.target.checked)}
+              disabled={deaktiviert || stand === null}
+              onChange={e => aufAenderung(e.target.checked)}
               className="mt-1 h-4 w-4"
             />
             <span>
               <span className="block text-sm font-medium text-stark">
-                Einmal täglich selbstständig abgleichen
-              </span>
-              <span className="lesebreite mt-0.5 block text-xs text-leise">
-                Das ist ein wiederkehrender Lauf gegen das echte Konto: Der Browser meldet
-                sich an und lädt die eigenen Anzeigen. Er reiht sich in dieselbe
-                Warteschlange wie jeder andere Lauf ein und lässt sich dort abbrechen.
+                Täglich abgleichen
               </span>
             </span>
           </label>
 
           {stand?.eingeschaltet && !stand.zugang_vorhanden && (
             <p role="alert" className="hinweis hinweis-warn lesebreite mt-3">
-              <AlertTriangle className="mb-1 inline h-4 w-4" aria-hidden /> Für dieses Profil
-              ist kein Passwort hinterlegt. Der Abgleich startet deshalb gar nicht erst.
+              <AlertTriangle className="mb-1 inline h-4 w-4" aria-hidden /> Kein Passwort
+              hinterlegt – der Abgleich bleibt aus.
             </p>
           )}
 
@@ -813,9 +864,7 @@ function TaeglicherAbgleich({ profil }: { profil: string }) {
               </dd>
             </div>
             {stand?.eingeschaltet && stand.heute_gelaufen && !stand.laeuft && (
-              <div className="text-xs text-leise">
-                Für heute ist der Abgleich erledigt – ein zweiter Lauf kommt nicht.
-              </div>
+              <div className="text-xs text-leise">Heute bereits erledigt.</div>
             )}
           </dl>
         </>

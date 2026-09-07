@@ -17,6 +17,8 @@ import { hashFuerAnzeige } from '../routing';
 import type { BestandsAnzeige, Job, ZugangStatus } from '../types';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { InfoTip } from './InfoTip';
+import { useWartezeit, warteHinweisText } from './Wartezeit';
+import { Wartehinweis } from './Wartehinweis';
 
 const ZUSTAND_TEXT: Record<string, string> = {
   wartet: 'wartet', laeuft: 'läuft', braucht_eingabe: 'braucht dich',
@@ -72,6 +74,63 @@ function Kachel({
     <button type="button" onClick={onClick} className={klasse}>
       {inner}
     </button>
+  );
+}
+
+function UebersichtLaufzeile({
+  job,
+  titel,
+  zustandText,
+  aufZiel,
+}: {
+  job: Job;
+  titel: string;
+  zustandText: string;
+  aufZiel: (ziel: string) => void;
+}) {
+  const wartezeit = useWartezeit(job.wartet_bis);
+  const warteText = wartezeit ? `, ${warteHinweisText(wartezeit, job.wartegrund)}` : '';
+  const Icon = befehlIcon(job.befehl);
+
+  return (
+    <li>
+      {/* Klick führt auf die Warteschlange (AP-2.31). Dort steht
+          das Protokoll und lässt sich der Lauf aufklappen. */}
+      <button
+        type="button"
+        onClick={() => aufZiel('warteschlange')}
+        className="zeile items-center !py-2.5 text-sm"
+        title={`${befehlText(job.befehl)}${titel !== befehlText(job.befehl) ? ` · ${titel}` : ''} · ${zustandText}${warteText}`}
+        aria-label={`${titel}, ${befehlText(job.befehl)}, ${zustandText}${warteText}`}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
+            <span
+              className={`status-punkt ${ZUSTAND_PUNKT[job.zustand] ?? 'status-punkt-grau'}`}
+              role="img"
+              aria-label={zustandText}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-stark">{titel}</span>
+              {wartezeit && <Wartehinweis restzeit={wartezeit} grund={job.wartegrund} kompakt />}
+            </span>
+          </span>
+          {/* Farbe allein trägt den Status nicht (AP-2.34): Rot
+              und Grün sind für Rot-Grün-Blinde derselbe Punkt, und
+              „fertig" gegen „gescheitert" ist genau der
+              Unterschied, der zählt. Beschriftet werden nur die Zustände,
+              die Aufmerksamkeit brauchen – ein Dashboard, das auch „fertig"
+              ausbuchstabiert, ist wieder eine Wand. */}
+          {AUFFAELLIG.has(job.zustand) && (
+            <span className={`${ZUSTAND_MERKMAL[job.zustand]} hidden flex-shrink-0 sm:inline-flex`}>
+              {zustandText}
+            </span>
+          )}
+        </span>
+        <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
+      </button>
+    </li>
   );
 }
 
@@ -170,10 +229,14 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
    * ganzen Bestand, also auch über „Von anderen" – die Kachel meldete 6 und
    * führte per Klick auf eine Liste mit 5. Fremde Anzeigen sind eine getrennte
    * Sammlung mit eigenem Menüpunkt; auf dem Dashboard des eigenen Kontos haben
-   * sie in keiner der vier Zahlen etwas zu suchen.
+   * sie in keiner der Kachelzahlen etwas zu suchen.
+   *
+   * „Steht an" listet fällige Eigene – gelöschte gehören dort nicht hin
+   * (AP-2.48): eine entfernte Anzeige (z. B. Fire TV Stick) kann noch
+   * `faellig` tragen, ist aber keine Handlung mehr.
    */
   const eigene = anzeigen.filter(a => a.herkunft === 'eigene');
-  const faellige = eigene.filter(a => a.faellig);
+  const faellige = eigene.filter(a => a.faellig && !a.geloescht);
   const geaendert = eigene.filter(a => a.lokal_geaendert).length;
   const auffaellig = eigene.filter(a => a.hinweise.length > 0 || a.unlesbar).length;
 
@@ -213,15 +276,11 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
           und hält die Kante zu den Listen darunter (AP-2.16). Gedeckelt wird
           nur, was gelesen wird. Der Inhalt einer Kachel bleibt links und
           kompakt: Zahl und Beschriftung werden nicht auseinandergezogen, um
-          die Breite zu füllen. */}
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {/* Nur „Fällig" ist betont (AP-2.18). Vorher trugen drei von vier
-            Kacheln die Betonung – wenn die Mehrheit hervorgehoben ist, hebt
-            nichts mehr hervor. „Fällig" ist die einzige Zahl, die zu einer
-            Handlung auffordert; „Lokal geändert" und „Mit Hinweis" sind
-            Zustandsangaben und stehen jetzt so ruhig da wie „Anzeigen". */}
+          die Breite zu füllen.
+          Die Kachel „Fällig" ist weg (AP-2.48): dieselbe Information steht
+          unter „Steht an", eine zweite Zahl daneben war nur Echo. */}
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Kachel zahl={eigene.length} label="Anzeigen" onClick={() => aufZiel('anzeigen/eigene')} />
-        <Kachel zahl={faellige.length} label="Fällig" betont onClick={() => aufZiel('anzeigen/eigene')} />
         <Kachel zahl={geaendert} label="Lokal geändert" />
         <Kachel zahl={auffaellig} label="Mit Hinweis" />
       </div>
@@ -248,43 +307,15 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
               const bezug = anzeigeBezug(job, anzeigen);
               // Symbol trägt den Vorgang (AP-2.32), die Primärzeile den
               // Anzeigentitel; fehlt der Bezug, tritt der Befehlsname ein.
-              const Icon = befehlIcon(job.befehl);
               const titel = bezug ?? befehlText(job.befehl);
               return (
-                <li key={job.id}>
-                  {/* Klick führt auf die Warteschlange (AP-2.31). Dort steht
-                      das Protokoll und lässt sich der Lauf aufklappen. */}
-                  <button
-                    type="button"
-                    onClick={() => aufZiel('warteschlange')}
-                    className="zeile items-center !py-2.5 text-sm"
-                    title={`${befehlText(job.befehl)}${bezug ? ` · ${bezug}` : ''} · ${zustandText}`}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2.5">
-                      <Icon className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
-                      <span
-                        className={`status-punkt ${ZUSTAND_PUNKT[job.zustand] ?? 'status-punkt-grau'}`}
-                        role="img"
-                        aria-label={zustandText}
-                      />
-                      <span className="truncate text-stark">{titel}</span>
-                      {/* Farbe allein trägt den Status nicht (AP-2.34): Rot
-                          und Grün sind für Rot-Grün-Blinde derselbe Punkt, und
-                          „fertig" gegen „gescheitert" ist genau der
-                          Unterschied, der zählt. Screenreader lesen ohnehin das
-                          `aria-label` am Punkt; hier geht es um die Augen.
-                          Beschriftet werden nur die Zustände, die Aufmerksamkeit
-                          brauchen – ein Dashboard, das auch „fertig"
-                          ausbuchstabiert, ist wieder eine Wand. */}
-                      {AUFFAELLIG.has(job.zustand) && (
-                        <span className={`${ZUSTAND_MERKMAL[job.zustand]} hidden flex-shrink-0 sm:inline-flex`}>
-                          {zustandText}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex-shrink-0 text-xs text-leise">{zeitText(job.eingereicht_am)}</span>
-                  </button>
-                </li>
+                <UebersichtLaufzeile
+                  key={job.id}
+                  job={job}
+                  titel={titel}
+                  zustandText={zustandText}
+                  aufZiel={aufZiel}
+                />
               );
             })}
           </ul>

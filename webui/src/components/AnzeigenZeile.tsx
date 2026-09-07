@@ -7,7 +7,7 @@
 // das Bild das, woran man seine Anzeige erkennt - nicht der Titel, den man
 // selbst getippt hat und der bei drei Webcams dreimal ähnlich klingt.
 
-import { AlertTriangle, Eye, ImageOff, Pencil, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, Eye, ImageOff, Pencil, RefreshCw } from 'lucide-react';
 import type { BestandsAnzeige } from '../types';
 import { api } from '../services/api';
 import { titelFuerAnzeige } from '../titel';
@@ -85,6 +85,8 @@ interface Props {
   aufKlick?: (anzeige: BestandsAnzeige) => void;
   aufOeffnen?: (anzeige: BestandsAnzeige) => void;
   aufAktualisieren?: (anzeige: BestandsAnzeige) => void;
+  /** Herkunft wechseln: eigene ↔ Von anderen (AP-2.50). */
+  aufUmsortieren?: (anzeige: BestandsAnzeige) => void;
 }
 
 interface MerkmalDaten {
@@ -141,7 +143,7 @@ function merkmaleVon(anzeige: BestandsAnzeige): MerkmalDaten[] {
 }
 
 export function AnzeigenZeile({
-  anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren,
+  anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren, aufUmsortieren,
 }: Props) {
   const bildUrl = anzeige.vorschaubild
     ? api.bestand.bildUrl(profil, anzeige.datei, anzeige.vorschaubild)
@@ -226,7 +228,8 @@ export function AnzeigenZeile({
       ) : (
         <div className="zeile-inhalt">{zeilenInhalt}</div>
       )}
-      {(aufOeffnen || aufAktualisieren) && (
+      {/* Eine Aktionsspalte: Icons in einer Reihe, kein Extra-Block darunter (AP-2.50). */}
+      {(aufOeffnen || aufAktualisieren || aufUmsortieren) && (
         <div className="zeile-aktionen">
           {aufAktualisieren && (
             <button
@@ -248,6 +251,25 @@ export function AnzeigenZeile({
               className="btn-icon zeile-oeffnen"
             >
               <Eye className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+          {aufUmsortieren && (
+            <button
+              type="button"
+              onClick={() => aufUmsortieren(anzeige)}
+              aria-label={
+                anzeige.herkunft === 'eigene'
+                  ? '„' + titel + '“ nach „Von anderen“ verschieben'
+                  : '„' + titel + '“ zu meinen Anzeigen'
+              }
+              title={
+                anzeige.herkunft === 'eigene'
+                  ? 'Nach „Von anderen“ verschieben'
+                  : 'Zu meinen Anzeigen'
+              }
+              className="btn-icon zeile-umsortieren"
+            >
+              <ArrowLeftRight className="h-4 w-4" aria-hidden />
             </button>
           )}
         </div>

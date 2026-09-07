@@ -115,7 +115,8 @@ jobs:
       # den kompletten Bot, den unsere Tests nicht brauchen. --no-cov schaltet
       # die Abdeckungsmessung des Bots ab, die in den Upstream-addopts steht.
       - name: pytest
-        run: pytest tests_studio -q --no-cov
+        # python -m: Repo-Wurzel landet auf sys.path (scripts.*-Imports).
+        run: python -m pytest tests_studio -q --no-cov
 
   frontend:
     name: Frontend (ESLint, tsc, Build)

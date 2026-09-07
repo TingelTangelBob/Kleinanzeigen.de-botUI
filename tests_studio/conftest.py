@@ -18,7 +18,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# src/ auf den Pfad, damit die Tests ohne Installation laufen.
-_SRC = Path(__file__).resolve().parent.parent / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+# Repo-Wurzel und src/ auf den Pfad, damit die Tests ohne Installation laufen.
+# Die Wurzel braucht z. B. test_pruefe_kleinanzeigen_loeschung fuer
+# `import scripts...` - ohne sie scheitert die Sammlung unter nacktem `pytest`
+# (CI), waehrend `python -m pytest` die Wurzel zufaellig schon setzt.
+_ROOT = Path(__file__).resolve().parent.parent
+_SRC = _ROOT / "src"
+for _pfad in (_SRC, _ROOT):
+    if str(_pfad) not in sys.path:
+        sys.path.insert(0, str(_pfad))

@@ -7,7 +7,7 @@ Arbeitspaket AP-0.4. **Keine Rechtsberatung.** Dieses Dokument hält fest, was g
 daraus für das Produkt folgt und wo Unsicherheit bleibt – damit diese Fragen nicht in jeder
 Diskussion neu erfunden werden.
 
-**Stand:** 2026-08-22
+**Stand:** 2026-09-07 (eBay §7 / AP-E-01; übrige Abschnitte älter)
 
 ---
 
@@ -243,17 +243,25 @@ der eigenen Wohnung trägt sonst die Adresse mit.
 
 ---
 
-## 7. eBay.de – nicht begonnen
+## 7. eBay.de – Machbarkeitsmatrix (AP-E-01), AP-6.1 noch offen
 
 Seit der Abspaltung eine eigenständige Plattform mit eigenem Regelwerk.
 
-- Vorgesehen ist **ausschließlich** die offizielle Sell-API. Keine Browserautomatisierung.
+- Vorgesehen ist **ausschließlich** die offizielle Sell-API (Inventory: Item → Offer →
+  `publishOffer`). Keine Browserautomatisierung.
 - Gewerbliches Einstellen zieht Pflichten nach sich, die bei privaten Kleinanzeigen nicht
   bestehen: Widerrufsrecht, Impressumspflicht, Gewährleistung, hinterlegte Rückgaberegeln.
-- Eine geratene Rückgaberegel ist eine rechtliche Zusage – deshalb in AP-6.3 **keine stille
-  Vorbelegung**, sondern ein sichtbares Pflichtfeld.
+  Ein **Gewerbekonto ist hier nicht als API-Pflicht behauptet**; Kontotyp und Eignung sind
+  nachzuweisen (siehe Matrix).
+- Sell Inventory verlangt referenzierte **Business Policies** (Zahlung, Versand, Rückgabe).
+  Eine geratene Rückgaberegel ist eine rechtliche Zusage – deshalb **keine stille
+  Vorbelegung**, sondern ausdrückliche Auswahl (AP-E-06 / AP-6.3).
+- Entscheidungsmatrix, Sandbox-Go und Produktionsblocker:
+  [`EBAY-MACHBARKEIT.md`](EBAY-MACHBARKEIT.md) (Stand 2026-09-07). Feinplan:
+  `controlling/EBAY-PUBLISH-PLAN-Astra.md`.
 
-Vollständige Prüfung ist AP-6.1 und noch nicht erfolgt.
+AP-6.1 ist durch AP-E-01 inhaltlich befüllt, aber **nicht abgeschlossen**, solange
+kontospezifische Nachweise (Policies, KYC/Bank, Limits, Gebührenzeilen) offen sind.
 
 ---
 
@@ -270,4 +278,4 @@ Vollständige Prüfung ist AP-6.1 und noch nicht erfolgt.
 | Umgang mit Nachrichtendaten | **Regeln stehen**, DSGVO-Bewertung bei gewerblicher Nutzung offen |
 | LLM-Datenabfluss | **Regeln stehen** |
 | Marke | **Regel steht**, Produktname offen |
-| eBay | **nicht begonnen** |
+| eBay | **AP-E-01 Matrix 🟠 prüfen** – siehe `EBAY-MACHBARKEIT.md`; AP-6.1 noch offen |

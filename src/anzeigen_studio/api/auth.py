@@ -30,6 +30,8 @@ OEFFENTLICH = frozenset({
     "/api/auth/status",
     "/api/auth/einrichten",
     "/api/auth/anmelden",
+    # eBay OAuth-Redirect (AP-E-03): state bindet Sitzung/Profil/Umgebung.
+    "/api/ebay/oauth/callback",
 })
 
 

@@ -337,6 +337,38 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         );
         """,
     ),
+    (
+        15,
+        "ebay-zugang",
+        """
+        -- eBay-Zugangsdaten profil- und umgebungsgebunden (AP-E-02).
+        --
+        -- Eigenes Muster neben profil_zugang: Sandbox und Produktion sind
+        -- getrennte Zeilen. Access-/Refresh-Token und App-Secret liegen nur
+        -- als AES-GCM-Chiffrat (core/crypto.py). Statusfelder ohne Geheimnis.
+        -- UNIQUE(profil_id, umgebung): ein Kontobezug je Profil und Umgebung.
+        CREATE TABLE ebay_zugang (
+            id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+            profil_id                INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            umgebung                 TEXT    NOT NULL,
+            konto_id                 TEXT,
+            schema_version           INTEGER NOT NULL DEFAULT 1,
+            scopes                   TEXT    NOT NULL DEFAULT '',
+            app_id                   TEXT,
+            app_secret_chiffre       BLOB,
+            access_token_chiffre     BLOB,
+            refresh_token_chiffre    BLOB,
+            access_token_laeuft_ab   TEXT,
+            refresh_token_laeuft_ab  TEXT,
+            verbindung               TEXT    NOT NULL DEFAULT 'nicht_verbunden',
+            verbunden_am             TEXT,
+            geaendert_am             TEXT    NOT NULL,
+            UNIQUE (profil_id, umgebung)
+        );
+
+        CREATE INDEX idx_ebay_zugang_profil ON ebay_zugang(profil_id);
+        """,
+    ),
 ]
 
 

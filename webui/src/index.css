@@ -230,11 +230,12 @@ html:has(#app-shell[data-theme='dark']) {
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
+    overflow-x: hidden;
     background: var(--karte);
     border-bottom: 1px solid var(--karte-rand);
   }
   .kopf-aktionen-mobil:empty { display: none; }
-  .kopf-aktionen-mobil .btn-primaer { flex: 1 1 8rem; }
+  .kopf-aktionen-mobil .btn-primaer { flex: 1 1 auto; min-width: 0; }
   @media (min-width: 768px) {
     .kopf-aktionen-mobil { display: none; }
   }
@@ -617,25 +618,21 @@ html:has(#app-shell[data-theme='dark']) {
     align-self: center;
     gap: 0.35rem;
   }
+  @media (max-width: 767px) {
+    /* Mobil: ⋯-Menü oben, Preis klein darunter, schmale Spalte. */
+    .zeile-rechts { gap: 0.15rem; }
+  }
   .zeile-preis {
     flex-shrink: 0;
     white-space: nowrap;
-    font-size: 15px;
+    /* Mobil klein und unter dem ⋯-Menü (2026-09-09). */
+    font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: -0.025em;
     color: var(--text-stark);
   }
-  @media (min-width: 640px) {
+  @media (min-width: 768px) {
     .zeile-preis { font-size: 1rem; }
-  }
-  /* Mobil steht der Preis neben dem Titel in der Inhaltsspalte; ab md trägt ihn
-     `.zeile-rechts` (AP-2.59). Eigene Klasse, damit die Trennung testbar bleibt. */
-  .zeile-preis-mobil {
-    white-space: nowrap;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: -0.025em;
-    color: var(--text-stark);
   }
   .zeile-aktionen {
     display: flex;
@@ -1108,6 +1105,13 @@ html:has(#app-shell[data-theme='dark']) {
   .leiste-fix {
     border-top: 1px solid var(--karte-rand);
     background: var(--karte);
+  }
+  /* Icon-Knöpfe in der mobilen Sammelleiste etwas kleiner, damit die Zeile auch
+     auf 320 px einzeilig bleibt (2026-09-09). */
+  .leiste-fix .btn-icon {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .sidebar-schale {

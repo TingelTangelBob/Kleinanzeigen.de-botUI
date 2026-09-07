@@ -323,19 +323,19 @@ export function AnzeigenZeile({
       </div>
 
       <div className="min-w-0 flex-1">
-        {/* Kompakte Mobilzeile (2026-09-09): Titel einzeilig gekürzt, der Preis
-            steht mobil rechts daneben (rechts in der Zeile sitzt unter md nur
-            das ⋯-Menü). Ab md trägt `.zeile-rechts` den Preis wie bisher
-            (AP-2.59), und der Titel wird dort abgeschnitten. */}
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[15px] font-semibold tracking-tight text-stark sm:text-base">
-            {titel}
-          </span>
-          <span className="zeile-preis-mobil flex-shrink-0 md:hidden">{preisText(anzeige)}</span>
-        </div>
+        {/* Titel ganz oben, mobil über zwei Zeilen (2026-09-09) - daran erkennt
+            man die Anzeige wieder. Ab md eine abgeschnittene Zeile, damit alle
+            Listenzeilen gleich hoch bleiben. Preis und Aktionen sitzen rechts
+            (AP-2.59). */}
+        <span className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-stark sm:text-base md:line-clamp-none md:truncate">
+          {titel}
+        </span>
 
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-leise">
-          {anzeige.id !== null && <span className="whitespace-nowrap">Nr. {anzeige.id}</span>}
+          {/* Anzeigennummer erst ab sm - mobil ist der Platz zu knapp. */}
+          {anzeige.id !== null && (
+            <span className="hidden whitespace-nowrap sm:inline">Nr. {anzeige.id}</span>
+          )}
           {anzeige.bilder > 0 && (
             <span className="whitespace-nowrap">
               {anzeige.bilder} {anzeige.bilder === 1 ? 'Bild' : 'Bilder'}
@@ -384,14 +384,11 @@ export function AnzeigenZeile({
         <div className="zeile-inhalt">{zeilenInhalt}</div>
       )}
       {/*
-        Rechte Spalte: Preis über den Aktionen, Spalte vertikal zentriert
-        zur Zeile (AP-2.59). Vorher lag der Preis neben dem Titel (oben) und
-        die Icon-Knöpfe tiefer – optisch zwei getrennte Höhen. Ab md: drei
-        Icon-Knöpfe in einer Reihe (AP-2.50); darunter ⋯-Menü (AP-2.54).
+        Rechte Spalte, vertikal zentriert (AP-2.59). Ab md: Preis über einer
+        Reihe Icon-Knöpfe (AP-2.50). Mobil (2026-09-09): das ⋯-Menü oben, der
+        Preis klein darunter - so bleibt links mehr Platz für den Titel.
       */}
       <div className="zeile-rechts">
-        {/* Preis steht mobil neben dem Titel; hier nur ab md. */}
-        <span className="zeile-preis hidden md:block">{preisText(anzeige)}</span>
         {hatAktionen && (
           <ZeileAktionen
             titel={titel}
@@ -401,6 +398,7 @@ export function AnzeigenZeile({
             aufUmsortieren={aufUmsortieren}
           />
         )}
+        <span className="zeile-preis">{preisText(anzeige)}</span>
       </div>
     </div>
   );

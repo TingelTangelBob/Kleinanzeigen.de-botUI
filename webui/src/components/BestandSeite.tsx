@@ -13,9 +13,9 @@
 // einfachere Lösung und fühlt sich besser an, weil jeder Tastendruck sofort
 // wirkt. Sobald ein Bestand das nicht mehr hergibt, wandert es serverseitig.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
-  AlertTriangle, ArrowLeftRight, Download, RefreshCw, Search, Settings,
+  AlertTriangle, ArrowLeftRight, Download, RefreshCw, Search,
   Trash2, Upload, X,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
@@ -352,7 +352,11 @@ export function BestandSeite({
   // Die Aktionsknöpfe der Seite stehen in der App-Chrome, nicht in einem
   // eigenen Kopfbereich (2026-09-07). Ab md rechts in der Topleiste, darunter
   // als eigene Zeile unter der Leiste (useKopfAktionen entscheidet das Ziel).
-  // In beiden Fällen alle Knöpfe sichtbar - kein Kebab mehr. Archiv: keine
+  //
+  // „Vom Konto holen" startet einen Bot-Lauf (Anmeldung + Download vom Konto),
+  // „Neu einlesen" liest nur die lokalen Dateien frisch ein - deshalb die
+  // vollen Beschriftungen. Der Such-Icon-Knopf hängt nur unter md hier mit
+  // (in der Topleiste ab md steckt die Suche im Filterstreifen). Archiv: keine
   // Konto-/Link-Aktion (AP-2.58).
   const kopfAktionen = useKopfAktionen(
     <>
@@ -362,48 +366,42 @@ export function BestandSeite({
           onClick={() => void kontoHolen()}
           disabled={startetDownload}
           className="btn-primaer"
-          aria-label={startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
+          title="Meldet sich bei kleinanzeigen.de an und lädt den Stand deiner Anzeigen herunter (Lauf)."
         >
           <Download className="h-4 w-4" aria-hidden />
-          {startetDownload ? (
-            'Wird eingereiht …'
-          ) : (
-            <>
-              <span className="sm:hidden">Holen</span>
-              <span className="hidden sm:inline">Vom Konto holen</span>
-            </>
-          )}
+          {startetDownload ? 'Wird eingereiht …' : 'Vom Konto holen'}
         </button>
       ) : (
         <button
           type="button"
           onClick={() => setHoltNach(true)}
           className="btn-primaer"
-          aria-label="Anzeigen per Link holen"
         >
           <Download className="h-4 w-4" aria-hidden />
-          <span className="sm:hidden">Per Link</span>
-          <span className="hidden sm:inline">Anzeigen per Link holen</span>
+          Anzeigen per Link holen
         </button>
       ))}
 
+      {/* „Neu einlesen" ist nur das frische Lesen der lokalen Dateien - auf dem
+          Handy verzichtbar, dort zählt der Platz. Ab sm wieder sichtbar. */}
       <button
         type="button"
         onClick={() => void laden()}
-        className="btn-ghost"
+        className="btn-ghost hidden sm:inline-flex"
+        title="Liest die lokalen Anzeigendateien frisch von der Platte ein - kein Konto, kein Lauf."
       >
         <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-        <span className="sm:hidden">Neu</span>
-        <span className="hidden sm:inline">Neu einlesen</span>
+        Neu einlesen
       </button>
+
       <button
         type="button"
-        onClick={() => aufZiel('einstellungen/anzeigen')}
-        aria-label="Anzeigen-Einstellungen"
-        title="Anzeigen-Einstellungen"
-        className="btn-icon"
+        onClick={() => setSucheOffen(o => !o)}
+        aria-label="Suche ein- oder ausblenden"
+        aria-expanded={sucheOffen}
+        className="btn-icon md:hidden"
       >
-        <Settings className="h-4 w-4" aria-hidden />
+        <Search className="h-4 w-4" aria-hidden />
       </button>
     </>,
   );
@@ -520,24 +518,16 @@ export function BestandSeite({
         />
       )}
 
-      {/* Reiter links, Suche rechts. Ab sm steht die Suche schmal rechtsbündig
-          neben der Reiter-Leiste; unter sm sitzt rechts nur ein Lupen-Icon, die
-          Reiter scrollen horizontal, und die Suche öffnet als eigene Zeile
+      {/* Ab md steht die Suche schmal rechtsbündig neben der Reiter-Leiste;
+          darunter sitzt der Such-Icon-Knopf oben in der Aktionszeile und klappt
+          hier eine eigene Zeile auf. Die Reiter scrollen horizontal
           (2026-09-07, mobil aufgeräumt 2026-09-09). */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setSucheOffen(o => !o)}
-          aria-label="Suche ein- oder ausblenden"
-          aria-expanded={sucheOffen}
-          className="btn-icon order-last flex-shrink-0 sm:hidden"
-        >
-          <Search className="h-4 w-4" aria-hidden />
-        </button>
-
         <label
-          className={`relative flex-shrink-0 sm:order-last sm:ml-auto sm:block sm:w-64 ${
-            sucheOffen ? 'order-last block w-full' : 'hidden'
+          className={`relative ${
+            sucheOffen
+              ? 'order-last block w-full'
+              : 'hidden md:order-last md:ml-auto md:block md:w-64'
           }`}
         >
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
@@ -552,7 +542,7 @@ export function BestandSeite({
         </label>
 
         {!archiv && (
-          <div className="reiter-leiste order-first min-w-0 flex-1 flex-nowrap overflow-x-auto sm:order-none sm:flex-none">
+          <div className="reiter-leiste order-first min-w-0 flex-1 flex-nowrap overflow-x-auto md:order-none md:flex-none">
             {FILTER.map(f => {
               const anzahl = zaehler[f.id] ?? null;
               return (
@@ -570,7 +560,7 @@ export function BestandSeite({
           </div>
         )}
         {archiv && (
-          <p className="order-first min-w-0 flex-1 text-sm text-leise sm:order-none sm:flex-none">
+          <p className="order-first min-w-0 flex-1 text-sm text-leise md:order-none md:flex-none">
             Lokal archiviert ({sichtbar.length})
           </p>
         )}
@@ -632,12 +622,15 @@ export function BestandSeite({
               ))}
           </div>
 
-          {/* Unter md: die Sammelaktionen als fixe Leiste unten - dieselbe
-              Sprache wie die Speichern-Leiste im Editor. */}
+          {/* Unter md: die Sammelaktionen als fixe Leiste unten, eine Zeile aus
+              Icon-Knöpfen - dieselbe Sprache wie die Speichern-Leiste im Editor. */}
           {istMobil && gewaehlte.length > 0 && (
-            <div className="leiste-fix safe-unten fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:hidden">
-              <span className="text-sm font-medium text-stark">{gewaehlte.length} ausgewählt</span>
+            <div className="leiste-fix safe-unten fixed inset-x-0 bottom-0 z-30 flex flex-nowrap items-center gap-1.5 overflow-x-hidden px-3 py-2.5 md:hidden">
+              <span className="flex-shrink-0 text-sm font-medium text-stark">
+                {gewaehlte.length} ausgewählt
+              </span>
               <SammelAktionen
+                nurIcons
                 className="ml-auto"
                 archiv={archiv}
                 eigene={eigene}
@@ -694,13 +687,14 @@ export function BestandSeite({
 }
 
 /**
- * Die Sammelaktionen über die Auswahl. Ab md inline in der Zählzeile, unter md
- * in der fixen Leiste unten - dieselben Knöpfe, damit sie nicht zweifach im
- * Baum stehen (ein `role="group"`).
+ * Die Sammelaktionen über die Auswahl. Ab md inline in der Zählzeile mit Text
+ * (`nurIcons=false`), unter md in der fixen Leiste unten als eine Zeile
+ * Icon-Knöpfe (`nurIcons`). Es steht nur eine Variante im Baum - ein
+ * `role="group"`.
  */
 function SammelAktionen({
   archiv, eigene, sammelLaeuft, aufHerkunft, aufHochladen, aufLoeschen, aufAufheben,
-  className = '',
+  className = '', nurIcons = false,
 }: {
   archiv: boolean;
   eigene: boolean;
@@ -710,44 +704,47 @@ function SammelAktionen({
   aufLoeschen: () => void;
   aufAufheben: () => void;
   className?: string;
+  nurIcons?: boolean;
 }) {
   const gesperrt = sammelLaeuft !== null;
+  const herkunftText = sammelLaeuft === 'herkunft'
+    ? 'Wird verschoben …'
+    : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen';
+  const hochladenText = sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen';
+
+  /** Ein Aktionsknopf: nurIcons → Icon-Knopf mit sr-only-Text; sonst Text-Knopf. */
+  const knopf = (
+    onClick: () => void, Icon: typeof Trash2, text: string,
+    basis: 'btn-ghost' | 'btn-leise', style?: CSSProperties,
+  ) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={gesperrt}
+      aria-label={nurIcons ? text : undefined}
+      title={nurIcons ? text : undefined}
+      className={nurIcons ? 'btn-icon' : `${basis} text-xs`}
+      style={style}
+    >
+      <Icon className={nurIcons ? 'h-4 w-4' : 'h-3.5 w-3.5'} aria-hidden />
+      {nurIcons ? <span className="sr-only">{text}</span> : text}
+    </button>
+  );
+
   return (
     <div
       role="group"
       aria-label="Sammelaktionen"
-      className={`flex flex-wrap items-center gap-2 ${className}`}
+      className={`flex items-center ${nurIcons ? 'flex-nowrap gap-1.5' : 'flex-wrap gap-2'} ${className}`}
     >
-      {!archiv && (
-        <button type="button" onClick={aufHerkunft} disabled={gesperrt} className="btn-ghost text-xs">
-          <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-          {sammelLaeuft === 'herkunft'
-            ? 'Wird verschoben …'
-            : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
-        </button>
-      )}
-      {!archiv && (
-        <button type="button" onClick={aufHochladen} disabled={gesperrt} className="btn-ghost text-xs">
-          <Upload className="h-3.5 w-3.5" aria-hidden />
-          {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
-        </button>
-      )}
+      {!archiv && knopf(aufHerkunft, ArrowLeftRight, herkunftText, 'btn-ghost')}
+      {!archiv && knopf(aufHochladen, Upload, hochladenText, 'btn-ghost')}
       {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen Knöpfen
           daneben abheben (AP-2.20). */}
-      <button
-        type="button"
-        onClick={aufLoeschen}
-        disabled={gesperrt}
-        className="btn-ghost text-xs"
-        style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        Lokal löschen
-      </button>
-      <button type="button" onClick={aufAufheben} disabled={gesperrt} className="btn-leise text-xs">
-        <X className="h-3.5 w-3.5" aria-hidden />
-        Auswahl aufheben
-      </button>
+      {knopf(aufLoeschen, Trash2, 'Lokal löschen', 'btn-ghost', {
+        color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)',
+      })}
+      {knopf(aufAufheben, X, 'Auswahl aufheben', 'btn-leise')}
     </div>
   );
 }

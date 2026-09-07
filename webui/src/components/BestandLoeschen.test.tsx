@@ -219,6 +219,29 @@ describe('Weitere Sammelaktionen', () => {
     expect(herkunftSetzen).toHaveBeenCalledWith('test', B.datei, 'fremde');
   });
 
+  it('zeigt die Sammelaktionen unter md als eine fixe Leiste unten', async () => {
+    // matchMedia auf „schmal" stellen -> useIstMobil == true.
+    window.matchMedia = ((q: string) => ({
+      matches: false, media: q,
+      addEventListener: () => {}, removeEventListener: () => {},
+      addListener: () => {}, removeListener: () => {}, onchange: null,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
+      await geladen();
+      fireEvent.click(kaestchen('Kinderwagen'));
+
+      // Genau eine Sammelaktionsgruppe, und sie sitzt in der fixen Leiste.
+      const gruppe = screen.getByRole('group', { name: 'Sammelaktionen' });
+      expect(gruppe.closest('.leiste-fix.fixed')).not.toBeNull();
+      expect(screen.getByRole('button', { name: /Lokal löschen/ })).toBeTruthy();
+    } finally {
+      // @ts-expect-error – Aufräumen der Attrappe.
+      delete window.matchMedia;
+    }
+  });
+
   it('reiht je Anzeige einen Hochladen-Lauf ein', async () => {
     hochladen.mockResolvedValue({ job_id: 7, anzeige: A });
     render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });

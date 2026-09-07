@@ -81,9 +81,12 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
   // Die Theme-*Wahl* sitzt seit AP-2.32 allein unter Einstellungen › Darstellung.
   const { effektiv: themaEffektiv } = useThema();
   const aktiveLaeufe = useAktiveLaufAnzahl();
-  // Slot für die Seiten-Aktionsknöpfe in der Topleiste. Die Seite füllt ihn per
-  // Portal (useKopfAktionen); leer bleibt er unsichtbar.
+  // Slots für die Seiten-Aktionsknöpfe: `kopfZiel` sitzt in der Topleiste (ab
+  // md), `kopfZielMobil` als eigene Zeile darunter (unter md, weil die
+  // Topleiste auf ~375 px zu eng ist). Die Seite füllt einen davon per Portal
+  // (useKopfAktionen); leer bleiben beide unsichtbar.
   const [kopfZiel, setKopfZiel] = useState<HTMLElement | null>(null);
+  const [kopfZielMobil, setKopfZielMobil] = useState<HTMLElement | null>(null);
   // AP-2.55: Profilname in der Topbar nur zeigen, wenn der Aktions-Slot leer
   // ist. Mit Holen/⋯ bleibt sonst auf ~375 px vom Seitentitel nur „Mei…".
   const [kopfHatInhalt, setKopfHatInhalt] = useState(false);
@@ -316,21 +319,29 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           >
             {seitenTitel(route)}
           </span>
-          {/* Aktionsknöpfe der Seite (Portal-Ziel), dann die Glocke mit dezenter
-              Trennlinie davor. Ist der Slot leer, verschwinden Slot und Linie. */}
-          <div ref={setKopfZiel} className="kopf-aktionen" />
+          {/* Aktionsknöpfe der Seite (Portal-Ziel ab md), dann die Glocke mit
+              dezenter Trennlinie davor. Ist der Slot leer, verschwinden Slot
+              und Linie. Unter md portalen die Aktionen in `.kopf-aktionen-mobil`
+              (eigene Zeile unter der Leiste). */}
+          <div ref={setKopfZiel} className="kopf-aktionen hidden md:flex" />
           <div className="topbar-glocke ml-auto flex min-w-0 items-center gap-2">
             <Glocke aufZiel={wechseln} />
             {aktiv && !kopfHatInhalt && (
-              <span className="topbar-profilname truncate text-sm lg:hidden" style={{ color: 'var(--text-schwach)' }}>
+              <span
+                className="topbar-profilname hidden truncate text-sm md:block lg:hidden"
+                style={{ color: 'var(--text-schwach)' }}
+              >
                 {aktiv.anzeigename}
               </span>
             )}
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden px-6 py-6 sm:px-8 sm:py-8">
-          <KopfAktionenKontext.Provider value={kopfZiel}>
+        {/* Seiten-Aktionen unter md: eigene Zeile unter der Topleiste. Leer → weg. */}
+        <div ref={setKopfZielMobil} className="kopf-aktionen-mobil md:hidden" />
+
+        <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-6 sm:px-8 sm:py-8">
+          <KopfAktionenKontext.Provider value={{ topbar: kopfZiel, mobil: kopfZielMobil }}>
             {children}
           </KopfAktionenKontext.Provider>
         </main>

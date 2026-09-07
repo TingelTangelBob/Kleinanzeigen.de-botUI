@@ -6,6 +6,10 @@
 // Das Vorschaubild ist nicht Zierde: In einer Liste von zwanzig Anzeigen ist
 // das Bild das, woran man seine Anzeige erkennt - nicht der Titel, den man
 // selbst getippt hat und der bei drei Webcams dreimal ähnlich klingt.
+//
+// UI-Anpassung 2026-09-09: kompakte Mobilzeile (~100 px). Bild 72 px, Titel
+// einzeilig, Preis mobil neben dem Titel, Metazeile ohne Datum und mit
+// nowrap-Tokens - vorher brach sie Wort für Wort um.
 
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeftRight, Eye, ImageOff, MoreVertical, Pencil, RefreshCw } from 'lucide-react';
@@ -301,7 +305,7 @@ export function AnzeigenZeile({
   const zeilenInhalt = (
     <>
       <div
-        className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28"
+        className="h-[72px] w-[72px] flex-shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-28"
         style={{ background: 'var(--canvas)', border: '1px solid var(--karte-rand)' }}
       >
         {bildUrl ? (
@@ -319,27 +323,36 @@ export function AnzeigenZeile({
       </div>
 
       <div className="min-w-0 flex-1">
-        {/* Bis 768 px zwei Zeilen statt einer abgeschnittenen (AP-2.18): auf
-            375 px blieben von „Fahrradanhänger Croozer Kid for 2 mit …" sonst
-            vierzehn Zeichen übrig, und genau der Titel ist das, woran man die
-            Anzeige wiedererkennt. Ab 768 wird abgeschnitten, damit alle
-            Zeilen der Liste gleich hoch bleiben. Preis und Aktionen sitzen
-            rechts in einer eigenen Spalte (AP-2.59). */}
-        <span className="line-clamp-2 text-[15px] font-semibold tracking-tight text-stark sm:text-base md:line-clamp-none md:truncate">
-          {titel}
-        </span>
+        {/* Kompakte Mobilzeile (2026-09-09): Titel einzeilig gekürzt, der Preis
+            steht mobil rechts daneben (rechts in der Zeile sitzt unter md nur
+            das ⋯-Menü). Ab md trägt `.zeile-rechts` den Preis wie bisher
+            (AP-2.59), und der Titel wird dort abgeschnitten. */}
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-[15px] font-semibold tracking-tight text-stark sm:text-base">
+            {titel}
+          </span>
+          <span className="zeile-preis-mobil flex-shrink-0 md:hidden">{preisText(anzeige)}</span>
+        </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-leise">
-          {anzeige.id !== null && <span>Nr. {anzeige.id}</span>}
-          {anzeige.bilder > 0 && <span>{anzeige.bilder} {anzeige.bilder === 1 ? 'Bild' : 'Bilder'}</span>}
-          {datumText(anzeige.erstellt_am) && <span>seit {datumText(anzeige.erstellt_am)}</span>}
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-leise">
+          {anzeige.id !== null && <span className="whitespace-nowrap">Nr. {anzeige.id}</span>}
+          {anzeige.bilder > 0 && (
+            <span className="whitespace-nowrap">
+              {anzeige.bilder} {anzeige.bilder === 1 ? 'Bild' : 'Bilder'}
+            </span>
+          )}
+          {datumText(anzeige.erstellt_am) && (
+            <span className="hidden whitespace-nowrap sm:inline">seit {datumText(anzeige.erstellt_am)}</span>
+          )}
           {anzeige.neueinstellung_am && !anzeige.faellig && (
-            <span>neu am {datumText(anzeige.neueinstellung_am)}</span>
+            <span className="hidden whitespace-nowrap sm:inline">
+              neu am {datumText(anzeige.neueinstellung_am)}
+            </span>
           )}
         </div>
 
         {merkmale.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {gezeigt.map(m => <Merkmal key={m.schluessel} daten={m} />)}
             {versteckt.length > 0 && (
               <span
@@ -377,7 +390,8 @@ export function AnzeigenZeile({
         Icon-Knöpfe in einer Reihe (AP-2.50); darunter ⋯-Menü (AP-2.54).
       */}
       <div className="zeile-rechts">
-        <span className="zeile-preis">{preisText(anzeige)}</span>
+        {/* Preis steht mobil neben dem Titel; hier nur ab md. */}
+        <span className="zeile-preis hidden md:block">{preisText(anzeige)}</span>
         {hatAktionen && (
           <ZeileAktionen
             titel={titel}

@@ -13,9 +13,9 @@
 // einfachere Lösung und fühlt sich besser an, weil jeder Tastendruck sofort
 // wirkt. Sobald ein Bestand das nicht mehr hergibt, wandert es serverseitig.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeftRight, Download, MoreVertical, RefreshCw, Search, Settings,
+  AlertTriangle, ArrowLeftRight, Download, RefreshCw, Search, Settings,
   Trash2, Upload, X,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
@@ -23,6 +23,7 @@ import { useProfil } from '../context/useProfil';
 import { useMeldungenQuelle } from '../context/useMeldungen';
 import type { Meldung } from '../context/meldungenKontext';
 import { useKopfAktionen } from '../context/kopfAktionenKontext';
+import { useIstMobil } from '../hooks/useMedienabfrage';
 import { hashFuer, hashFuerAnzeige, type AnzeigenListe } from '../routing';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
@@ -109,11 +110,8 @@ export function BestandSeite({
   const [loeschDialog, setLoeschDialog] = useState<BestandsAnzeige[] | null>(null);
   const [sammelLaeuft, setSammelLaeuft] = useState<string | null>(null);
   const [sammelHinweis, setSammelHinweis] = useState<string | null>(null);
-  // Kebab-Menü im Kopf (ab < md) und die auf schmalen Fenstern zusammengeklappte
-  // Suche.
-  const [menueOffen, setMenueOffen] = useState(false);
+  // Auf schmalen Fenstern zusammengeklappte Suche.
   const [sucheOffen, setSucheOffen] = useState(false);
-  const menueRef = useRef<HTMLDivElement>(null);
 
   // App.tsx rendert für #anzeigen/eigene|fremde|archiv dieselbe Komponente;
   // nur `herkunft` (Listen-Modus) wechselt. React unmountet dabei nicht, also
@@ -160,25 +158,6 @@ export function BestandSeite({
   useEffect(() => {
     void laden();
   }, [laden]);
-
-  // Kebab-Menü schließt bei Klick daneben oder Escape.
-  useEffect(() => {
-    if (!menueOffen) return undefined;
-    const ausserhalb = (ereignis: MouseEvent) => {
-      if (menueRef.current && !menueRef.current.contains(ereignis.target as Node)) {
-        setMenueOffen(false);
-      }
-    };
-    const escape = (ereignis: KeyboardEvent) => {
-      if (ereignis.key === 'Escape') setMenueOffen(false);
-    };
-    document.addEventListener('mousedown', ausserhalb);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('mousedown', ausserhalb);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [menueOffen]);
 
   const sichtbar = useMemo(() => {
     // Archiv (AP-2.58): lokal nicht mehr aktive / gelöschte Anzeigen, unabhängig
@@ -362,12 +341,19 @@ export function BestandSeite({
   }, [downloadHinweis, aktualisierungsHinweis]);
   useMeldungenQuelle('bestand', meldungen);
 
+  // Unter md wandern die Sammelaktionen in eine fixe Leiste unten (statt über
+  // die Liste). Nur eine der beiden Varianten steht im Baum - sonst gäbe es
+  // zwei `role="group"`.
+  const istMobil = useIstMobil();
+
   const eigene = herkunft === 'eigene';
   const archiv = herkunft === 'archiv';
 
-  // Die Aktionsknöpfe der Seite stehen in der App-Topleiste, nicht in einem
-  // eigenen Kopfbereich (2026-09-07). `md+` alle nebeneinander, darunter
-  // Primärknopf + Kebab. Archiv: keine Konto-/Link-Aktion (AP-2.58).
+  // Die Aktionsknöpfe der Seite stehen in der App-Chrome, nicht in einem
+  // eigenen Kopfbereich (2026-09-07). Ab md rechts in der Topleiste, darunter
+  // als eigene Zeile unter der Leiste (useKopfAktionen entscheidet das Ziel).
+  // In beiden Fällen alle Knöpfe sichtbar - kein Kebab mehr. Archiv: keine
+  // Konto-/Link-Aktion (AP-2.58).
   const kopfAktionen = useKopfAktionen(
     <>
       {!archiv && (eigene ? (
@@ -404,53 +390,21 @@ export function BestandSeite({
       <button
         type="button"
         onClick={() => void laden()}
-        className="btn-ghost hidden md:inline-flex"
+        className="btn-ghost"
       >
         <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-        Neu einlesen
+        <span className="sm:hidden">Neu</span>
+        <span className="hidden sm:inline">Neu einlesen</span>
       </button>
       <button
         type="button"
         onClick={() => aufZiel('einstellungen/anzeigen')}
         aria-label="Anzeigen-Einstellungen"
         title="Anzeigen-Einstellungen"
-        className="btn-icon hidden md:inline-flex"
+        className="btn-icon"
       >
         <Settings className="h-4 w-4" aria-hidden />
       </button>
-
-      <div ref={menueRef} className="plattform-menue md:hidden">
-        <button
-          type="button"
-          className="btn-icon"
-          aria-haspopup="menu"
-          aria-expanded={menueOffen}
-          aria-label="Weitere Aktionen"
-          onClick={() => setMenueOffen(o => !o)}
-        >
-          <MoreVertical className="h-4 w-4" aria-hidden />
-        </button>
-        {menueOffen && (
-          <div className="plattform-menue-panel" role="menu" aria-label="Weitere Aktionen">
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setMenueOffen(false); void laden(); }}
-            >
-              <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-              Neu einlesen
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setMenueOffen(false); aufZiel('einstellungen/anzeigen'); }}
-            >
-              <Settings className="h-4 w-4" aria-hidden />
-              Anzeigen-Einstellungen
-            </button>
-          </div>
-        )}
-      </div>
     </>,
   );
 
@@ -499,7 +453,7 @@ export function BestandSeite({
   }
 
   return (
-    <div className="seite">
+    <div className={`seite ${istMobil && gewaehlte.length > 0 ? 'pb-24' : ''}`}>
       <h1 className="sr-only">{archiv ? 'Archiv' : eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
       {kopfAktionen}
       {holtNach && (
@@ -566,16 +520,17 @@ export function BestandSeite({
         />
       )}
 
-      {/* Reiter links, Suche rechts (2026-09-07). Ab sm steht die Suche schmal
-          rechtsbündig neben der Reiter-Leiste; unter sm klappt sie auf ein
-          Lupen-Icon zusammen und öffnet sich bei Bedarf als eigene Zeile. */}
+      {/* Reiter links, Suche rechts. Ab sm steht die Suche schmal rechtsbündig
+          neben der Reiter-Leiste; unter sm sitzt rechts nur ein Lupen-Icon, die
+          Reiter scrollen horizontal, und die Suche öffnet als eigene Zeile
+          (2026-09-07, mobil aufgeräumt 2026-09-09). */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setSucheOffen(o => !o)}
           aria-label="Suche ein- oder ausblenden"
           aria-expanded={sucheOffen}
-          className="btn-icon order-first flex-shrink-0 sm:hidden"
+          className="btn-icon order-last flex-shrink-0 sm:hidden"
         >
           <Search className="h-4 w-4" aria-hidden />
         </button>
@@ -597,7 +552,7 @@ export function BestandSeite({
         </label>
 
         {!archiv && (
-          <div className="reiter-leiste order-first min-w-0 flex-1 overflow-x-auto sm:order-none sm:flex-none">
+          <div className="reiter-leiste order-first min-w-0 flex-1 flex-nowrap overflow-x-auto sm:order-none sm:flex-none">
             {FILTER.map(f => {
               const anzahl = zaehler[f.id] ?? null;
               return (
@@ -640,11 +595,11 @@ export function BestandSeite({
         </div>
       ) : (
         <>
-          {/* Zählzeile, Alles-Wählen und - sobald etwas gewählt ist - die
-              Sammelaktionen in einer Zeile (AP-2.20, verdichtet 2026-09-07). Das
-              Kästchen sitzt auf demselben Links-Einzug wie die Zeilen-Kästchen.
-              Die Zeile hat eine feste Mindesthöhe, damit die Liste nicht nach
-              unten springt, wenn die Aktionsknöpfe erscheinen. */}
+          {/* Zählzeile mit Alles-Wählen. Das Kästchen sitzt auf demselben
+              Links-Einzug wie die Zeilen-Kästchen. Ab md stehen die
+              Sammelaktionen rechts daneben; darunter fahren sie als fixe
+              Leiste am unteren Rand ein (2026-09-09), damit die Liste nicht
+              nach unten springt. */}
           <div className="bestand-auswahlzeile mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="flex items-center gap-2 pl-4 text-xs text-leise">
               <input
@@ -659,64 +614,41 @@ export function BestandSeite({
                 : `${gefiltert.length} von ${sichtbar.length} Anzeigen`}
             </label>
 
-            {gewaehlte.length > 0 ? (
-              <div
-                role="group"
-                aria-label="Sammelaktionen"
-                className="ml-auto flex flex-wrap items-center gap-2"
-              >
-                {!archiv && (
-                  <button
-                    type="button"
-                    onClick={() => void sammelHerkunft()}
-                    disabled={sammelLaeuft !== null}
-                    className="btn-ghost text-xs"
-                  >
-                    <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-                    {sammelLaeuft === 'herkunft'
-                      ? 'Wird verschoben …'
-                      : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
-                  </button>
-                )}
-                {!archiv && (
-                  <button
-                    type="button"
-                    onClick={() => void sammelHochladen()}
-                    disabled={sammelLaeuft !== null}
-                    className="btn-ghost text-xs"
-                  >
-                    <Upload className="h-3.5 w-3.5" aria-hidden />
-                    {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
-                  </button>
-                )}
-                {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen
-                    Knöpfen daneben abheben (AP-2.20). */}
-                <button
-                  type="button"
-                  onClick={() => setLoeschDialog(gewaehlte)}
-                  disabled={sammelLaeuft !== null}
-                  className="btn-ghost text-xs"
-                  style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                  Lokal löschen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuswahl(new Set())}
-                  disabled={sammelLaeuft !== null}
-                  className="btn-leise text-xs"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                  Auswahl aufheben
-                </button>
-              </div>
-            ) : (
-              sammelHinweis && (
+            {gewaehlte.length > 0
+              ? (!istMobil && (
+                <SammelAktionen
+                  className="ml-auto"
+                  archiv={archiv}
+                  eigene={eigene}
+                  sammelLaeuft={sammelLaeuft}
+                  aufHerkunft={() => void sammelHerkunft()}
+                  aufHochladen={() => void sammelHochladen()}
+                  aufLoeschen={() => setLoeschDialog(gewaehlte)}
+                  aufAufheben={() => setAuswahl(new Set())}
+                />
+              ))
+              : (sammelHinweis && (
                 <span className="ml-auto text-xs text-leise">{sammelHinweis}</span>
-              )
-            )}
+              ))}
           </div>
+
+          {/* Unter md: die Sammelaktionen als fixe Leiste unten - dieselbe
+              Sprache wie die Speichern-Leiste im Editor. */}
+          {istMobil && gewaehlte.length > 0 && (
+            <div className="leiste-fix safe-unten fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:hidden">
+              <span className="text-sm font-medium text-stark">{gewaehlte.length} ausgewählt</span>
+              <SammelAktionen
+                className="ml-auto"
+                archiv={archiv}
+                eigene={eigene}
+                sammelLaeuft={sammelLaeuft}
+                aufHerkunft={() => void sammelHerkunft()}
+                aufHochladen={() => void sammelHochladen()}
+                aufLoeschen={() => setLoeschDialog(gewaehlte)}
+                aufAufheben={() => setAuswahl(new Set())}
+              />
+            </div>
+          )}
           {/* Der Rahmen entsteht nur mit Inhalt (AP-2.18). Ohne diese Bedingung
               stand bei „kein Treffer" ein 2 px hoher, leerer Kasten mit Rand und
               Schatten über dem gestrichelten Leerzustand - ein Strich, den
@@ -757,6 +689,65 @@ export function BestandSeite({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Die Sammelaktionen über die Auswahl. Ab md inline in der Zählzeile, unter md
+ * in der fixen Leiste unten - dieselben Knöpfe, damit sie nicht zweifach im
+ * Baum stehen (ein `role="group"`).
+ */
+function SammelAktionen({
+  archiv, eigene, sammelLaeuft, aufHerkunft, aufHochladen, aufLoeschen, aufAufheben,
+  className = '',
+}: {
+  archiv: boolean;
+  eigene: boolean;
+  sammelLaeuft: string | null;
+  aufHerkunft: () => void;
+  aufHochladen: () => void;
+  aufLoeschen: () => void;
+  aufAufheben: () => void;
+  className?: string;
+}) {
+  const gesperrt = sammelLaeuft !== null;
+  return (
+    <div
+      role="group"
+      aria-label="Sammelaktionen"
+      className={`flex flex-wrap items-center gap-2 ${className}`}
+    >
+      {!archiv && (
+        <button type="button" onClick={aufHerkunft} disabled={gesperrt} className="btn-ghost text-xs">
+          <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+          {sammelLaeuft === 'herkunft'
+            ? 'Wird verschoben …'
+            : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
+        </button>
+      )}
+      {!archiv && (
+        <button type="button" onClick={aufHochladen} disabled={gesperrt} className="btn-ghost text-xs">
+          <Upload className="h-3.5 w-3.5" aria-hidden />
+          {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
+        </button>
+      )}
+      {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen Knöpfen
+          daneben abheben (AP-2.20). */}
+      <button
+        type="button"
+        onClick={aufLoeschen}
+        disabled={gesperrt}
+        className="btn-ghost text-xs"
+        style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        Lokal löschen
+      </button>
+      <button type="button" onClick={aufAufheben} disabled={gesperrt} className="btn-leise text-xs">
+        <X className="h-3.5 w-3.5" aria-hidden />
+        Auswahl aufheben
+      </button>
     </div>
   );
 }

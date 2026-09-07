@@ -168,4 +168,19 @@ describe('Layout: Topbar-Dichte mobil (AP-2.55)', () => {
     expect(titel?.className).toContain('sm:flex-initial');
     expect(titel?.getAttribute('title')).toBe('Meine Anzeigen');
   });
+
+  it('hält einen eigenen Aktions-Slot unter der Topleiste bereit (mobil)', () => {
+    profilMock.aktiv = null;
+    profilMock.profile = [];
+    const { container } = render(
+      <Layout route={route('anzeigen')} aufZiel={vi.fn()}>
+        <p>Inhalt</p>
+      </Layout>,
+    );
+    // Der Mobil-Slot steht außerhalb der Topleiste, direkt davor das <header>.
+    const mobil = container.querySelector('.kopf-aktionen-mobil');
+    expect(mobil).not.toBeNull();
+    expect(mobil?.closest('header.topbar')).toBeNull();
+    expect(mobil?.className).toContain('md:hidden');
+  });
 });

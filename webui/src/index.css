@@ -217,6 +217,28 @@ html:has(#app-shell[data-theme='dark']) {
     }
   }
 
+  /*
+   * Seiten-Aktionen unter md (2026-09-09): eigene Zeile direkt unter der
+   * Topleiste. Die Topleiste ist auf ~375 px zu eng für Titel + Knopf +
+   * Glocke; hier ist Platz für die vollen Knöpfe. Der Primärknopf füllt die
+   * Zeile. Leer → weg. Ab md rendert `useKopfAktionen` in die Topleiste, diese
+   * Zeile bleibt leer und ist ohnehin `md:hidden`.
+   */
+  .kopf-aktionen-mobil {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--karte);
+    border-bottom: 1px solid var(--karte-rand);
+  }
+  .kopf-aktionen-mobil:empty { display: none; }
+  .kopf-aktionen-mobil .btn-primaer { flex: 1 1 8rem; }
+  @media (min-width: 768px) {
+    .kopf-aktionen-mobil { display: none; }
+  }
+
   .text-stark { color: var(--text-stark); }
   .text-normal { color: var(--text); }
   .text-leise { color: var(--text-schwach); }
@@ -562,6 +584,13 @@ html:has(#app-shell[data-theme='dark']) {
     text-align: left;
     color: inherit;
   }
+  /* Kompakte Zeile unter md (2026-09-09): weniger Luft, damit ~6-7 Anzeigen auf
+     einen Handy-Screen passen. Badges brechen nicht mehr mitten im Wort. */
+  @media (max-width: 767px) {
+    .zeile { gap: 0.7rem; padding: 0.7rem 0.85rem; }
+    .zeile-inhalt { gap: 0.7rem; align-items: center; }
+    .zeile .merkmal { white-space: nowrap; }
+  }
   button.zeile-klick {
     cursor: pointer;
     border-radius: var(--radius-kontrolle);
@@ -598,6 +627,15 @@ html:has(#app-shell[data-theme='dark']) {
   }
   @media (min-width: 640px) {
     .zeile-preis { font-size: 1rem; }
+  }
+  /* Mobil steht der Preis neben dem Titel in der Inhaltsspalte; ab md trägt ihn
+     `.zeile-rechts` (AP-2.59). Eigene Klasse, damit die Trennung testbar bleibt. */
+  .zeile-preis-mobil {
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--text-stark);
   }
   .zeile-aktionen {
     display: flex;

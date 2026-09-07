@@ -93,6 +93,11 @@ jobs:
           # echten Laufs zuschlägt; sie ungeprüft zu lassen wäre der falsche
           # Weg, die CI grün zu bekommen.
           python -m pip install --quiet -r docker/anzeigen-studio/requirements-bot.txt
+          # nodriver 0.50.3 liefert cdp/network.py mit einem ISO-8859-1-Byte (±).
+          # Ohne den Upstream-Hook scheitert mypy daran mit "Cannot decode file",
+          # bevor es unsere Quellen prueft - derselbe Patch wie im Backend-Abbild
+          # (backend.Dockerfile) und in pdm.post_install.
+          python scripts/fix_nodriver.py
 
       # Die ruff- und mypy-Konfiguration des Upstreams erfasst src/**/*.py und
       # damit auch src/anzeigen_studio/ - sie wird hier bewusst mitbenutzt,

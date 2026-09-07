@@ -4,6 +4,8 @@
 // Kategorie suchen statt Nummernpfad tippen (AP-2.7).
 // UI-Anpassung 2026-09-04: Suchfeld für die kompakte Editorzeile verdichtet.
 // UI-Anpassung 2026-09-05: Suche als Symbol im Kategoriefeld.
+// UI-Anpassung 2026-09-07: Beschriftung „Kategorie" klein in den Feldrahmen
+//   (feld-minilabel), damit die Kopfzeile über der Feldzeile entfällt.
 //
 // Die Liste kommt vollständig aus `categories.yaml` des Bots und wird hier
 // gefiltert. Rund 520 Einträge sind für den Browser nichts, und jeder
@@ -81,9 +83,9 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
 
   if (!bearbeitbar) {
     return (
-      <div>
-        <span className="beschriftung">Kategorie</span>
-        <div className="feld feld-lesbar mt-1">
+      <div className="feld-minilabel">
+        <span className="feld-minilabel-text">Kategorie</span>
+        <div className="feld feld-lesbar">
           {bekannt ? (
             <span className="block break-words text-sm text-stark">{bekannt.name}</span>
           ) : wert ? (
@@ -125,10 +127,14 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
   }
 
   return (
-    <div ref={huelle} className={`relative ${kompakt ? 'kategorie-wahl-kompakt' : ''}`}>
-      <span className="text-sm font-medium text-normal">Kategorie</span>
+    <div
+      ref={huelle}
+      className={`relative feld-minilabel ${kompakt ? 'kategorie-wahl-kompakt' : ''}`}
+    >
+      {/* Beschriftung im Feld, wie bei den übrigen Feldern der Kopfzeile. */}
+      <span className="feld-minilabel-text">Kategorie</span>
 
-      <div className="feld kategorie-wert-feld mt-1">
+      <div className="feld kategorie-wert-feld">
         {/* Die Kopfzeile bleibt einzeilig (AP-2.35/AP-2.42). Lange Kategorien
             werden im Feld gekürzt, der vollständige Name bleibt im title
             sichtbar; der Nummernpfad bleibt daneben als kurze Kennung stehen. */}

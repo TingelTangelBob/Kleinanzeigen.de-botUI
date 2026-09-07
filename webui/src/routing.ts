@@ -8,7 +8,8 @@
 
 export type Hauptseite = 'uebersicht' | 'anzeigen' | 'neu' | 'warteschlange' | 'einstellungen';
 export type AnzeigenHerkunft = 'eigene' | 'fremde';
-export type EinstellungsAbschnitt = 'bot' | 'profile' | 'browser' | 'passwort' | 'darstellung';
+export type EinstellungsAbschnitt =
+  'anzeigen' | 'bot' | 'profile' | 'browser' | 'passwort' | 'darstellung';
 
 export interface Route {
   seite: Hauptseite;
@@ -18,7 +19,9 @@ export interface Route {
   anzeigeBearbeiten: boolean;
 }
 
-const EINSTELLUNG: EinstellungsAbschnitt[] = ['bot', 'profile', 'browser', 'passwort', 'darstellung'];
+const EINSTELLUNG: EinstellungsAbschnitt[] = [
+  'anzeigen', 'bot', 'profile', 'browser', 'passwort', 'darstellung',
+];
 
 /** Alte Top-Level-Hashes, die es in der Nav nicht mehr gibt. */
 const ALIAS: Record<string, string> = {

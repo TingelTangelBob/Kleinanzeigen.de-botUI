@@ -7,6 +7,10 @@
 // Neue Upstream-Felder erscheinen erst, wenn sie einer Gruppe zugeordnet sind.
 // Die vier Sperrfelder aus AP-1.11 und Login-Klartext sind serverseitig
 // nicht setzbar – und hier auch nicht angeboten.
+//
+// UI-Anpassung 2026-09-07: Reiter „Anzeigen" - die Gruppe „Standardwerte für
+// Anzeigen" (u. a. der Standard-Abstand zur Neueinstellung) liegt jetzt dort
+// statt unter „Bot". Gleiche Lade-/Speicherwege, nur andere Einsortierung.
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -24,6 +28,12 @@ import { ProfilSeite } from './ProfilSeite';
 import { SicherungAbschnitt } from './SicherungAbschnitt';
 
 const MIN_PASSWORTLAENGE = 12;
+
+// Gruppen, die zum Reiter „Anzeigen" gehören statt zu „Bot": Studio-Vorgaben
+// für Anzeigen (u. a. der Standard-Abstand zur Neueinstellung). Sie werden
+// unverändert über denselben Lade- und Speicherweg geführt - nur anders
+// einsortiert, damit „Bot" die reinen Bot-Schrauben behält.
+const ANZEIGEN_GRUPPEN_IDS = new Set(['ad_defaults']);
 
 function holen(werte: Record<string, unknown>, pfad: string): unknown {
   let knoten: unknown = werte;
@@ -379,9 +389,15 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   const gesucht = nadel(suche.trim());
   const sucheAktiv = gesucht.length > 0;
 
+  // Der Reiter „Anzeigen" zeigt die Anzeigen-Gruppen, „Bot" den Rest.
+  const reiterGruppen = useMemo(() => {
+    const fuerAnzeigen = abschnitt === 'anzeigen';
+    return gruppen.filter(g => ANZEIGEN_GRUPPEN_IDS.has(g.id) === fuerAnzeigen);
+  }, [gruppen, abschnitt]);
+
   const sichtbareGruppen = useMemo(() => {
-    if (!sucheAktiv) return gruppen.map(g => ({ gruppe: g, felder: g.felder }));
-    return gruppen
+    if (!sucheAktiv) return reiterGruppen.map(g => ({ gruppe: g, felder: g.felder }));
+    return reiterGruppen
       .map(g => {
         const gruppeTrifft = heuhaufen(`${g.titel} ${g.beschreibung}`).includes(gesucht);
         return {
@@ -390,11 +406,11 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         };
       })
       .filter(t => t.felder.length > 0);
-  }, [gruppen, gesucht, sucheAktiv]);
+  }, [reiterGruppen, gesucht, sucheAktiv]);
 
   const felderGesamt = useMemo(
-    () => gruppen.reduce((summe, g) => summe + g.felder.length, 0),
-    [gruppen],
+    () => reiterGruppen.reduce((summe, g) => summe + g.felder.length, 0),
+    [reiterGruppen],
   );
   const felderSichtbar = sichtbareGruppen.reduce((summe, t) => summe + t.felder.length, 0);
   const alleOffen = sichtbareGruppen.length > 0
@@ -427,6 +443,7 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   // `einstellungen/laeufe` wird in `routing.ts` auf `warteschlange` umgelenkt,
   // damit Glocke, Dashboard und Editor nicht ins Leere führen.
   const tabs: { id: EinstellungsAbschnitt; label: string; hash: string }[] = [
+    { id: 'anzeigen', label: 'Anzeigen', hash: 'einstellungen/anzeigen' },
     { id: 'bot', label: 'Bot', hash: 'einstellungen' },
     { id: 'profile', label: 'Profile', hash: 'einstellungen/profile' },
     { id: 'browser', label: 'Browser', hash: 'einstellungen/browser' },
@@ -512,6 +529,11 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return <p className="text-sm text-leise">Wird geladen …</p>;
   }
 
+  // Reiter „Anzeigen": nur die Studio-Vorgaben für Anzeigen. Die Bot-Karten
+  // darüber (Zugangsdaten, Abgleich, Sicherung, KI, Diagnose-Hinweis) und die
+  // Suchzeile gehören zum Bot-Reiter.
+  const istAnzeigen = abschnitt === 'anzeigen';
+
   return (
     // `pb-24` hält den Platz für die feste Speichern-Leiste frei, sonst deckt
     // sie die letzte Gruppe zu (AP-2.19).
@@ -521,8 +543,19 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       </h1>
 
       <p className="seite-beschrieb mb-6">
-        Gilt für <span className="font-medium text-stark">{aktiv.anzeigename}</span>.
-        Gespeichert wird in diesem Profil; der nächste Lauf übernimmt die Werte.
+        {istAnzeigen ? (
+          <>
+            Studio-Vorgaben für Anzeigen von{' '}
+            <span className="font-medium text-stark">{aktiv.anzeigename}</span>. Der
+            Standard-Abstand gilt für neue Anzeigen; einzelne Anzeigen übersteuern ihn
+            über das Zahnrad im Editor.
+          </>
+        ) : (
+          <>
+            Gilt für <span className="font-medium text-stark">{aktiv.anzeigename}</span>.
+            Gespeichert wird in diesem Profil; der nächste Lauf übernimmt die Werte.
+          </>
+        )}
       </p>
       {unternav}
 
@@ -537,7 +570,7 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         </p>
       )}
 
-      {diagnoseHinweis && (
+      {!istAnzeigen && diagnoseHinweis && (
         <p role="alert" className="hinweis hinweis-warn lesebreite mb-4">
           <AlertTriangle className="mb-1 inline h-4 w-4" /> Diagnose ist eingeschaltet.
           Die Artefakte enthalten Bildschirmfotos und das vollständige DOM einer angemeldeten
@@ -545,72 +578,83 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         </p>
       )}
 
-      <section className="karte mb-4 p-4">
-        <h2 className="flex items-center gap-2 font-medium text-stark">
-          <KeyRound className="h-5 w-5 text-primary-custom" />
-          Zugangsdaten kleinanzeigen.de
-        </h2>
-        <p className="lesebreite mt-1 text-sm text-leise">
-          Die Anmeldung an der Plattform steht nicht in der Bot-Konfiguration –
-          nur als Platzhalter. Hinterlegt wird sie unter Profile, verschlüsselt.
-        </p>
-        <p className="lesebreite mt-2 text-sm text-normal">
-          {zugang?.passwort_hinterlegt
-            ? `Zugang hinterlegt (${zugang.benutzername}).`
-            : 'Noch kein Zugang hinterlegt – Läufe können sich nicht anmelden.'}
-        </p>
-        <button
-          type="button"
-          onClick={() => aufZiel('einstellungen/profile')}
-          className="btn-ghost mt-3"
-        >
-          Zu den Profil-Zugängen
-        </button>
-      </section>
+      {!istAnzeigen && (
+        <section className="karte mb-4 p-4">
+          <h2 className="flex items-center gap-2 font-medium text-stark">
+            <KeyRound className="h-5 w-5 text-primary-custom" />
+            Zugangsdaten kleinanzeigen.de
+          </h2>
+          <p className="lesebreite mt-1 text-sm text-leise">
+            Die Anmeldung an der Plattform steht nicht in der Bot-Konfiguration –
+            nur als Platzhalter. Hinterlegt wird sie unter Profile, verschlüsselt.
+          </p>
+          <p className="lesebreite mt-2 text-sm text-normal">
+            {zugang?.passwort_hinterlegt
+              ? `Zugang hinterlegt (${zugang.benutzername}).`
+              : 'Noch kein Zugang hinterlegt – Läufe können sich nicht anmelden.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => aufZiel('einstellungen/profile')}
+            className="btn-ghost mt-3"
+          >
+            Zu den Profil-Zugängen
+          </button>
+        </section>
+      )}
 
-      <TaeglicherAbgleich profil={aktiv.slug} />
+      {!istAnzeigen && <TaeglicherAbgleich profil={aktiv.slug} />}
 
-      <SicherungAbschnitt profil={aktiv.slug} />
+      {!istAnzeigen && <SicherungAbschnitt profil={aktiv.slug} />}
 
       {/* Suchzeile über den Gruppen (AP-2.19). Der Bot-Reiter führt gut vier
           Dutzend Felder in zehn Gruppen; wer eine Zeitgrenze sucht, soll nicht
-          scrollen, sondern tippen. */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {/* `basis-full` unter sm: neben dem Klappknopf blieb dem Suchfeld auf
-            375 px so wenig übrig, dass der Platzhalter nach „Einstellung suc"
-            abriss. */}
-        <label className="relative block min-w-0 flex-1 basis-full sm:basis-auto">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
-          <span className="sr-only">Einstellungen durchsuchen</span>
-          <input
-            type="search"
-            value={suche}
-            onChange={e => setSuche(e.target.value)}
-            placeholder="Einstellung oder Beschreibung suchen"
-            className="feld py-2 pl-9 pr-3"
-          />
-        </label>
-        {!sucheAktiv && (
-          <button
-            type="button"
-            onClick={() => alleKlappen(!alleOffen)}
-            className="btn-ghost flex-shrink-0"
-          >
-            {alleOffen
-              ? <><ChevronsDownUp className="h-4 w-4" aria-hidden /> Alle zuklappen</>
-              : <><ChevronsUpDown className="h-4 w-4" aria-hidden /> Alle aufklappen</>}
-          </button>
-        )}
-      </div>
+          scrollen, sondern tippen. Der Reiter „Anzeigen" hat nur eine Gruppe -
+          dort braucht es weder Suche noch Alle-auf/zu. */}
+      {!istAnzeigen && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {/* `basis-full` unter sm: neben dem Klappknopf blieb dem Suchfeld auf
+              375 px so wenig übrig, dass der Platzhalter nach „Einstellung suc"
+              abriss. */}
+          <label className="relative block min-w-0 flex-1 basis-full sm:basis-auto">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
+            <span className="sr-only">Einstellungen durchsuchen</span>
+            <input
+              type="search"
+              value={suche}
+              onChange={e => setSuche(e.target.value)}
+              placeholder="Einstellung oder Beschreibung suchen"
+              className="feld py-2 pl-9 pr-3"
+            />
+          </label>
+          {!sucheAktiv && (
+            <button
+              type="button"
+              onClick={() => alleKlappen(!alleOffen)}
+              className="btn-ghost flex-shrink-0"
+            >
+              {alleOffen
+                ? <><ChevronsDownUp className="h-4 w-4" aria-hidden /> Alle zuklappen</>
+                : <><ChevronsUpDown className="h-4 w-4" aria-hidden /> Alle aufklappen</>}
+            </button>
+          )}
+        </div>
+      )}
 
-      <p className="mb-2 text-xs text-leise">
-        {sucheAktiv
-          ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
-          : `${felderGesamt} Einstellungen in ${gruppen.length} Gruppen`}
-      </p>
+      {!istAnzeigen && (
+        <p className="mb-2 text-xs text-leise">
+          {sucheAktiv
+            ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
+            : `${felderGesamt} Einstellungen in ${reiterGruppen.length} Gruppen`}
+        </p>
+      )}
 
       {sichtbareGruppen.length === 0 ? (
-        <p className="leer">Keine Einstellung passt zu „{suche.trim()}".</p>
+        <p className="leer">
+          {sucheAktiv
+            ? `Keine Einstellung passt zu „${suche.trim()}".`
+            : 'Für diesen Bereich sind keine Einstellungen verfügbar.'}
+        </p>
       ) : (
         <div className="space-y-3">
           {sichtbareGruppen.map(({ gruppe, felder }) => (
@@ -623,13 +667,13 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
               offen={offeneGruppen[gruppe.id] ?? !gruppe.eingeklappt}
               aufOffen={offen => setOffeneGruppen(vorher => ({ ...vorher, [gruppe.id]: offen }))}
               geaendert={geaendertIn(gruppe)}
-              ohneKlapp={sucheAktiv}
+              ohneKlapp={sucheAktiv || istAnzeigen}
             />
           ))}
         </div>
       )}
 
-      <KiHinweis aufZiel={aufZiel} />
+      {!istAnzeigen && <KiHinweis aufZiel={aufZiel} />}
 
       {/* Dieselbe feste Leiste wie im Anzeigeneditor (AP-2.15/2.19): innen auf
           `.seite`-Breite, damit Speichern mit der rechten Kante der Karten

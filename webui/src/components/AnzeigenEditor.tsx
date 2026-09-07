@@ -4,6 +4,11 @@
 // Anzeigeneditor (AP-2.5).
 // UI-Anpassung 2026-09-04: kompakter Feldfluss und optimierte responsive Ordnung.
 // UI-Anpassung 2026-09-05: Plattform-Linkmenü und dichterer Kopfbereich.
+// UI-Anpassung 2026-09-07: Beschriftung im Feld (Float-Label), Euro-Zeichen im
+//   Preisfeld, Preistyp direkt beim Preis. „Weitere Optionen" aufgelöst: Kontakt
+//   ans Ende von „Allgemein"; Aktiv und Abstand zur Neueinstellung hinter das
+//   Zahnrad (Studio-Einstellungen dieser Anzeige) - „Anzeige bearbeiten" zeigt
+//   sonst nur, was von kleinanzeigen.de kommt.
 //
 // Die Grenzen kommen aus dem Upstream-Schema (`schemas/ad.schema.json`) und
 // stehen hier als Konstanten: Titel 10 bis 65 Zeichen, die Aufzählungen für
@@ -17,14 +22,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, ChevronDown, Copy, ExternalLink, Eye,
-  Pencil, RefreshCw, Save, Trash2,
+  ArrowLeft, ArrowUpFromLine, BookmarkPlus, Check, Copy, ExternalLink, Eye,
+  Pencil, RefreshCw, Save, Settings, Trash2,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { AnzeigeInhalt } from '../types';
 import { titelFuerAnzeige } from '../titel';
 import type { Meldung } from '../context/meldungenKontext';
 import { useMeldungenQuelle } from '../context/useMeldungen';
+import { AnzeigeEinstellungenDialog } from './AnzeigeEinstellungenDialog';
 import { BilderVerwaltung } from './BilderVerwaltung';
 import { HochladenDialog } from './HochladenDialog';
 import { KategorieWahl } from './KategorieWahl';
@@ -167,9 +173,10 @@ export function AnzeigenEditor({
   const [plattformMenueOffen, setPlattformMenueOffen] = useState(false);
   const plattformMenueRef = useRef<HTMLDivElement>(null);
   const [versandAuswahlGueltig, setVersandAuswahlGueltig] = useState(true);
-  // Seltener gebrauchte Felder liegen eingeklappt (Mockup v4): mehr Formular
-  // passt so above the fold.
-  const [weitereOffen, setWeitereOffen] = useState(false);
+  // Studio-eigene Felder dieser Anzeige (Aktiv, Abstand zur Neueinstellung)
+  // liegen hinter dem Zahnrad - „Anzeige bearbeiten" zeigt sonst nur, was von
+  // kleinanzeigen.de kommt.
+  const [einstellungenOffen, setEinstellungenOffen] = useState(false);
 
   const laden = useCallback(async () => {
     setFehler(null);
@@ -506,6 +513,17 @@ export function AnzeigenEditor({
                 Anzeige ansehen
               </button>
             )}
+            {bearbeitbar && (
+              <button
+                type="button"
+                onClick={() => setEinstellungenOffen(true)}
+                aria-label="Studio-Einstellungen dieser Anzeige"
+                title="Studio-Einstellungen dieser Anzeige"
+                className="btn-icon"
+              >
+                <Settings className="h-4 w-4" aria-hidden />
+              </button>
+            )}
             {inhalt.kopf.id !== null && (
               <button
                 type="button"
@@ -609,6 +627,18 @@ export function AnzeigenEditor({
         />
       )}
 
+      {einstellungenOffen && (
+        <AnzeigeEinstellungenDialog
+          aktiv={Boolean(felder.active)}
+          intervall={typeof felder.republication_interval === 'number'
+            ? felder.republication_interval
+            : null}
+          bearbeitbar={bearbeitbar}
+          aufAenderung={(feld, wert) => setzen(feld, wert)}
+          aufSchliessen={() => setEinstellungenOffen(false)}
+        />
+      )}
+
       {/* Gemeinsamer Editor für Ansicht und Bearbeitung: links die Felder und
           Preis/Versand, rechts die Bilder. Auf schmalen Breiten bleibt die
           Reihenfolge Titel → Art/Kategorie → Beschreibung erhalten. */}
@@ -617,22 +647,27 @@ export function AnzeigenEditor({
           <section className="karte editor-karte">
             <h2 className="karte-kopf">Allgemein</h2>
 
+            {/* Beschriftung im Feld statt als Kopfzeile darüber (kleinanzeigen.de-
+                Stil): echte Textfelder bekommen ein Schwebe-Label, Art und
+                Kategorie eine dauerhaft kleine Beschriftung im Rahmen. */}
             <div className="editor-allgemein-kopf">
-              <label className="editor-titel-feld block">
-                <span className="beschriftung">Titel</span>
+              <div className="editor-titel-feld feld-float">
                 <input
+                  id="editor-titel"
                   type="text"
+                  placeholder=" "
                   value={titel}
                   maxLength={TITEL_MAX}
                   aria-describedby="titel-hinweis"
                   readOnly={!bearbeitbar}
                   aria-invalid={titelUngueltig || undefined}
                   onChange={e => setzen('title', e.target.value)}
-                  className="feld mt-1"
+                  className="feld"
                   style={titelUngueltig
                     ? { borderColor: 'var(--status-fehler)' }
                     : undefined}
                 />
+                <label htmlFor="editor-titel" className="feld-float-label">Titel</label>
                 <span
                   id="titel-hinweis"
                   className={'mt-1 block text-xs ' + (titelUngueltig ? 'text-red-700' : 'text-leise')}
@@ -643,19 +678,21 @@ export function AnzeigenEditor({
                     ? ' – ' + (titel.length - TITEL_MAX) + ' zu viel. Kürzen, sonst weist kleinanzeigen.de die Anzeige ab.'
                     : ''}
                 </span>
-              </label>
+              </div>
 
-              <label className="editor-art-feld block">
-                <span className="beschriftung">Art</span>
+              <div className="editor-art-feld feld-minilabel">
+                <span className="feld-minilabel-text">Art</span>
                 <select
+                  id="editor-art"
+                  aria-label="Art"
                   value={text(felder.type) || 'OFFER'}
                   disabled={!bearbeitbar}
                   onChange={e => setzen('type', e.target.value)}
-                  className="feld feld-auswahl mt-1"
+                  className="feld feld-auswahl"
                 >
                   {ARTEN.map(a => <option key={a.wert} value={a.wert}>{a.label}</option>)}
                 </select>
-              </label>
+              </div>
 
               <KategorieWahl
                 kompakt
@@ -665,20 +702,22 @@ export function AnzeigenEditor({
               />
             </div>
 
-            <label className="mt-4 block">
-              <span className="beschriftung">Beschreibung</span>
+            <div className="feld-float feld-float-area mt-5">
               <textarea
+                id="editor-beschreibung"
                 rows={6}
+                placeholder=" "
                 maxLength={BESCHREIBUNG_MAX}
                 value={text(felder.description)}
                 readOnly={!bearbeitbar}
                 onChange={e => setzen('description', e.target.value)}
-                className="feld editor-beschreibung mt-1"
+                className="feld editor-beschreibung"
               />
+              <label htmlFor="editor-beschreibung" className="feld-float-label">Beschreibung</label>
               <span className="mt-1 block text-right text-xs text-leise">
                 {text(felder.description).length.toLocaleString('de-DE')} / {BESCHREIBUNG_MAX.toLocaleString('de-DE')}
               </span>
-            </label>
+            </div>
 
             <div className="editor-trenner" />
 
@@ -708,22 +747,40 @@ export function AnzeigenEditor({
                 />
               </div>
 
-              <div className="editor-preisfeld">
-                <h3 className="karte-kopf mb-2">Preis</h3>
-                <label className="block">
-                  <span className="beschriftung">Preis (€)</span>
+              <div className="editor-preisfeld editor-preisfeld-reihe">
+                <div className="feld-float feld-euro">
+                  <span className="feld-euro-zeichen" aria-hidden>€</span>
                   <input
+                    id="editor-preis"
                     type="number"
                     step="1"
                     min="0"
+                    placeholder=" "
                     inputMode="decimal"
                     value={text(felder.price)}
                     readOnly={!bearbeitbar}
                     onChange={e => setzen('price', zahlOderNull(e.target.value))}
-                    className="feld feld-zahl mt-1"
+                    className="feld feld-zahl"
                   />
-                </label>
-                <label className="editor-direktkauf mt-4 flex items-start gap-2 text-sm text-normal">
+                  <label htmlFor="editor-preis" className="feld-float-label">Preis</label>
+                </div>
+
+                {/* Preistyp folgt direkt auf den Preis - er gehört fachlich dazu. */}
+                <div className="feld-minilabel">
+                  <span className="feld-minilabel-text">Preistyp</span>
+                  <select
+                    id="editor-preistyp"
+                    aria-label="Preistyp"
+                    value={text(felder.price_type) || 'FIXED'}
+                    disabled={!bearbeitbar}
+                    onChange={e => setzen('price_type', e.target.value)}
+                    className="feld feld-auswahl"
+                  >
+                    {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
+                  </select>
+                </div>
+
+                <label className="editor-direktkauf flex items-start gap-2 text-sm text-normal">
                   <input
                     type="checkbox"
                     checked={Boolean(felder.sell_directly)}
@@ -757,103 +814,46 @@ export function AnzeigenEditor({
                 </p>
               </div>
             )}
-          </section>
 
-          <section className="karte">
-            <button
-              type="button"
-              onClick={() => setWeitereOffen(o => !o)}
-              aria-expanded={weitereOffen}
-              className="flex w-full items-center justify-between gap-2 p-4 text-left"
-            >
-              <span className="karte-kopf mb-0">Weitere Optionen</span>
-              <ChevronDown
-                className={'h-4 w-4 flex-shrink-0 text-leise transition-transform '
-                  + (weitereOffen ? 'rotate-180' : '')}
-                aria-hidden
-              />
-            </button>
-
-            {weitereOffen && (
-              <div
-                className="space-y-4 border-t px-4 pb-4 pt-4"
-                style={{ borderColor: 'var(--karte-rand)' }}
-              >
-                <label className="block sm:max-w-xs">
-                  <span className="beschriftung">Preistyp</span>
-                  <select
-                    value={text(felder.price_type) || 'FIXED'}
-                    disabled={!bearbeitbar}
-                    onChange={e => setzen('price_type', e.target.value)}
+            {/* Kontakt steht am Ende von „Allgemein" - er kommt aus der Anzeige.
+                „Weitere Optionen" gibt es nicht mehr: Preistyp liegt beim Preis,
+                Aktiv und der Abstand zur Neueinstellung hinter dem Zahnrad. */}
+            <div className="editor-trenner" />
+            <div>
+              <p className="beschriftung mb-1">Kontakt</p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="block">
+                  <span className="text-xs text-leise">Name</span>
+                  <input
+                    type="text"
+                    value={text(kontakt.name)}
+                    readOnly={!bearbeitbar}
+                    onChange={e => kontaktSetzen('name', e.target.value)}
                     className="feld mt-1"
-                  >
-                    {PREISTYPEN.map(p => <option key={p.wert} value={p.wert}>{p.label}</option>)}
-                  </select>
+                  />
                 </label>
-
-                <div>
-                  <p className="beschriftung mb-1">Kontakt</p>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <label className="block">
-                      <span className="text-xs text-leise">Name</span>
-                      <input
-                        type="text"
-                        value={text(kontakt.name)}
-                        readOnly={!bearbeitbar}
-                        onChange={e => kontaktSetzen('name', e.target.value)}
-                        className="feld mt-1"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-leise">PLZ</span>
-                      <input
-                        type="text"
-                        value={text(kontakt.zipcode)}
-                        readOnly={!bearbeitbar}
-                        onChange={e => kontaktSetzen('zipcode', e.target.value)}
-                        className="feld mt-1"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-leise">Ort</span>
-                      <input
-                        type="text"
-                        value={text(kontakt.location)}
-                        readOnly={!bearbeitbar}
-                        onChange={e => kontaktSetzen('location', e.target.value)}
-                        className="feld mt-1"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(felder.active)}
-                      disabled={!bearbeitbar}
-                      onChange={e => setzen('active', e.target.checked)}
-                      className="h-4 w-4"
-                    />
-                    <span className="text-sm text-normal">Aktiv</span>
-                  </label>
-
-                  <label className="mt-3 block sm:max-w-xs">
-                    <span className="beschriftung">Abstand zur Neueinstellung (Tage)</span>
-                    <input
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={text(felder.republication_interval)}
-                      readOnly={!bearbeitbar}
-                      onChange={e => setzen('republication_interval', zahlOderNull(e.target.value))}
-                      className="feld mt-1"
-                    />
-                  </label>
-                </div>
+                <label className="block">
+                  <span className="text-xs text-leise">PLZ</span>
+                  <input
+                    type="text"
+                    value={text(kontakt.zipcode)}
+                    readOnly={!bearbeitbar}
+                    onChange={e => kontaktSetzen('zipcode', e.target.value)}
+                    className="feld mt-1"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-leise">Ort</span>
+                  <input
+                    type="text"
+                    value={text(kontakt.location)}
+                    readOnly={!bearbeitbar}
+                    onChange={e => kontaktSetzen('location', e.target.value)}
+                    className="feld mt-1"
+                  />
+                </label>
               </div>
-            )}
+            </div>
           </section>
         </div>
 

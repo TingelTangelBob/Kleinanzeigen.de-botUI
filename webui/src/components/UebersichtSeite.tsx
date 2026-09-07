@@ -8,7 +8,7 @@
 // Fachseiten. Eine Übersicht, die alles zeigt, zeigt nichts.
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowRight, KeyRound } from 'lucide-react';
+import { ArrowRight, KeyRound, Settings } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
 import { useProfil } from '../context/useProfil';
@@ -169,6 +169,18 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
           <h1 className="sr-only">Übersicht</h1>
           <p className="seite-beschrieb">{aktiv.anzeigename}</p>
         </div>
+        {/* Studio-Einstellungen für Anzeigen (z. B. der Standard-Abstand zur
+            Neueinstellung). Nicht die Bot-Konfiguration - die liegt unter
+            Einstellungen. */}
+        <button
+          type="button"
+          onClick={() => aufZiel('einstellungen/anzeigen')}
+          aria-label="Anzeigen-Einstellungen"
+          title="Anzeigen-Einstellungen"
+          className="btn-icon flex-shrink-0"
+        >
+          <Settings className="h-4 w-4" aria-hidden />
+        </button>
       </div>
 
       {fehler && (

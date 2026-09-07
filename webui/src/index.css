@@ -599,6 +599,117 @@ html:has(#app-shell[data-theme='dark']) {
     max-width: 16rem;
   }
 
+  /*
+   * Beschriftung im Feld, wie bei kleinanzeigen.de.
+   *
+   * `.feld-float` legt das Label über das Eingabefeld. Solange nichts drinsteht,
+   * liegt es wie ein Platzhalter mittig; bei Fokus oder Inhalt wandert es klein
+   * an die obere Kante und verdeckt dort den Rahmen mit einem Kartenfarb-Chip.
+   * Voraussetzung im Markup: `<input class="feld" placeholder=" ">` und danach
+   * ein `<label class="feld-float-label">` als direktes Geschwister, damit der
+   * `+`-Selektor greift. So spart die Maske die Kopfzeile über jedem Feld.
+   *
+   * `.feld-minilabel` ist die Variante ohne Animation für Auswahl und
+   * Eigenbau-Felder (Art, Kategorie): das Label steht dort dauerhaft klein oben.
+   */
+  .feld-float,
+  .feld-minilabel {
+    position: relative;
+    display: block;
+  }
+  .feld-float > .feld {
+    min-height: 44px;
+  }
+  .feld-float > .feld::placeholder {
+    color: transparent;
+  }
+  .feld-float-label {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    transform-origin: left center;
+    padding: 0 0.3rem;
+    background: var(--karte);
+    color: var(--text-schwach);
+    font-size: 0.875rem;
+    line-height: 1;
+    pointer-events: none;
+    transition: transform 0.12s ease, color 0.12s ease, top 0.12s ease;
+  }
+  .feld-float > .feld:focus + .feld-float-label,
+  .feld-float > .feld:not(:placeholder-shown) + .feld-float-label {
+    top: 0;
+    transform: translateY(-50%) scale(0.8);
+    color: var(--text-stark);
+  }
+  .feld-float > .feld:focus + .feld-float-label {
+    color: var(--primary-color);
+  }
+  /* Mehrzeilig: im Ruhezustand oben, nicht mittig. */
+  .feld-float-area > .feld-float-label {
+    top: 0.7rem;
+    transform: none;
+  }
+  .feld-float-area > .feld:focus + .feld-float-label,
+  .feld-float-area > .feld:not(:placeholder-shown) + .feld-float-label {
+    top: 0;
+    transform: translateY(-50%) scale(0.8);
+  }
+
+  .feld-minilabel > .feld-minilabel-text {
+    position: absolute;
+    left: 0.5rem;
+    top: 0;
+    transform: translateY(-50%) scale(0.8);
+    transform-origin: left center;
+    z-index: 1;
+    padding: 0 0.3rem;
+    background: var(--karte);
+    color: var(--text-stark);
+    font-size: 0.875rem;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .feld-minilabel > .feld,
+  .feld-minilabel > select.feld,
+  .feld-minilabel > .kategorie-wert-feld {
+    min-height: 44px;
+  }
+
+  /*
+   * Euro-Zeichen im Preisfeld statt „(€)" in der Beschriftung. Das Präfix sitzt
+   * fest im Feld, der Text beginnt dahinter.
+   */
+  .feld-euro {
+    position: relative;
+  }
+  .feld-euro > .feld-euro-zeichen {
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-schwach);
+    font-size: 0.875rem;
+    pointer-events: none;
+  }
+  .feld-euro > .feld {
+    padding-left: 1.7rem;
+  }
+  /* Im Ruhezustand steht das Label hinter dem Euro-Zeichen; schwebt es hoch,
+     rückt es an die Kante zurück. */
+  .feld-euro.feld-float > .feld-float-label {
+    left: 1.7rem;
+  }
+  .feld-euro.feld-float > .feld:focus + .feld-float-label,
+  .feld-euro.feld-float > .feld:not(:placeholder-shown) + .feld-float-label {
+    left: 0.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .feld-float-label { transition: none; }
+  }
+
   .btn-primaer,
   .btn-ghost,
   .btn-leise,
@@ -739,7 +850,8 @@ html:has(#app-shell[data-theme='dark']) {
    */
   .vp-chip {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
+    line-height: 1.1;
     gap: 0.4rem;
     min-height: 36px;
     border-radius: var(--radius-kontrolle);
@@ -1229,8 +1341,17 @@ html:has(#app-shell[data-theme='dark']) {
   .editor-allgemein-kopf {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 0.75rem 1rem;
+    gap: 0.9rem 1rem;
+    /* Platz für die kleinen Beschriftungen, die oben aus dem Feldrahmen ragen. */
+    padding-top: 0.5rem;
     align-items: start;
+  }
+  /* Alle drei Felder der Kopfzeile tragen die Beschriftung im Feld und sind
+     jetzt gleich hoch und auf einer Grundlinie. */
+  .editor-allgemein-kopf .feld,
+  .editor-allgemein-kopf select.feld,
+  .editor-allgemein-kopf .kategorie-wert-feld {
+    min-height: 44px;
   }
   .editor-titel-feld,
   .editor-art-feld,
@@ -1243,6 +1364,15 @@ html:has(#app-shell[data-theme='dark']) {
     grid-template-columns: minmax(0, 1fr) minmax(10rem, 12rem);
     gap: 1rem 1.5rem;
     align-items: start;
+  }
+  .editor-preisfeld {
+    /* Platz für die Beschriftung, die aus dem Preisfeld-Rahmen ragt. */
+    padding-top: 0.5rem;
+  }
+  .editor-preisfeld-reihe {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
   }
   .kategorie-wert-feld {
     display: flex;

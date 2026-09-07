@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Versandart und Versandpaket auswählen (AP-2.7, AP-2.23, AP-2.40).
+// UI-Anpassung 2026-09-07: Optionsnamen ohne Unterstrich anzeigen; Chip-Inhalt
+//   vertikal zentriert (siehe `.vp-chip` in index.css).
 //
 // Die Oberfläche führt bewusst in zwei Schritten durch die Auswahl: zuerst
 // eine Paketgröße oder Abholung, danach die konkreten Optionen dieser Größe.
@@ -77,6 +79,15 @@ interface Props {
 function preisText(preis: number | null): string {
   if (preis === null) return '';
   return preis.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+}
+
+/**
+ * Anzeigename einer Versandoption ohne Unterstrich (`Hermes_Päckchen` →
+ * `Hermes Päckchen`). Der rohe Katalogwert (`paket.wert`) bleibt überall sonst
+ * unverändert - er ist der Schlüssel gegen die Bot-Auswahl.
+ */
+function anzeigeName(wert: string): string {
+  return wert.replace(/_/g, ' ');
 }
 
 export function VersandpaketWahl({
@@ -263,11 +274,12 @@ export function VersandpaketWahl({
                     key={paket.wert}
                     type="button"
                     aria-pressed={aktiv}
+                    aria-label={anzeigeName(paket.wert)}
                     disabled={!bearbeitbar}
                     onClick={() => umschalten(paket.wert)}
                     className={`vp-chip ${aktiv ? 'vp-chip-aktiv' : ''}`}
                   >
-                    <span>{paket.wert}</span>
+                    <span>{anzeigeName(paket.wert)}</span>
                     {paket.preis !== null && (
                       <span className="vp-chip-preis">{preisText(paket.preis)}</span>
                     )}

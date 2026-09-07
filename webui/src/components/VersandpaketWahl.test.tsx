@@ -91,14 +91,15 @@ describe('VersandpaketWahl', () => {
     );
 
     await screen.findByText(/Preise live von Kleinanzeigen/);
-    expect(screen.queryByText('Hermes_Päckchen')).toBeNull();
+    // Angezeigt wird der Name ohne Unterstrich; der rohe Katalogwert bleibt.
+    expect(screen.queryByText('Hermes Päckchen')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Klein' }));
     expect(aufVersandart).toHaveBeenCalledWith('SHIPPING');
     expect(screen.getByText('Optionen für Klein')).toBeDefined();
-    expect(screen.getByText('Hermes_Päckchen')).toBeDefined();
+    expect(screen.getByText('Hermes Päckchen')).toBeDefined();
 
-    fireEvent.click(screen.getByRole('button', { name: /Hermes_Päckchen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Hermes Päckchen/ }));
     expect(aufAenderung).toHaveBeenCalledWith(['Hermes_Päckchen']);
   });
 
@@ -139,7 +140,7 @@ describe('VersandpaketWahl', () => {
     const klein = screen.getByRole('button', { name: 'Klein' });
     fireEvent.click(klein);
     expect(klein.querySelector('svg')).toBeNull();
-    expect(screen.getByRole('button', { name: /DHL_2/ }).querySelector('svg')).toBeNull();
+    expect(screen.getByRole('button', { name: /DHL 2/ }).querySelector('svg')).toBeNull();
   });
 
   it('setzt Abholung und schaltet Direkt kaufen dabei aus', async () => {
@@ -160,7 +161,7 @@ describe('VersandpaketWahl', () => {
       />,
     );
 
-    await screen.findByText('Hermes_Päckchen');
+    await screen.findByText('Hermes Päckchen');
     fireEvent.click(screen.getByRole('button', { name: 'Abholung' }));
     expect(aufVersandart).toHaveBeenCalledWith('PICKUP');
     expect(aufDirektKaufen).toHaveBeenCalledWith(false);

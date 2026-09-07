@@ -316,6 +316,9 @@ export interface AbgleichStand {
   zugang_vorhanden: boolean;
 }
 
+/** Stand des automatischen kostenlosen Verlängerns (AP-3.15). Gleiche Form wie Abgleich. */
+export type VerlaengernStand = AbgleichStand;
+
 export interface AbgleichMeldung {
   id: number;
   profil: string;

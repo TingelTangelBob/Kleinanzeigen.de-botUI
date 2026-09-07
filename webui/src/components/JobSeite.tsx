@@ -24,7 +24,7 @@ const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean
   { id: 'diagnose', label: 'Diagnose', hinweis: 'Prüft die Browserverbindung.', schreibend: false },
   { id: 'download', label: 'Herunterladen', hinweis: 'Lädt die eigenen Anzeigen. Meldet sich an.', schreibend: false },
   { id: 'publish', label: 'Veröffentlichen', hinweis: 'Stellt Anzeigen auf kleinanzeigen.de ein.', schreibend: true },
-  { id: 'extend', label: 'Verlängern', hinweis: 'Verlängert Anzeigen im Acht-Tage-Fenster.', schreibend: true },
+  { id: 'extend', label: 'Verlängern', hinweis: 'Kostenlos +60 Tage im Acht-Tage-Fenster. Kein Hochschieben, kein Paid-Boost.', schreibend: true },
 ];
 
 const ZUSTAND_TEXT: Record<JobZustand, { text: string; klasse: string }> = {
@@ -134,8 +134,8 @@ export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number)
         „Veröffentlichen" stellt <span className="font-medium">alle</span> lokal
         angelegten Anzeigen ein, die noch nicht online sind – einzeln geht das im
         Editor über „Veröffentlichen", und nur dort siehst du vorher, welche es trifft.
-        „Verlängern" findet derzeit gar keine Anzeigen: Heruntergeladene liegen in
-        einem Ordner, den der Lauf nicht durchsucht.
+        „Verlängern" trifft die heruntergeladenen Anzeigen und verlängert nur
+        kostenlos (+60 Tage) – ohne Hochschieben und ohne Paid-Boost.
       </Hinweis>
 
       {fehler && (

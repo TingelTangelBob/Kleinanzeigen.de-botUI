@@ -7,7 +7,7 @@
 // nicht an zwanzig Orten einzeln behandelt werden müssen.
 
 import type {
-  AbgleichMeldung, AbgleichStand, ArchivErgebnis, ArchivVorschau,
+  AbgleichMeldung, AbgleichStand, VerlaengernStand, ArchivErgebnis, ArchivVorschau,
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Einstellungen, Gesundheit, Job, Kategorie, LogZeile,
   KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
   Profil, SpeichernAusgabe, Vergleich, Versandpaket, Vorlage, ZugangStatus,
@@ -346,6 +346,16 @@ export const api = {
       }),
     /** Befunde aller Profile – die Glocke gehört keinem einzelnen Konto. */
     meldungen: () => anfrage<AbgleichMeldung[]>('/abgleich/meldungen'),
+  },
+
+  /** Automatisches kostenloses Verlängern (AP-3.15). Vorgabe aus. */
+  verlaengern: {
+    stand: (profil: string) =>
+      anfrage<VerlaengernStand>(`/verlaengern?profil=${encodeURIComponent(profil)}`),
+    schalten: (profil: string, eingeschaltet: boolean) =>
+      anfrage<VerlaengernStand>(`/verlaengern?profil=${encodeURIComponent(profil)}`, {
+        method: 'PUT', ...json({ eingeschaltet }),
+      }),
   },
 
   /** Sicherung, Export und Import eines Profils (AP-3.6). */

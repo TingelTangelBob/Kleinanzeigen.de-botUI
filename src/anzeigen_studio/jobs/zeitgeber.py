@@ -2,7 +2,7 @@
 # SPDX-ArtifactOfProjectHomePage: https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Zeitgeber fuer den taeglichen Abgleich (AP-3.12).
+# Zeitgeber fuer taeglichen Abgleich (AP-3.12) und Auto-Verlaengern (AP-3.15).
 #
 # Das hier ist der einzige Ort im Studio, an dem ein Lauf gegen das echte Konto
 # OHNE einen Knopfdruck entsteht. Deshalb gelten fuer ihn engere Regeln als fuer
@@ -36,7 +36,8 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 
-from anzeigen_studio.bestand import plattform_reihenfolge, tagesabgleich
+from anzeigen_studio.bestand import plattform_reihenfolge, tagesabgleich, verlaengern
+from anzeigen_studio.jobs.warteschlange import GLOB_HERUNTERGELADEN
 from anzeigen_studio.core import db, zugang
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.jobs import speicher
@@ -144,6 +145,7 @@ class Zeitgeber:
     async def _profil(self, conn: sqlite3.Connection, profil: profile_dienst.Profil) -> None:
         wurzel = profile_dienst.pfade_fuer(self._settings.profiles_dir, profil.slug).wurzel
         zustand = tagesabgleich.lesen(conn, profil.id)
+        zustand_v = verlaengern.lesen(conn, profil.id)
 
         # Ein offener Lauf hat Vorrang: Erst auswerten, dann darf ein neuer
         # entstehen. Sonst liefe der naechste Tag los, waehrend der Vergleich
@@ -156,51 +158,121 @@ class Zeitgeber:
             self._reihenfolge_auswerten(conn, profil, zustand)
             return
 
-        if not zustand.eingeschaltet:
+        if zustand_v.job_id is not None:
+            self._verlaengern_auswerten(conn, profil, zustand_v)
+            return
+
+        # Taeglicher Abgleich (AP-3.12) - eigener Schalter, Vorgabe aus.
+        if zustand.eingeschaltet:
+            status = zugang.status(conn, profil.id)
+            if status is None or not status.passwort_hinterlegt:
+                # Kein Lauf, aber auch kein Schweigen: Wer den Schalter umgelegt
+                # hat und nie eine Meldung sieht, soll unter Einstellungen den
+                # Grund lesen koennen.
+                with db.transaction(conn):
+                    tagesabgleich.hinweis_vermerken(
+                        conn, profil.id,
+                        "Kein Abgleich: Für dieses Profil sind keine Zugangsdaten hinterlegt.",
+                    )
+            elif zustand.letzter_tag != tagesabgleich.heutiger_tag():
+                # Der tägliche Abgleich hat Vorrang, wenn beides fällig ist. So
+                # bleibt das bisherige Startverhalten erhalten und die tägliche
+                # Bestandsprüfung wird nicht durch den kleinen Zwischenabgleich
+                # verdrängt. Auto-Verlängern wartet auf den nächsten Tick.
+                vorher = tagesabgleich.stand_aufnehmen(wurzel)
+
+                job_id = await self._ws.einreihen(
+                    conn, profil.id, "download", [], profil_verzeichnis = wurzel,
+                )
+                with db.transaction(conn):
+                    tagesabgleich.lauf_vermerken(
+                        conn, profil.id,
+                        tag = tagesabgleich.heutiger_tag(), job_id = job_id, vorher = vorher,
+                    )
+                LOG.info("Täglicher Abgleich für %s eingereiht (Lauf %d)", profil.slug, job_id)
+                return
+            elif plattform_reihenfolge.faellig(
+                zustand.reihenfolge_letzter_lauf_am,
+                intervall_s = REIHENFOLGE_INTERVAL_S,
+            ):
+                # Die Reihenfolge ist eine kleine, schreibgeschützte JSON-Abfrage.
+                # Sie läuft stündlich, aber nur nach derselben ausdrücklichen
+                # Freigabe wie der tägliche Abgleich und immer durch die normale
+                # Warteschlange.
+                job_id = await self._ws.einreihen(
+                    conn, profil.id, "sync-order", [], profil_verzeichnis = wurzel,
+                )
+                with db.transaction(conn):
+                    tagesabgleich.reihenfolge_lauf_vermerken(conn, profil.id, job_id = job_id)
+                LOG.info(
+                    "Stündliche Plattform-Reihenfolge für %s eingereiht (Lauf %d)",
+                    profil.slug, job_id,
+                )
+                return
+
+        # Automatisches kostenloses Verlaengern (AP-3.15) - eigener Schalter,
+        # Vorgabe aus. Unabhaengig vom Abgleich; Free-only via Upstream-extend.
+        if not zustand_v.eingeschaltet:
             return
         status = zugang.status(conn, profil.id)
         if status is None or not status.passwort_hinterlegt:
-            # Kein Lauf, aber auch kein Schweigen: Wer den Schalter umgelegt
-            # hat und nie eine Meldung sieht, soll unter Einstellungen den
-            # Grund lesen koennen.
             with db.transaction(conn):
-                tagesabgleich.hinweis_vermerken(
+                verlaengern.hinweis_vermerken(
                     conn, profil.id,
-                    "Kein Abgleich: Für dieses Profil sind keine Zugangsdaten hinterlegt.",
+                    "Kein Verlängern: Für dieses Profil sind keine Zugangsdaten hinterlegt.",
+                )
+            return
+        if zustand_v.letzter_tag == verlaengern.heutiger_tag():
+            return
+
+        job_id = await self._ws.einreihen(
+            conn, profil.id, "extend", [],
+            profil_verzeichnis = wurzel,
+            anzeigen_glob = GLOB_HERUNTERGELADEN,
+        )
+        with db.transaction(conn):
+            verlaengern.lauf_vermerken(
+                conn, profil.id,
+                tag = verlaengern.heutiger_tag(), job_id = job_id,
+            )
+        LOG.info("Automatisches Verlängern für %s eingereiht (Lauf %d)", profil.slug, job_id)
+
+    def _verlaengern_auswerten(
+        self, conn: sqlite3.Connection, profil: profile_dienst.Profil,
+        zustand: verlaengern.Zustand,
+    ) -> None:
+        """Schliesst einen Auto-extend-Lauf ab und meldet Fehlschlaege."""
+        job = speicher.holen(conn, zustand.job_id) if zustand.job_id is not None else None
+        if job is None:
+            with db.transaction(conn):
+                verlaengern.ergebnis_vermerken(
+                    conn, profil.id, "Der eingereihte Verlängern-Lauf ist nicht mehr auffindbar.",
+                )
+            return
+        if job.laeuft_noch:
+            return
+
+        if job.zustand is not JobZustand.FERTIG:
+            text = (
+                f"Das automatische Verlängern für „{profil.anzeigename}“ endete als "
+                f"{job.zustand.value}. Das Protokoll steht unter Warteschlange, Lauf {job.id}."
+            )
+            with db.transaction(conn):
+                tagesabgleich.meldung_anlegen(
+                    conn, profil.id, art = "fehlschlag",
+                    titel = "Automatisches Verlängern nicht durchgelaufen", text = text,
+                )
+                verlaengern.ergebnis_vermerken(
+                    conn, profil.id, f"Lauf {job.id} endete als {job.zustand.value}.",
                 )
             return
 
-        if zustand.letzter_tag != tagesabgleich.heutiger_tag():
-            # Der tägliche Abgleich hat Vorrang, wenn beides fällig ist. So
-            # bleibt das bisherige Startverhalten erhalten und die tägliche
-            # Bestandsprüfung wird nicht durch den kleinen Zwischenabgleich
-            # verdrängt.
-            vorher = tagesabgleich.stand_aufnehmen(wurzel)
-
-            job_id = await self._ws.einreihen(
-                conn, profil.id, "download", [], profil_verzeichnis = wurzel,
+        with db.transaction(conn):
+            verlaengern.ergebnis_vermerken(
+                conn, profil.id,
+                "Kostenloses Verlängern durchgelaufen (+60 Tage, kein Hochschieben).",
             )
-            with db.transaction(conn):
-                tagesabgleich.lauf_vermerken(
-                    conn, profil.id,
-                    tag = tagesabgleich.heutiger_tag(), job_id = job_id, vorher = vorher,
-                )
-            LOG.info("Täglicher Abgleich für %s eingereiht (Lauf %d)", profil.slug, job_id)
-            return
-
-        # Die Reihenfolge ist eine kleine, schreibgeschützte JSON-Abfrage. Sie
-        # läuft stündlich, aber nur nach derselben ausdrücklichen Freigabe wie
-        # der tägliche Abgleich und immer durch die normale Warteschlange.
-        if plattform_reihenfolge.faellig(
-            zustand.reihenfolge_letzter_lauf_am,
-            intervall_s = REIHENFOLGE_INTERVAL_S,
-        ):
-            job_id = await self._ws.einreihen(
-                conn, profil.id, "sync-order", [], profil_verzeichnis = wurzel,
-            )
-            with db.transaction(conn):
-                tagesabgleich.reihenfolge_lauf_vermerken(conn, profil.id, job_id = job_id)
-            LOG.info("Stündliche Plattform-Reihenfolge für %s eingereiht (Lauf %d)", profil.slug, job_id)
+            tagesabgleich.aufraeumen(conn)
 
     def _reihenfolge_auswerten(
         self, conn: sqlite3.Connection, profil: profile_dienst.Profil,

@@ -16,6 +16,8 @@ const lesen = vi.fn();
 const zugang = vi.fn();
 const abgleichStand = vi.fn();
 const abgleichSchalten = vi.fn();
+const verlaengernStand = vi.fn();
+const verlaengernSchalten = vi.fn();
 const einstellungenSpeichern = vi.fn();
 
 vi.mock('../services/api', () => ({
@@ -36,6 +38,10 @@ vi.mock('../services/api', () => ({
     abgleich: {
       stand: (...a: unknown[]) => abgleichStand(...a),
       schalten: (...a: unknown[]) => abgleichSchalten(...a),
+    },
+    verlaengern: {
+      stand: (...a: unknown[]) => verlaengernStand(...a),
+      schalten: (...a: unknown[]) => verlaengernSchalten(...a),
     },
     archiv: {
       exportUrl: () => '/api/archiv/export',
@@ -105,6 +111,8 @@ beforeEach(() => {
   zugang.mockReset();
   abgleichStand.mockReset();
   abgleichSchalten.mockReset();
+  verlaengernStand.mockReset();
+  verlaengernSchalten.mockReset();
   einstellungenSpeichern.mockReset();
   zugang.mockResolvedValue({
     benutzername: 'a@b.c',
@@ -121,6 +129,24 @@ beforeEach(() => {
     zugang_vorhanden: true,
   });
   abgleichSchalten.mockResolvedValue({
+    profil: 'test',
+    eingeschaltet: true,
+    letzter_lauf_am: null,
+    letztes_ergebnis: null,
+    laeuft: false,
+    heute_gelaufen: false,
+    zugang_vorhanden: true,
+  });
+  verlaengernStand.mockResolvedValue({
+    profil: 'test',
+    eingeschaltet: false,
+    letzter_lauf_am: null,
+    letztes_ergebnis: null,
+    laeuft: false,
+    heute_gelaufen: false,
+    zugang_vorhanden: true,
+  });
+  verlaengernSchalten.mockResolvedValue({
     profil: 'test',
     eingeschaltet: true,
     letzter_lauf_am: null,
@@ -212,6 +238,21 @@ describe('EinstellungenSeite AP-2.47', () => {
     await waitFor(() => expect(abgleichSchalten).toHaveBeenCalledWith('test', true));
     expect(einstellungenSpeichern).not.toHaveBeenCalled();
   });
+
+
+  it('merkt Auto-Verlängern vor und speichert erst über die Speichern-Leiste (AP-3.15)', async () => {
+    lesen.mockResolvedValue({ profil: 'test', werte: {}, gruppen: [] });
+    render(<EinstellungenSeite abschnitt="bot" aufZiel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('Automatisch kostenlos verlängern')).toBeTruthy());
+
+    fireEvent.click(screen.getByLabelText('Automatisch kostenlos verlängern'));
+    expect(verlaengernSchalten).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(verlaengernSchalten).toHaveBeenCalledWith('test', true));
+  });
+
 
   it('setzt den Abgleich zusammen mit den übrigen Änderungen zurück', async () => {
     render(<EinstellungenSeite abschnitt="bot" aufZiel={vi.fn()} />);

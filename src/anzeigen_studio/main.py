@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
 from anzeigen_studio.api import abgleich as abgleich_api
+from anzeigen_studio.api import verlaengern as verlaengern_api
 from anzeigen_studio.api import archiv as archiv_api
 from anzeigen_studio.api import auth as auth_api
 from anzeigen_studio.api import bestand as bestand_api
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(katalog_api.router)
     app.include_router(einstellungen_api.router)
     app.include_router(abgleich_api.router)
+    app.include_router(verlaengern_api.router)
     app.include_router(archiv_api.router)
 
     missing = cfg.missing_for_production()

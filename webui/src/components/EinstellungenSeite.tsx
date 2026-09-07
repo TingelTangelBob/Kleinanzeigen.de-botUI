@@ -28,7 +28,7 @@ import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { useThema, type ThemaWahl } from '../hooks/useThema';
 import type { EinstellungsAbschnitt } from '../routing';
-import type { AbgleichStand, EinstellungsFeld, EinstellungsGruppe, ZugangStatus } from '../types';
+import type { AbgleichStand, EinstellungsFeld, EinstellungsGruppe, VerlaengernStand, ZugangStatus } from '../types';
 import { BrowsersichtSeite } from './BrowsersichtSeite';
 import { InfoTip } from './InfoTip';
 import { ProfilSeite } from './ProfilSeite';
@@ -36,6 +36,7 @@ import { SicherungAbschnitt } from './SicherungAbschnitt';
 
 const MIN_PASSWORTLAENGE = 12;
 const ABGLEICH_PFAD = 'abgleich.eingeschaltet';
+const VERLAENGERN_PFAD = 'verlaengern.eingeschaltet';
 
 // Gruppen, die zum Reiter „Anzeigen" gehören statt zu „Bot": Studio-Vorgaben
 // für Anzeigen (u. a. der Standard-Abstand zur Neueinstellung). Sie werden
@@ -320,6 +321,10 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   const [urspruenglicherAbgleich, setUrspruenglicherAbgleich] = useState<boolean | null>(null);
   const [abgleichLaedt, setAbgleichLaedt] = useState(true);
   const [abgleichFehler, setAbgleichFehler] = useState<string | null>(null);
+  const [verlaengernStand, setVerlaengernStand] = useState<VerlaengernStand | null>(null);
+  const [urspruenglichesVerlaengern, setUrspruenglichesVerlaengern] = useState<boolean | null>(null);
+  const [verlaengernLaedt, setVerlaengernLaedt] = useState(true);
+  const [verlaengernFehler, setVerlaengernFehler] = useState<string | null>(null);
   // AP-2.19: Suche, Klappzustand je Gruppe und die Pfade, die seit dem Laden
   // angefasst wurden. Letztere nur, damit eine zugeklappte Gruppe zeigen kann,
   // dass in ihr etwas hängt - gespeichert wird unverändert alles.
@@ -334,12 +339,16 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       setLaedt(false);
       setAbgleichStand(null);
       setUrspruenglicherAbgleich(null);
+      setVerlaengernStand(null);
+      setUrspruenglichesVerlaengern(null);
       return;
     }
     setLaedt(true);
     setAbgleichLaedt(true);
+    setVerlaengernLaedt(true);
     setFehler(null);
     setAbgleichFehler(null);
+    setVerlaengernFehler(null);
     try {
       const [daten, zugangsdaten] = await Promise.all([
         api.einstellungen.lesen(aktiv.slug),
@@ -363,11 +372,19 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       } catch (ursache) {
         setAbgleichFehler(ursache instanceof ApiFehler ? ursache.message : 'Stand nicht abrufbar.');
       }
+      try {
+        const verl = await api.verlaengern.stand(aktiv.slug);
+        setVerlaengernStand(verl);
+        setUrspruenglichesVerlaengern(verl.eingeschaltet);
+      } catch (ursache) {
+        setVerlaengernFehler(ursache instanceof ApiFehler ? ursache.message : 'Stand nicht abrufbar.');
+      }
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
       setLaedt(false);
       setAbgleichLaedt(false);
+      setVerlaengernLaedt(false);
     }
   }, [aktiv]);
 
@@ -387,16 +404,28 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     setGespeichert(false);
   };
 
+  const verlaengernAendern = (eingeschaltet: boolean) => {
+    setVerlaengernStand(vorher => vorher ? { ...vorher, eingeschaltet } : vorher);
+    setAngefasst(vorher => new Set(vorher).add(VERLAENGERN_PFAD));
+    setSchmutzig(true);
+    setGespeichert(false);
+  };
+
   const speichern = async () => {
     if (!aktiv) return;
     setFehler(null);
     setSpeichert(true);
     try {
-      const einstellungenGeaendert = [...angefasst].some(pfad => pfad !== ABGLEICH_PFAD);
+      const studioSchalter = new Set([ABGLEICH_PFAD, VERLAENGERN_PFAD]);
+      const einstellungenGeaendert = [...angefasst].some(pfad => !studioSchalter.has(pfad));
       const abgleichGeaendert = angefasst.has(ABGLEICH_PFAD)
         && abgleichStand !== null
         && urspruenglicherAbgleich !== null
         && abgleichStand.eingeschaltet !== urspruenglicherAbgleich;
+      const verlaengernGeaendert = angefasst.has(VERLAENGERN_PFAD)
+        && verlaengernStand !== null
+        && urspruenglichesVerlaengern !== null
+        && verlaengernStand.eingeschaltet !== urspruenglichesVerlaengern;
 
       if (einstellungenGeaendert) {
         let payload: Record<string, unknown> = {};
@@ -415,6 +444,11 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         setAbgleichStand(antwort);
         setUrspruenglicherAbgleich(antwort.eingeschaltet);
       }
+      if (verlaengernGeaendert && verlaengernStand) {
+        const antwort = await api.verlaengern.schalten(aktiv.slug, verlaengernStand.eingeschaltet);
+        setVerlaengernStand(antwort);
+        setUrspruenglichesVerlaengern(antwort.eingeschaltet);
+      }
       setSchmutzig(false);
       setAngefasst(new Set());
       setGespeichert(true);
@@ -429,6 +463,9 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     setWerte(urspruenglicheWerte);
     setAbgleichStand(vorher => vorher && urspruenglicherAbgleich !== null
       ? { ...vorher, eingeschaltet: urspruenglicherAbgleich }
+      : vorher);
+    setVerlaengernStand(vorher => vorher && urspruenglichesVerlaengern !== null
+      ? { ...vorher, eingeschaltet: urspruenglichesVerlaengern }
       : vorher);
     setAngefasst(new Set());
     setSchmutzig(false);
@@ -695,6 +732,16 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         />
       )}
 
+      {!istAnzeigen && (
+        <AutomatischesVerlaengern
+          stand={verlaengernStand}
+          laedt={verlaengernLaedt}
+          fehler={verlaengernFehler}
+          deaktiviert={speichert}
+          aufAenderung={verlaengernAendern}
+        />
+      )}
+
       {!istAnzeigen && <SicherungAbschnitt profil={aktiv.slug} />}
 
       {/* Zählzeile + Alle auf/zu unter der Reiterzeile (AP-2.19/2.47). Die Suche
@@ -847,6 +894,97 @@ function TaeglicherAbgleich({
             <p role="alert" className="hinweis hinweis-warn lesebreite mt-3">
               <AlertTriangle className="mb-1 inline h-4 w-4" aria-hidden /> Kein Passwort
               hinterlegt – der Abgleich bleibt aus.
+            </p>
+          )}
+
+          <dl className="mt-3 space-y-1 text-sm">
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-leise">Zuletzt gestartet:</dt>
+              <dd className="text-normal">{zuletzt ?? 'noch nie'}</dd>
+            </div>
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-leise">Ergebnis:</dt>
+              <dd className="text-normal">
+                {stand?.laeuft
+                  ? 'Der Lauf von heute läuft noch.'
+                  : stand?.letztes_ergebnis ?? '—'}
+              </dd>
+            </div>
+            {stand?.eingeschaltet && stand.heute_gelaufen && !stand.laeuft && (
+              <div className="text-xs text-leise">Heute bereits erledigt.</div>
+            )}
+          </dl>
+        </>
+      )}
+
+      {fehler && (
+        <p role="alert" className="hinweis hinweis-fehler lesebreite mt-3">{fehler}</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Automatisches kostenloses Verlängern (AP-3.15).
+ *
+ * Eigener Schalter neben dem täglichen Abgleich. Vorgabe aus. Nur Free-
+ * „Verlängern" (+60 Tage) – kein Hochschieben, kein Paid-Boost.
+ */
+function AutomatischesVerlaengern({
+  stand, laedt, fehler, deaktiviert, aufAenderung,
+}: {
+  stand: VerlaengernStand | null;
+  laedt: boolean;
+  fehler: string | null;
+  deaktiviert: boolean;
+  aufAenderung: (eingeschaltet: boolean) => void;
+}) {
+  const zeit = (iso: string | null) => {
+    if (!iso) return null;
+    const wann = new Date(iso);
+    return Number.isNaN(wann.getTime()) ? null : wann.toLocaleString('de-DE');
+  };
+  const zuletzt = zeit(stand?.letzter_lauf_am ?? null);
+
+  return (
+    <section className="karte mb-4 p-4">
+      <h2 className="flex items-center gap-2 font-medium text-stark">
+        <CalendarClock className="h-5 w-5 text-primary-custom" />
+        Automatisch verlängern
+        <InfoTip
+          label="Erklärung zum automatischen Verlängern"
+          text="Einmal am Tag reiht das Studio einen kostenlosen Verlängern-Lauf ein (+60 Tage Laufzeit). Nur Anzeigen im Acht-Tage-Fenster. Kein Hochschieben und kein Paid-Boost – der Dankes-Dialog wird nur geschlossen. Braucht heruntergeladene Anzeigen und einen hinterlegten Plattformzugang."
+        />
+      </h2>
+      <p className="mt-1 text-sm text-leise">
+        Kostenlos +60 Tage. Kein Hochschieben, kein Paid-Boost.
+      </p>
+
+      {laedt ? (
+        <p className="mt-3 text-sm text-leise">Wird geladen …</p>
+      ) : (
+        <>
+          <label htmlFor="verlaengern-an" className="lesebreite mt-3 flex items-start gap-3">
+            <input
+              id="verlaengern-an"
+              type="checkbox"
+              checked={stand?.eingeschaltet === true}
+              disabled={deaktiviert || stand === null}
+              onChange={e => aufAenderung(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="block text-sm font-medium text-stark">
+              Automatisch kostenlos verlängern
+            </span>
+          </label>
+          <p className="lesebreite mt-1 pl-7 text-xs text-leise">
+            Vorgabe aus. Nur Free-Verlängern im Acht-Tage-Fenster.
+          </p>
+
+          {stand?.eingeschaltet && !stand.zugang_vorhanden && (
+            <p role="alert" className="hinweis hinweis-warn lesebreite mt-3">
+              <AlertTriangle className="mb-1 inline h-4 w-4" aria-hidden /> Kein Passwort
+              hinterlegt – das Verlängern bleibt aus.
             </p>
           )}
 

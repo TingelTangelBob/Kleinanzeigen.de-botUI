@@ -293,6 +293,17 @@ ignore = [
   "PLR0904", # Too many public methods (12 > 10)
   "PLR2004", # Magic value used in comparison
 ]
+"tests_studio/**/*.py" = [
+  "ARG",
+  "B",
+  "FBT",
+  "INP",
+  "SLF",
+  "S101", # Use of `assert` detected
+  "PLR0904", # Too many public methods (12 > 10)
+  "PLR2004", # Magic value used in comparison
+  "PT011", # broad pytest.raises in focused unit tests
+]
 
 [tool.ruff.lint.flake8-copyright]
 notice-rgx = "SPDX-FileCopyrightText: .*"

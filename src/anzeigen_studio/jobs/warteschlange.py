@@ -51,6 +51,26 @@ _SCHREIBENDE_BEFEHLE: Final[frozenset[str]] = frozenset({
     "publish", "update", "delete", "extend",
 })
 
+#: Standard-Ausschnitt fuer lokal angelegte Anzeigen (publish u. a.).
+GLOB_LOKAL: Final[str] = "./ads/**/ad_*.{yaml,yml,json}"
+
+#: Standard-Ausschnitt fuer heruntergeladene eigene Anzeigen (AP-3.15).
+#: `extend` braucht genau diese Dateien - der alte Default `./ads/**` fand nichts.
+GLOB_HERUNTERGELADEN: Final[str] = "./downloaded-ads/**/ad_*.{yaml,yml,json}"
+
+
+def standard_anzeigen_glob(befehl: str, anzeigen_glob: str | None = None) -> str:
+    """Welcher Anzeigen-Ausschnitt gilt, wenn keiner uebergeben wurde?
+
+    `extend` zielt auf heruntergeladene eigene Anzeigen; alles andere behaelt
+    den bisherigen lokalen Ordner. Ein expliziter Glob gewinnt immer.
+    """
+    if anzeigen_glob:
+        return anzeigen_glob
+    if befehl == "extend":
+        return GLOB_HERUNTERGELADEN
+    return GLOB_LOKAL
+
 #: Zeile, mit der der Bot einen Selektor-Skip meldet - Deutsch wie Englisch, je
 #: nachdem ob der Container `LANG=de_DE.UTF-8` gesetzt hat. Deckt alle
 #: Skip-Gruende ab (nicht faellig, schon eine id, inaktiv, nicht in der
@@ -122,6 +142,10 @@ class Warteschlange:
         # Ereignisschleife. Ein synchroner FastAPI-Endpunkt laeuft im
         # Threadpool, dort gibt es keine - genau daran ist der erste Lauf
         # gescheitert.
+        # Ohne expliziten Glob zielt `extend` auf downloaded-ads (AP-3.15),
+        # damit manuelle Kachel und Zeitgeber dieselben Dateien treffen.
+        if anzeigen_glob is None and befehl == "extend":
+            anzeigen_glob = GLOB_HERUNTERGELADEN
         with db.transaction(conn):
             job_id = speicher.einreihen(
                 conn, profil_id, befehl, argumente,
@@ -353,7 +377,7 @@ class Warteschlange:
         verworfen = konfiguration.schreiben(
             profil_verzeichnis / "config.yaml",
             self._nutzer_konfiguration(profil_id),
-            anzeigen_glob = job.anzeigen_glob or "./ads/**/ad_*.{yaml,yml,json}",
+            anzeigen_glob = standard_anzeigen_glob(job.befehl, job.anzeigen_glob),
             chromium = self._settings.chromium,
             download_ordner = "fremde-ads" if nachladen else None,
             titelloeschen_sperren = neue_anzeige,

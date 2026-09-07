@@ -317,6 +317,26 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE abgleich ADD COLUMN reihenfolge_letzter_lauf_am TEXT;
         """,
     ),
+    (
+        14,
+        "automatisches-verlaengern",
+        """
+        -- Automatisches kostenloses Verlaengern (AP-3.15).
+        --
+        -- Ein Zeitgeber-Zweig reiht einmal am Tag je Profil einen `extend` ein,
+        -- wenn der Schalter an ist. Free-only: der Upstream-Flow klickt
+        -- „Verlaengern" und schliesst den Dankes-Dialog - kein Paid-Boost.
+        -- Vorgabe aus (eingeschaltet = 0), analog zum taeglichen Abgleich.
+        CREATE TABLE verlaengern (
+            profil_id        INTEGER PRIMARY KEY REFERENCES profil(id) ON DELETE CASCADE,
+            eingeschaltet    INTEGER NOT NULL DEFAULT 0,
+            letzter_tag      TEXT,
+            letzter_lauf_am  TEXT,
+            letztes_ergebnis TEXT,
+            job_id           INTEGER
+        );
+        """,
+    ),
 ]
 
 

@@ -10,7 +10,7 @@
 // gibt.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { LayoutDashboard, ListOrdered, LogOut, Menu, Settings, Sparkles, Tag, User, Users, X } from 'lucide-react';
+import { Archive, LayoutDashboard, ListOrdered, LogOut, Menu, Settings, Sparkles, Tag, User, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/useAuth';
@@ -64,7 +64,9 @@ function seitenTitel(route: Route): string {
     if (route.anzeigeDatei !== null) {
       return route.anzeigeBearbeiten ? 'Anzeige bearbeiten' : 'Anzeige ansehen';
     }
-    return route.anzeigen === 'fremde' ? 'Von anderen' : 'Meine Anzeigen';
+    if (route.anzeigen === 'fremde') return 'Von anderen';
+    if (route.anzeigen === 'archiv') return 'Archiv';
+    return 'Meine Anzeigen';
   }
   if (route.seite === 'neu') return 'Neue Anzeige';
   if (route.seite === 'warteschlange') return 'Warteschlange';
@@ -192,18 +194,31 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
           </button>
         </div>
 
-        {/* Kein `overflow-y-auto` und kein `flex-1` mehr (AP-2.17). Fünf
-            Einträge und eine Gruppenzeile sind rund 280 px hoch; der
-            Scrollbalken konnte hier nie etwas freilegen, stand aber auf
-            Systemen mit dauerhaft sichtbaren Balken immer da. Nach unten
-            geschoben wird der Fuß jetzt von seinem eigenen `mt-auto`, und das
+        {/* Kein `overflow-y-auto` und kein `flex-1` mehr (AP-2.17). Die
+            Hauptnav inkl. Anzeigen-Gruppe bleibt unter einer Viewport-Höhe;
+            der Scrollbalken konnte hier nie etwas freilegen. Nach unten
+            geschoben wird der Fuß von seinem eigenen `mt-auto`, und das
             Auffangnetz für wirklich flache Fenster sitzt an `.sidebar-schale`. */}
+        {/*
+          Nav-Ordnung AP-2.58: Übersicht (Dashboard), Warteschlange, dann die
+          Anzeigen-Gruppe (Meine / Von anderen / Neue Anzeige / Archiv) —
+          dieselbe visuelle Gruppierung wie `nav-gruppe` + `nav-unter` oben und
+          Einstellungen vs. Abmelden unten (Randlinie). Einstellungen/Abmelden
+          bleiben im Fuß (AP-2.49).
+        */}
         <nav className="px-2 py-1">
           <NavKnopf
             aktiv={route.seite === 'uebersicht'}
             icon={LayoutDashboard}
             label="Übersicht"
             onClick={() => wechseln('uebersicht')}
+          />
+          <NavKnopf
+            aktiv={route.seite === 'warteschlange'}
+            icon={ListOrdered}
+            label="Warteschlange"
+            badge={aktiveLaeufe}
+            onClick={() => wechseln('warteschlange')}
           />
 
           <p className="nav-gruppe">Anzeigen</p>
@@ -221,32 +236,27 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
             unter
             onClick={() => wechseln(hashFuer('anzeigen', 'fremde'))}
           />
-
-          <div className="mt-4">
-            <NavKnopf
-              aktiv={route.seite === 'neu'}
-              icon={Sparkles}
-              label="Neue Anzeige"
-              onClick={() => wechseln('neu')}
-            />
-          </div>
+          <NavKnopf
+            aktiv={route.seite === 'neu'}
+            icon={Sparkles}
+            label="Neue Anzeige"
+            unter
+            onClick={() => wechseln('neu')}
+          />
+          <NavKnopf
+            aktiv={anzeigenAktiv && route.anzeigen === 'archiv'}
+            icon={Archive}
+            label="Archiv"
+            unter
+            onClick={() => wechseln(hashFuer('anzeigen', 'archiv'))}
+          />
         </nav>
 
-        {/* Fuß unten (AP-2.49): Warteschlange und Einstellungen kleben mit
-            `mt-auto` am unteren Rand, Abmelden darunter. Vorher standen beide
-            mitten in der Nav unter „Neue Anzeige" - der Fuß war nur Abmelden
-            (AP-2.32, Theme nach Einstellungen › Darstellung). */}
+        {/* Fuß unten (AP-2.49): Einstellungen kleben mit `mt-auto` am unteren
+            Rand, Abmelden darunter mit Trennlinie (wie Einstellungen vs.
+            Profil-/Konto-Aktion). Warteschlange sitzt seit AP-2.58 unter der
+            Übersicht in der Hauptnav. */}
         <div className="safe-unten mt-auto p-2">
-          {/* Ein Menüpunkt für die Läufe (AP-2.31): die frühere Mini-Liste
-              unter der Nav ist weg, der Zähler zeigt nur an, wenn gerade
-              etwas läuft oder wartet. */}
-          <NavKnopf
-            aktiv={route.seite === 'warteschlange'}
-            icon={ListOrdered}
-            label="Warteschlange"
-            badge={aktiveLaeufe}
-            onClick={() => wechseln('warteschlange')}
-          />
           <NavKnopf
             aktiv={route.seite === 'einstellungen'}
             icon={Settings}

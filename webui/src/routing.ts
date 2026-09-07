@@ -2,18 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Hash-Routing ohne Router. Eine Handvoll Seiten, Unterpunkte über den Rest
-// nach dem Schrägstrich: #anzeigen/fremde, #warteschlange. Eine offene Anzeige
-// steht als Query im Hash, damit Browser-Zurück und Neuladen denselben Zustand
-// wiederherstellen können.
+// nach dem Schrägstrich: #anzeigen/fremde, #anzeigen/archiv, #warteschlange.
+// Eine offene Anzeige steht als Query im Hash, damit Browser-Zurück und
+// Neuladen denselben Zustand wiederherstellen können.
 
 export type Hauptseite = 'uebersicht' | 'anzeigen' | 'neu' | 'warteschlange' | 'einstellungen';
+/** Ordner-Herkunft einer Anzeigendatei (API / YAML). */
 export type AnzeigenHerkunft = 'eigene' | 'fremde';
+/**
+ * Listen-Modus der Bestandsseite (AP-2.58): eigene / fremde Ordner, oder
+ * Archiv = lokal archivierte / nicht mehr aktive Anzeigen ohne Konto-Aktion.
+ */
+export type AnzeigenListe = AnzeigenHerkunft | 'archiv';
 export type EinstellungsAbschnitt =
   'anzeigen' | 'bot' | 'profile' | 'browser' | 'passwort' | 'darstellung';
 
 export interface Route {
   seite: Hauptseite;
-  anzeigen: AnzeigenHerkunft;
+  anzeigen: AnzeigenListe;
   einstellung: EinstellungsAbschnitt;
   anzeigeDatei: string | null;
   anzeigeBearbeiten: boolean;
@@ -29,6 +35,7 @@ const ALIAS: Record<string, string> = {
   jobs: 'warteschlange',
   profile: 'einstellungen/profile',
   browsersicht: 'einstellungen/browser',
+  archiv: 'anzeigen/archiv',
 };
 
 /**
@@ -40,6 +47,12 @@ const ALIAS: Record<string, string> = {
 const PFAD_ALIAS: Record<string, string> = {
   'einstellungen/laeufe': 'warteschlange',
 };
+
+function anzeigenListeAus(rest: string): AnzeigenListe {
+  if (rest === 'fremde') return 'fremde';
+  if (rest === 'archiv') return 'archiv';
+  return 'eigene';
+}
 
 export function routeAusHash(hash = typeof window === 'undefined' ? '' : window.location.hash): Route {
   let roh = hash.replace(/^#/, '').replace(/^\//, '');
@@ -54,7 +67,7 @@ export function routeAusHash(hash = typeof window === 'undefined' ? '' : window.
     const anzeigeDatei = parameter.get('datei');
     return {
       seite: 'anzeigen',
-      anzeigen: rest === 'fremde' ? 'fremde' : 'eigene',
+      anzeigen: anzeigenListeAus(rest),
       einstellung: 'bot',
       anzeigeDatei,
       anzeigeBearbeiten: anzeigeDatei !== null && parameter.get('bearbeiten') === '1',
@@ -88,7 +101,11 @@ export function routeAusHash(hash = typeof window === 'undefined' ? '' : window.
 }
 
 export function hashFuer(seite: Hauptseite, rest?: string): string {
-  if (seite === 'anzeigen') return `anzeigen/${rest === 'fremde' ? 'fremde' : 'eigene'}`;
+  if (seite === 'anzeigen') {
+    if (rest === 'fremde') return 'anzeigen/fremde';
+    if (rest === 'archiv') return 'anzeigen/archiv';
+    return 'anzeigen/eigene';
+  }
   if (seite === 'einstellungen') {
     if (!rest || rest === 'bot') return 'einstellungen';
     return `einstellungen/${rest}`;
@@ -98,11 +115,11 @@ export function hashFuer(seite: Hauptseite, rest?: string): string {
 
 /** Hash für die Detailansicht einer Anzeige, optional bereits im Editiermodus. */
 export function hashFuerAnzeige(
-  herkunft: AnzeigenHerkunft,
+  liste: AnzeigenListe,
   datei: string,
   bearbeiten = false,
 ): string {
   const parameter = new URLSearchParams({ datei });
   if (bearbeiten) parameter.set('bearbeiten', '1');
-  return `anzeigen/${herkunft}?${parameter.toString()}`;
+  return `${hashFuer('anzeigen', liste)}?${parameter.toString()}`;
 }

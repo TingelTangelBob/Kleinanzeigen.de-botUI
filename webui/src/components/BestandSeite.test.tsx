@@ -49,6 +49,7 @@ vi.mock('../context/useProfil', () => ({
 function bestandsAnzeige(
   titel: string,
   herkunft: 'eigene' | 'fremde',
+  extras: Partial<BestandsAnzeige> = {},
 ): BestandsAnzeige {
   return {
     datei: `${herkunft}/${titel}.yaml`,
@@ -75,17 +76,24 @@ function bestandsAnzeige(
     unlesbar: null,
     herkunft,
     geloescht: false,
+    ...extras,
   };
 }
 
 const EIGENE = bestandsAnzeige('Kinderwagen', 'eigene');
 const FREMDE = bestandsAnzeige('Bohrmaschine', 'fremde');
+const ARCHIVIERT = bestandsAnzeige('Alter Sessel', 'eigene', {
+  aktiv: false,
+  geloescht: true,
+  id: 99,
+});
 
 beforeEach(() => {
+  window.localStorage.clear();
   liste.mockReset();
   anzeige.mockReset();
   vorlagen.mockReset();
-  liste.mockResolvedValue([EIGENE, FREMDE]);
+  liste.mockResolvedValue([EIGENE, FREMDE, ARCHIVIERT]);
   vorlagen.mockResolvedValue([]);
   anzeige.mockResolvedValue({
     kopf: EIGENE,
@@ -177,4 +185,69 @@ describe('Bestand: Maske folgt der Navigation (AP-2.13)', () => {
     expect(await screen.findByText('Bohrmaschine')).toBeDefined();
   });
 
+});
+
+describe('Bestand: Fremde-Hinweis wegklickbar (AP-2.59)', () => {
+  it('zeigt den Lösch-Hinweis nur unter „Von anderen“', async () => {
+    const { rerender } = render(
+      <BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle },
+    );
+    expect(await screen.findByText('Kinderwagen')).toBeDefined();
+    expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
+
+    rerender(<BestandSeite herkunft="fremde" aufZiel={vi.fn()} />);
+    expect(await screen.findByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Hinweis ausblenden' })).toBeDefined();
+  });
+
+  it('blendet den Hinweis dauerhaft aus (localStorage)', async () => {
+    const { unmount } = render(
+      <BestandSeite herkunft="fremde" aufZiel={vi.fn()} />, { wrapper: huelle },
+    );
+    expect(await screen.findByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hinweis ausblenden' }));
+    expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
+
+    unmount();
+    render(
+      <BestandSeite herkunft="fremde" aufZiel={vi.fn()} />, { wrapper: huelle },
+    );
+    expect(await screen.findByText('Bohrmaschine')).toBeDefined();
+    expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
+  });
+});
+
+describe('Bestand: Archiv-Liste (AP-2.58)', () => {
+  it('zeigt nur gelöschte/inaktive Anzeigen und den Leerhinweis-Kontext', async () => {
+    render(
+      <BestandSeite herkunft="archiv" aufZiel={vi.fn()} />, { wrapper: huelle },
+    );
+    expect(await screen.findByText('Alter Sessel')).toBeDefined();
+    expect(screen.queryByText('Kinderwagen')).toBeNull();
+    expect(screen.queryByText('Bohrmaschine')).toBeNull();
+    expect(screen.getByText(/Lokal archiviert/)).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Vom Konto holen|Holen|Per Link/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Aktiv/ })).toBeNull();
+  });
+
+  it('öffnet eine Archiv-Anzeige unter dem Archiv-Hash', async () => {
+    const aufZiel = vi.fn();
+    render(
+      <BestandSeite herkunft="archiv" aufZiel={aufZiel} />, { wrapper: huelle },
+    );
+    fireEvent.click(await screen.findByText('Alter Sessel'));
+    expect(aufZiel).toHaveBeenCalledWith(
+      'anzeigen/archiv?datei=eigene%2FAlter+Sessel.yaml',
+    );
+  });
+
+  it('zeigt den Archiv-Leerzustand, wenn nichts archiviert ist', async () => {
+    liste.mockResolvedValue([EIGENE, FREMDE]);
+    render(
+      <BestandSeite herkunft="archiv" aufZiel={vi.fn()} />, { wrapper: huelle },
+    );
+    expect(await screen.findByText('Noch keine archivierten Anzeigen.')).toBeDefined();
+    expect(screen.getByText(/ohne Bindung an ein Konto-Holen/)).toBeDefined();
+  });
 });

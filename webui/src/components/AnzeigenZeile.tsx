@@ -319,19 +319,15 @@ export function AnzeigenZeile({
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-3">
-          {/* Bis 768 px zwei Zeilen statt einer abgeschnittenen (AP-2.18): auf
-              375 px blieben von „Fahrradanhänger Croozer Kid for 2 mit …" sonst
-              vierzehn Zeichen übrig, und genau der Titel ist das, woran man die
-              Anzeige wiedererkennt. Ab 768 wird abgeschnitten, damit alle
-              Zeilen der Liste gleich hoch bleiben. */}
-          <span className="line-clamp-2 text-[15px] font-semibold tracking-tight text-stark sm:text-base md:line-clamp-none md:truncate">
-            {titel}
-          </span>
-          <span className="flex-shrink-0 whitespace-nowrap text-[15px] font-semibold tracking-tight text-stark sm:text-base">
-            {preisText(anzeige)}
-          </span>
-        </div>
+        {/* Bis 768 px zwei Zeilen statt einer abgeschnittenen (AP-2.18): auf
+            375 px blieben von „Fahrradanhänger Croozer Kid for 2 mit …" sonst
+            vierzehn Zeichen übrig, und genau der Titel ist das, woran man die
+            Anzeige wiedererkennt. Ab 768 wird abgeschnitten, damit alle
+            Zeilen der Liste gleich hoch bleiben. Preis und Aktionen sitzen
+            rechts in einer eigenen Spalte (AP-2.59). */}
+        <span className="line-clamp-2 text-[15px] font-semibold tracking-tight text-stark sm:text-base md:line-clamp-none md:truncate">
+          {titel}
+        </span>
 
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-leise">
           {anzeige.id !== null && <span>Nr. {anzeige.id}</span>}
@@ -359,6 +355,8 @@ export function AnzeigenZeile({
     </>
   );
 
+  const hatAktionen = Boolean(aufOeffnen || aufAktualisieren || aufUmsortieren);
+
   return (
     <div className="zeile">
       {aufKlick ? (
@@ -373,20 +371,23 @@ export function AnzeigenZeile({
         <div className="zeile-inhalt">{zeilenInhalt}</div>
       )}
       {/*
-        Aktionsspalte (AP-2.50 / AP-2.54).
-        Ab md: drei Icon-Knöpfe in einer Reihe. Darunter: ein ⋯-Menü wie im
-        Bestandskopf, damit Titel und Preis auf dem Handy nicht unter drei
-        44-px-Quadraten verschwinden.
+        Rechte Spalte: Preis über den Aktionen, Spalte vertikal zentriert
+        zur Zeile (AP-2.59). Vorher lag der Preis neben dem Titel (oben) und
+        die Icon-Knöpfe tiefer – optisch zwei getrennte Höhen. Ab md: drei
+        Icon-Knöpfe in einer Reihe (AP-2.50); darunter ⋯-Menü (AP-2.54).
       */}
-      {(aufOeffnen || aufAktualisieren || aufUmsortieren) && (
-        <ZeileAktionen
-          titel={titel}
-          anzeige={anzeige}
-          aufOeffnen={aufOeffnen}
-          aufAktualisieren={aufAktualisieren}
-          aufUmsortieren={aufUmsortieren}
-        />
-      )}
+      <div className="zeile-rechts">
+        <span className="zeile-preis">{preisText(anzeige)}</span>
+        {hatAktionen && (
+          <ZeileAktionen
+            titel={titel}
+            anzeige={anzeige}
+            aufOeffnen={aufOeffnen}
+            aufAktualisieren={aufAktualisieren}
+            aufUmsortieren={aufUmsortieren}
+          />
+        )}
+      </div>
     </div>
   );
 }

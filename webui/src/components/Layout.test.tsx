@@ -59,6 +59,7 @@ describe('Layout: Seitentitel in der Topbar (AP-2.33)', () => {
     [route('uebersicht'), 'Übersicht'],
     [route('anzeigen'), 'Meine Anzeigen'],
     [route('anzeigen', 'fremde'), 'Von anderen'],
+    [route('anzeigen', 'archiv'), 'Archiv'],
     [route('neu'), 'Neue Anzeige'],
     [route('warteschlange'), 'Warteschlange'],
     [route('einstellungen'), 'Einstellungen'],
@@ -75,8 +76,8 @@ describe('Layout: Seitentitel in der Topbar (AP-2.33)', () => {
   });
 });
 
-describe('Layout: Nav-Fuß (AP-2.49)', () => {
-  it('stellt Warteschlange und Einstellungen unter die Hauptnav, über Abmelden', () => {
+describe('Layout: Nav-Ordnung (AP-2.49 / AP-2.58)', () => {
+  it('ordnet Übersicht → Warteschlange → Anzeigen-Gruppe; Einstellungen/Abmelden unten', () => {
     const { container } = render(
       <Layout route={route('uebersicht')} aufZiel={vi.fn()}>
         <p>Inhalt</p>
@@ -86,20 +87,37 @@ describe('Layout: Nav-Fuß (AP-2.49)', () => {
     expect(aside).toBeTruthy();
 
     const nav = aside!.querySelector('nav');
+    expect(nav?.textContent).toContain('Übersicht');
+    expect(nav?.textContent).toContain('Warteschlange');
+    expect(nav?.textContent).toContain('Meine Anzeigen');
+    expect(nav?.textContent).toContain('Von anderen');
     expect(nav?.textContent).toContain('Neue Anzeige');
-    expect(nav?.textContent).not.toContain('Warteschlange');
+    expect(nav?.textContent).toContain('Archiv');
+    expect(nav?.textContent).toContain('Anzeigen');
     expect(nav?.textContent).not.toContain('Einstellungen');
 
     const labels = [...aside!.querySelectorAll('button')].map(b => b.textContent ?? '');
-    const iNeu = labels.findIndex(t => t.includes('Neue Anzeige'));
+    const iUeb = labels.findIndex(t => t.includes('Übersicht'));
     const iWart = labels.findIndex(t => t.includes('Warteschlange'));
+    const iMeine = labels.findIndex(t => t.includes('Meine Anzeigen'));
+    const iFremde = labels.findIndex(t => t.includes('Von anderen'));
+    const iNeu = labels.findIndex(t => t.includes('Neue Anzeige'));
+    const iArchiv = labels.findIndex(t => t.includes('Archiv'));
     const iEinst = labels.findIndex(t => t.includes('Einstellungen'));
     const iAb = labels.findIndex(t => t.includes('Abmelden'));
 
-    expect(iNeu).toBeGreaterThanOrEqual(0);
-    expect(iWart).toBeGreaterThan(iNeu);
-    expect(iEinst).toBeGreaterThan(iWart);
+    expect(iUeb).toBeGreaterThanOrEqual(0);
+    expect(iWart).toBeGreaterThan(iUeb);
+    expect(iMeine).toBeGreaterThan(iWart);
+    expect(iFremde).toBeGreaterThan(iMeine);
+    expect(iNeu).toBeGreaterThan(iFremde);
+    expect(iArchiv).toBeGreaterThan(iNeu);
+    expect(iEinst).toBeGreaterThan(iArchiv);
     expect(iAb).toBeGreaterThan(iEinst);
+
+    // Einstellungen vs. Abmelden: Trennlinie wie bisher (AP-2.49).
+    const fuss = aside!.querySelector('.safe-unten');
+    expect(fuss?.querySelector('[style*="sidebar-rand"]') || fuss?.innerHTML.includes('sidebar-rand')).toBeTruthy();
   });
 });
 

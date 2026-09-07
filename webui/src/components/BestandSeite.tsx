@@ -23,13 +23,14 @@ import { useProfil } from '../context/useProfil';
 import { useMeldungenQuelle } from '../context/useMeldungen';
 import type { Meldung } from '../context/meldungenKontext';
 import { useKopfAktionen } from '../context/kopfAktionenKontext';
-import { hashFuer, hashFuerAnzeige, type AnzeigenHerkunft } from '../routing';
+import { hashFuer, hashFuerAnzeige, type AnzeigenListe } from '../routing';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { HochladenDialog } from './HochladenDialog';
 import { LoeschDialog } from './LoeschDialog';
 import { NachladenDialog } from './NachladenDialog';
+import { Hinweis } from './Hinweis';
 import { VorlagenListe } from './VorlagenListe';
 
 type Filter = 'aktiv' | 'geaendert' | 'geloescht' | 'alle';
@@ -81,7 +82,7 @@ function passtZurSuche(anzeige: BestandsAnzeige, suche: string): boolean {
 export function BestandSeite({
   herkunft, anzeigeDatei = null, anzeigeBearbeiten = false, aufZiel,
 }: {
-  herkunft: AnzeigenHerkunft;
+  herkunft: AnzeigenListe;
   /** Die offene Anzeige kommt aus dem Hash, nicht aus flüchtigem React-Zustand. */
   anzeigeDatei?: string | null;
   /** Der Hash merkt sich zusätzlich, ob die Detailansicht editierbar ist. */
@@ -93,7 +94,7 @@ export function BestandSeite({
   const [laedt, setLaedt] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [suche, setSuche] = useState('');
-  const [filter, setFilter] = useState<Filter>(STANDARD_FILTER);
+  const [filter, setFilter] = useState<Filter>(herkunft === 'archiv' ? 'alle' : STANDARD_FILTER);
   const [holtNach, setHoltNach] = useState(false);
   const [warnung, setWarnung] = useState<BestandsAnzeige[] | null>(null);
   const [startetDownload, setStartetDownload] = useState(false);
@@ -101,7 +102,7 @@ export function BestandSeite({
   const [aktualisierung, setAktualisierung] = useState<BestandsAnzeige | null>(null);
   const [laedtAktualisierung, setLaedtAktualisierung] = useState(false);
   const [aktualisierungsHinweis, setAktualisierungsHinweis] = useState<number | null>(null);
-  const [zuletztHerkunft, setZuletztHerkunft] = useState<AnzeigenHerkunft>(herkunft);
+  const [zuletztHerkunft, setZuletztHerkunft] = useState<AnzeigenListe>(herkunft);
   // AP-2.20: Mehrfachauswahl über die Dateipfade - dieselbe Kennung, mit der
   // auch das Backend arbeitet.
   const [auswahl, setAuswahl] = useState<Set<string>>(new Set());
@@ -114,9 +115,9 @@ export function BestandSeite({
   const [sucheOffen, setSucheOffen] = useState(false);
   const menueRef = useRef<HTMLDivElement>(null);
 
-  // App.tsx rendert für #anzeigen/eigene und #anzeigen/fremde dieselbe
-  // Komponente; nur `herkunft` wechselt. React unmountet dabei nicht, also
-  // müssen Listenfilter und Dialoge beim Herkunftswechsel zurückgesetzt werden
+  // App.tsx rendert für #anzeigen/eigene|fremde|archiv dieselbe Komponente;
+  // nur `herkunft` (Listen-Modus) wechselt. React unmountet dabei nicht, also
+  // müssen Listenfilter und Dialoge beim Wechsel zurückgesetzt werden
   // (AP-2.13). Eine offene Anzeige kommt dagegen aus dem Hash und wird vom
   // Editor kontrolliert.
   //
@@ -133,7 +134,8 @@ export function BestandSeite({
     setAktualisierungsHinweis(null);
     setFehler(null);
     setSuche('');
-    setFilter(STANDARD_FILTER);
+    // Archiv zeigt nur schon archivierte Einträge – „Aktiv" als Vorgabe wäre leer.
+    setFilter(herkunft === 'archiv' ? 'alle' : STANDARD_FILTER);
     setAuswahl(new Set());
     setLoeschDialog(null);
     setSammelHinweis(null);
@@ -178,10 +180,14 @@ export function BestandSeite({
     };
   }, [menueOffen]);
 
-  const sichtbar = useMemo(
-    () => anzeigen.filter(a => a.herkunft === herkunft),
-    [anzeigen, herkunft],
-  );
+  const sichtbar = useMemo(() => {
+    // Archiv (AP-2.58): lokal nicht mehr aktive / gelöschte Anzeigen, unabhängig
+    // von eigener/fremder Ordner-Herkunft – ohne Konto-Holen.
+    if (herkunft === 'archiv') {
+      return anzeigen.filter(a => a.geloescht || !a.aktiv);
+    }
+    return anzeigen.filter(a => a.herkunft === herkunft);
+  }, [anzeigen, herkunft]);
 
   const gefiltert = useMemo(
     () => sichtbar.filter(a => passtZumFilter(a, filter) && passtZurSuche(a, suche)),
@@ -357,13 +363,14 @@ export function BestandSeite({
   useMeldungenQuelle('bestand', meldungen);
 
   const eigene = herkunft === 'eigene';
+  const archiv = herkunft === 'archiv';
 
   // Die Aktionsknöpfe der Seite stehen in der App-Topleiste, nicht in einem
   // eigenen Kopfbereich (2026-09-07). `md+` alle nebeneinander, darunter
-  // Primärknopf + Kebab.
+  // Primärknopf + Kebab. Archiv: keine Konto-/Link-Aktion (AP-2.58).
   const kopfAktionen = useKopfAktionen(
     <>
-      {eigene ? (
+      {!archiv && (eigene ? (
         <button
           type="button"
           onClick={() => void kontoHolen()}
@@ -392,7 +399,7 @@ export function BestandSeite({
           <span className="sm:hidden">Per Link</span>
           <span className="hidden sm:inline">Anzeigen per Link holen</span>
         </button>
-      )}
+      ))}
 
       <button
         type="button"
@@ -458,17 +465,19 @@ export function BestandSeite({
   }
 
   if (anzeigeDatei) {
+    const offene = anzeigen.find(a => a.datei === anzeigeDatei);
+    const dateiHerkunft = offene?.herkunft ?? (herkunft === 'fremde' ? 'fremde' : 'eigene');
     return (
       <AnzeigenEditor
         profil={aktiv.slug}
         datei={anzeigeDatei}
         bearbeitbar={anzeigeBearbeiten}
-        onlineLoeschbar={herkunft === 'eigene'}
+        onlineLoeschbar={dateiHerkunft === 'eigene'}
         aufBearbeiten={() => aufZiel(hashFuerAnzeige(herkunft, anzeigeDatei, true))}
         aufAnsehen={() => aufZiel(hashFuerAnzeige(herkunft, anzeigeDatei))}
         // Vorabwert fürs „Gelöscht"-Badge (AP-3.10); der Editor bestätigt es
         // aus den frisch geladenen Kopfdaten.
-        geloescht={anzeigen.find(a => a.datei === anzeigeDatei)?.geloescht ?? false}
+        geloescht={offene?.geloescht ?? false}
         aufZurueck={geaendert => {
           aufZiel(hashFuer('anzeigen', herkunft));
           if (geaendert) void laden();
@@ -491,7 +500,7 @@ export function BestandSeite({
 
   return (
     <div className="seite">
-      <h1 className="sr-only">{eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
+      <h1 className="sr-only">{archiv ? 'Archiv' : eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
       {kopfAktionen}
       {holtNach && (
         <NachladenDialog profil={aktiv.slug} aufSchliessen={() => { setHoltNach(false); void laden(); }} />
@@ -534,17 +543,20 @@ export function BestandSeite({
         <p className="hinweis hinweis-fehler mb-4">{fehler}</p>
       )}
 
-      {!eigene && (
-        <p className="hinweis hinweis-warn mb-4 flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-          <span>
-            Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen.
-            Endgültig gelöschte Anzeigen sind weg – kein Werkzeug holt sie zurück.
-          </span>
-        </p>
+      {/* Wegklickbar mit localStorage (AP-2.59) – Hinweis-Komponente wie auf der Jobseite. */}
+      {!eigene && !archiv && (
+        <Hinweis
+          id="bestand-fremde-geloescht"
+          ton="warn"
+          icon={AlertTriangle}
+          className="mb-4"
+        >
+          Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen.
+          Endgültig gelöschte Anzeigen sind weg – kein Werkzeug holt sie zurück.
+        </Hinweis>
       )}
 
-      {eigene && (
+      {eigene && !archiv && (
         <VorlagenListe
           profil={aktiv.slug}
           aufAngewendet={datei => {
@@ -584,33 +596,46 @@ export function BestandSeite({
           />
         </label>
 
-        <div className="reiter-leiste order-first min-w-0 flex-1 overflow-x-auto sm:order-none sm:flex-none">
-          {FILTER.map(f => {
-            const anzahl = zaehler[f.id] ?? null;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilter(f.id)}
-                aria-pressed={filter === f.id}
-                className={`reiter ${filter === f.id ? 'reiter-aktiv' : ''}`}
-              >
-                {f.label}{anzahl !== null && anzahl > 0 ? ` (${anzahl})` : ''}
-              </button>
-            );
-          })}
-        </div>
+        {!archiv && (
+          <div className="reiter-leiste order-first min-w-0 flex-1 overflow-x-auto sm:order-none sm:flex-none">
+            {FILTER.map(f => {
+              const anzahl = zaehler[f.id] ?? null;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilter(f.id)}
+                  aria-pressed={filter === f.id}
+                  className={`reiter ${filter === f.id ? 'reiter-aktiv' : ''}`}
+                >
+                  {f.label}{anzahl !== null && anzahl > 0 ? ` (${anzahl})` : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {archiv && (
+          <p className="order-first min-w-0 flex-1 text-sm text-leise sm:order-none sm:flex-none">
+            Lokal archiviert ({sichtbar.length})
+          </p>
+        )}
       </div>
 
       {sichtbar.length === 0 && !laedt ? (
         <div className="leer">
           <p>
-            {eigene ? 'Noch keine eigenen Anzeigen auf der Platte.' : 'Noch keine Anzeigen von anderen.'}
+            {archiv
+              ? 'Noch keine archivierten Anzeigen.'
+              : eigene
+                ? 'Noch keine eigenen Anzeigen auf der Platte.'
+                : 'Noch keine Anzeigen von anderen.'}
           </p>
           <p className="mt-1 text-leise">
-            {eigene
-              ? '„Vom Konto holen“ lädt den Bestand deines Kleinanzeigen-Kontos.'
-              : '„Anzeigen per Link holen“ nimmt beliebige Kleinanzeigen-Adressen entgegen.'}
+            {archiv
+              ? 'Hier erscheinen Anzeigen, die lokal als gelöscht oder inaktiv gelten – ohne Bindung an ein Konto-Holen.'
+              : eigene
+                ? '„Vom Konto holen“ lädt den Bestand deines Kleinanzeigen-Kontos.'
+                : '„Anzeigen per Link holen“ nimmt beliebige Kleinanzeigen-Adressen entgegen.'}
           </p>
         </div>
       ) : (
@@ -640,26 +665,30 @@ export function BestandSeite({
                 aria-label="Sammelaktionen"
                 className="ml-auto flex flex-wrap items-center gap-2"
               >
-                <button
-                  type="button"
-                  onClick={() => void sammelHerkunft()}
-                  disabled={sammelLaeuft !== null}
-                  className="btn-ghost text-xs"
-                >
-                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-                  {sammelLaeuft === 'herkunft'
-                    ? 'Wird verschoben …'
-                    : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void sammelHochladen()}
-                  disabled={sammelLaeuft !== null}
-                  className="btn-ghost text-xs"
-                >
-                  <Upload className="h-3.5 w-3.5" aria-hidden />
-                  {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
-                </button>
+                {!archiv && (
+                  <button
+                    type="button"
+                    onClick={() => void sammelHerkunft()}
+                    disabled={sammelLaeuft !== null}
+                    className="btn-ghost text-xs"
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+                    {sammelLaeuft === 'herkunft'
+                      ? 'Wird verschoben …'
+                      : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
+                  </button>
+                )}
+                {!archiv && (
+                  <button
+                    type="button"
+                    onClick={() => void sammelHochladen()}
+                    disabled={sammelLaeuft !== null}
+                    className="btn-ghost text-xs"
+                  >
+                    <Upload className="h-3.5 w-3.5" aria-hidden />
+                    {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
+                  </button>
+                )}
                 {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen
                     Knöpfen daneben abheben (AP-2.20). */}
                 <button
@@ -712,11 +741,11 @@ export function BestandSeite({
                     aufKlick={a.unlesbar ? undefined : () => aufZiel(hashFuerAnzeige(herkunft, a.datei))}
                     aufOeffnen={() => aufZiel(hashFuerAnzeige(herkunft, a.datei))}
                     aufAktualisieren={
-                      eigene && a.id !== null && !a.unlesbar
+                      !archiv && eigene && a.id !== null && !a.unlesbar
                         ? () => aktualisieren(a)
                         : undefined
                     }
-                    aufUmsortieren={() => void umsortieren(a)}
+                    aufUmsortieren={archiv ? undefined : () => void umsortieren(a)}
                   />
                 </div>
               </li>

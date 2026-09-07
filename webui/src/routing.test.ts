@@ -47,6 +47,25 @@ describe('routeAusHash', () => {
       anzeigeBearbeiten: false,
     });
   });
+  it('erkennt #anzeigen/archiv (AP-2.58)', () => {
+    expect(routeAusHash('#anzeigen/archiv')).toMatchObject({
+      seite: 'anzeigen',
+      anzeigen: 'archiv',
+      anzeigeDatei: null,
+    });
+  });
+
+  it('lenkt den Top-Level-Hash #archiv auf die Archiv-Liste', () => {
+    expect(routeAusHash('#archiv').anzeigen).toBe('archiv');
+  });
+
+  it('öffnet eine Anzeige im Archiv-Hash', () => {
+    expect(routeAusHash('#anzeigen/archiv?datei=ads%2Falt.yaml')).toMatchObject({
+      anzeigen: 'archiv',
+      anzeigeDatei: 'ads/alt.yaml',
+      anzeigeBearbeiten: false,
+    });
+  });
 });
 
 describe('hashFuer', () => {
@@ -54,8 +73,17 @@ describe('hashFuer', () => {
     expect(hashFuer('warteschlange')).toBe('warteschlange');
   });
 
+  it('kodiert den Archiv-Listenpfad (AP-2.58)', () => {
+    expect(hashFuer('anzeigen', 'archiv')).toBe('anzeigen/archiv');
+  });
+
   it('kodiert den Dateipfad einer offenen Anzeige', () => {
     expect(hashFuerAnzeige('eigene', 'ads/Mein Entwurf.yaml', true))
       .toBe('anzeigen/eigene?datei=ads%2FMein+Entwurf.yaml&bearbeiten=1');
+  });
+
+  it('kodiert eine offene Anzeige im Archiv', () => {
+    expect(hashFuerAnzeige('archiv', 'ads/alt.yaml'))
+      .toBe('anzeigen/archiv?datei=ads%2Falt.yaml');
   });
 });

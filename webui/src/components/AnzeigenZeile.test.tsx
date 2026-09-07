@@ -230,3 +230,35 @@ describe('AnzeigenZeile: ⋯-Menü auf schmalen Viewports (AP-2.54)', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 });
+
+describe('AnzeigenZeile: Preis und Aktionen in einer Spalte (AP-2.59)', () => {
+  it('legt Preis und Aktions-Icons in .zeile-rechts', () => {
+    const { container } = render(
+      <AnzeigenZeile
+        anzeige={anzeige({})}
+        profil="test"
+        aufAktualisieren={vi.fn()}
+        aufOeffnen={vi.fn()}
+        aufUmsortieren={vi.fn()}
+      />,
+    );
+
+    const rechts = container.querySelector('.zeile-rechts');
+    expect(rechts).not.toBeNull();
+    expect(rechts!.querySelector('.zeile-preis')?.textContent).toMatch(/15/);
+    expect(rechts!.querySelector('.zeile-aktionen')).not.toBeNull();
+    // Preis sitzt nicht mehr neben dem Titel in der Inhaltszeile.
+    const inhalt = container.querySelector('.zeile-inhalt');
+    expect(inhalt!.querySelector('.zeile-preis')).toBeNull();
+  });
+
+  it('zeigt den Preis rechts auch ohne Aktions-Callbacks', () => {
+    const { container } = render(
+      <AnzeigenZeile anzeige={anzeige({ preis: 42 })} profil="test" />,
+    );
+    const rechts = container.querySelector('.zeile-rechts');
+    expect(rechts).not.toBeNull();
+    expect(rechts!.querySelector('.zeile-preis')?.textContent).toMatch(/42/);
+    expect(rechts!.querySelector('.zeile-aktionen')).toBeNull();
+  });
+});

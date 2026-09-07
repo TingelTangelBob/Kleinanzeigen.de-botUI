@@ -842,6 +842,15 @@ html:has(#app-shell[data-theme='dark']) {
   .reiter-aktiv:hover { background: var(--primary-hover); color: var(--primary-text-color); }
 
   /*
+   * Auswahl-/Sammelzeile im Bestand (2026-09-07). Feste Mindesthöhe, damit die
+   * Liste darunter nicht nach unten springt, sobald die Sammelaktionen
+   * erscheinen - die Zeile ist schon vorher so hoch wie ein Knopf.
+   */
+  .bestand-auswahlzeile {
+    min-height: 2.75rem;
+  }
+
+  /*
    * Versandpaket-Auswahl (AP-2.23): ein Chip je Paket, Name und Live-Preis in
    * einer Zeile. Ausgewählt ist es ausschließlich am stabilen Waldgrün-Rand
    * und der hellgrünen Fläche erkennbar; ein wechselndes Häkchen würde die
@@ -1285,19 +1294,27 @@ html:has(#app-shell[data-theme='dark']) {
     background: var(--karte);
     box-shadow: 0 0.65rem 1.5rem rgb(20 35 28 / 0.14);
   }
-  .plattform-menue-panel a {
+  .plattform-menue-panel a,
+  .plattform-menue-panel button {
     display: flex;
     align-items: center;
     gap: 0.55rem;
+    width: 100%;
     min-height: 2.5rem;
+    border: 0;
+    background: transparent;
     padding: 0.45rem 0.65rem;
     border-radius: 0.5rem;
     color: var(--text);
     font-size: 0.875rem;
+    text-align: left;
     text-decoration: none;
+    cursor: pointer;
   }
   .plattform-menue-panel a:hover,
-  .plattform-menue-panel a:focus-visible {
+  .plattform-menue-panel a:focus-visible,
+  .plattform-menue-panel button:hover,
+  .plattform-menue-panel button:focus-visible {
     background: var(--canvas);
     outline: none;
   }

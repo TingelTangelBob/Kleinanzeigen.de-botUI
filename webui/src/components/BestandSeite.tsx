@@ -3,17 +3,25 @@
 //
 // Der lokale Anzeigenbestand: Liste, Suche, Filter (AP-2.4, AP-3.2).
 //
+// UI-Anpassung 2026-09-07: Kopf verdichtet (Kebab unter md, Zahnrad zu den
+// Anzeigen-Einstellungen), Suche schmal neben der Reiter-Leiste, Reiter „Fällig"
+// und „Mit Hinweis" entfernt, Sammelaktionen in die Auswahlzeile geholt,
+// eingereihte Läufe in die Glocke.
+//
 // Gefiltert und gesucht wird in der Oberfläche, nicht im Backend. Bei einem
 // privaten Bestand - Dutzende Anzeigen, nicht Zehntausende - ist das die
 // einfachere Lösung und fühlt sich besser an, weil jeder Tastendruck sofort
 // wirkt. Sobald ein Bestand das nicht mehr hergibt, wandert es serverseitig.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeftRight, Download, RefreshCw, Search, Trash2, Upload, X,
+  AlertTriangle, ArrowLeftRight, Download, MoreVertical, RefreshCw, Search, Settings,
+  Trash2, Upload, X,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
+import { useMeldungenQuelle } from '../context/useMeldungen';
+import type { Meldung } from '../context/meldungenKontext';
 import { hashFuer, hashFuerAnzeige, type AnzeigenHerkunft } from '../routing';
 import type { BestandsAnzeige } from '../types';
 import { AnzeigenEditor } from './AnzeigenEditor';
@@ -23,7 +31,7 @@ import { LoeschDialog } from './LoeschDialog';
 import { NachladenDialog } from './NachladenDialog';
 import { VorlagenListe } from './VorlagenListe';
 
-type Filter = 'aktiv' | 'faellig' | 'geaendert' | 'auffaellig' | 'geloescht' | 'alle';
+type Filter = 'aktiv' | 'geaendert' | 'geloescht' | 'alle';
 
 /*
  * Reihenfolge und Vorgabe (AP-2.36).
@@ -33,14 +41,16 @@ type Filter = 'aktiv' | 'faellig' | 'geaendert' | 'auffaellig' | 'geloescht' | '
  * Anzeigen ist das eine Liste, in der das Aktuelle untergeht.
  *
  * Jetzt ist „Aktiv" die Vorgabe, und „Alle" heißt wieder wörtlich alle - es
- * steht am Ende, wo man es sucht, wenn man wirklich alles sehen will. Damit
- * bleibt „Alle" ehrlich, statt still etwas wegzulassen.
+ * steht am Ende, wo man es sucht, wenn man wirklich alles sehen will.
+ *
+ * UI-Anpassung 2026-09-07: „Fällig" und „Mit Hinweis" sind keine Reiter mehr.
+ * „Fällig" (Neueinstellungs-Intervall abgelaufen) und die Problem-Hinweise
+ * (Versand ohne Paket, ohne Bild, unlesbare Datei …) bleiben als Badge an der
+ * Zeile; ein eigener Reiter dafür war mehr Bedienlast als Nutzen.
  */
 const FILTER: { id: Filter; label: string }[] = [
   { id: 'aktiv', label: 'Aktiv' },
-  { id: 'faellig', label: 'Fällig' },
   { id: 'geaendert', label: 'Lokal geändert' },
-  { id: 'auffaellig', label: 'Mit Hinweis' },
   { id: 'geloescht', label: 'Gelöscht' },
   { id: 'alle', label: 'Alle' },
 ];
@@ -53,9 +63,7 @@ function passtZumFilter(anzeige: BestandsAnzeige, filter: Filter): boolean {
     // eigenen ab (AP-3.10), `aktiv` zusätzlich alles, was das YAML-Feld
     // `active: false` trägt - etwa pausierte fremde Anzeigen.
     case 'aktiv': return anzeige.aktiv && !anzeige.geloescht;
-    case 'faellig': return anzeige.faellig;
     case 'geaendert': return anzeige.lokal_geaendert;
-    case 'auffaellig': return anzeige.hinweise.length > 0 || anzeige.unlesbar !== null;
     case 'geloescht': return anzeige.geloescht || !anzeige.aktiv;
     default: return true;
   }
@@ -99,6 +107,11 @@ export function BestandSeite({
   const [loeschDialog, setLoeschDialog] = useState<BestandsAnzeige[] | null>(null);
   const [sammelLaeuft, setSammelLaeuft] = useState<string | null>(null);
   const [sammelHinweis, setSammelHinweis] = useState<string | null>(null);
+  // Kebab-Menü im Kopf (ab < md) und die auf schmalen Fenstern zusammengeklappte
+  // Suche.
+  const [menueOffen, setMenueOffen] = useState(false);
+  const [sucheOffen, setSucheOffen] = useState(false);
+  const menueRef = useRef<HTMLDivElement>(null);
 
   // App.tsx rendert für #anzeigen/eigene und #anzeigen/fremde dieselbe
   // Komponente; nur `herkunft` wechselt. React unmountet dabei nicht, also
@@ -145,6 +158,25 @@ export function BestandSeite({
     void laden();
   }, [laden]);
 
+  // Kebab-Menü schließt bei Klick daneben oder Escape.
+  useEffect(() => {
+    if (!menueOffen) return undefined;
+    const ausserhalb = (ereignis: MouseEvent) => {
+      if (menueRef.current && !menueRef.current.contains(ereignis.target as Node)) {
+        setMenueOffen(false);
+      }
+    };
+    const escape = (ereignis: KeyboardEvent) => {
+      if (ereignis.key === 'Escape') setMenueOffen(false);
+    };
+    document.addEventListener('mousedown', ausserhalb);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', ausserhalb);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menueOffen]);
+
   const sichtbar = useMemo(
     () => anzeigen.filter(a => a.herkunft === herkunft),
     [anzeigen, herkunft],
@@ -157,9 +189,7 @@ export function BestandSeite({
 
   const zaehler = useMemo(() => ({
     aktiv: sichtbar.filter(a => a.aktiv && !a.geloescht).length,
-    faellig: sichtbar.filter(a => a.faellig).length,
     geaendert: sichtbar.filter(a => a.lokal_geaendert).length,
-    auffaellig: sichtbar.filter(a => a.hinweise.length > 0 || a.unlesbar).length,
     geloescht: sichtbar.filter(a => a.geloescht || !a.aktiv).length,
     alle: sichtbar.length,
   }), [sichtbar]);
@@ -296,8 +326,34 @@ export function BestandSeite({
     const bilder = antwort.geloescht.reduce((summe, g) => summe + g.bilder, 0);
     setLoeschDialog(null);
     return `${anzahl} ${anzahl === 1 ? 'Anzeige' : 'Anzeigen'} und ${bilder} `
-      + `${bilder === 1 ? 'Bild' : 'Bilder'} von diesem Rechner gelöscht.`;
+      + `${bilder === 1 ? 'Bild' : 'Bilder'} von diesem Rechner gelöscht. `
+      + 'Solange die Anzeige auf kleinanzeigen.de noch steht, holt sie „Vom Konto holen" zurück.';
   });
+
+  // Eingereihte Läufe stehen in der Glocke, nicht als Zeile im Seitenfluss
+  // (AP-2.25/2.30). Die Lösch-Bestätigung bleibt zusätzlich kurz an der
+  // Auswahlzeile - dazu läuft `sammelHinweis` unten weiter.
+  const meldungen = useMemo<Meldung[]>(() => {
+    const liste: Meldung[] = [];
+    if (downloadHinweis !== null) {
+      liste.push({
+        id: 'bestand-download',
+        ton: 'hinweis',
+        titel: `Lauf ${downloadHinweis} ist eingereiht`,
+        text: 'Der Bestand deines Kleinanzeigen-Kontos wird geholt.',
+      });
+    }
+    if (aktualisierungsHinweis !== null) {
+      liste.push({
+        id: 'bestand-aktualisierung',
+        ton: 'hinweis',
+        titel: `Lauf ${aktualisierungsHinweis} ist eingereiht`,
+        text: 'Die Anzeige wird auf kleinanzeigen.de aktualisiert.',
+      });
+    }
+    return liste;
+  }, [downloadHinweis, aktualisierungsHinweis]);
+  useMeldungenQuelle('bestand', meldungen);
 
   if (profileLaden) return <p className="text-sm text-leise">Wird geladen …</p>;
 
@@ -346,15 +402,15 @@ export function BestandSeite({
   return (
     <div className="seite">
       <div className="seite-kopf">
-        <div>
+        <div className="min-w-0">
           <h1 className="sr-only">{eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
-          <p className="seite-beschrieb">
-            {eigene
-              ? 'Anzeigen aus deinem Kleinanzeigen-Konto.'
-              : 'Anzeigen, die du per Link geholt hast – nicht aus deinem Konto.'}
-          </p>
+          {!eigene && (
+            <p className="seite-beschrieb">
+              Anzeigen, die du per Link geholt hast – nicht aus deinem Konto.
+            </p>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {eigene ? (
             <button
               type="button"
@@ -375,14 +431,59 @@ export function BestandSeite({
               Anzeigen per Link holen
             </button>
           )}
+
+          {/* Ab md nebeneinander; darunter wandern „Neu einlesen" und die
+              Anzeigen-Einstellungen ins Kebab, damit der Kopf schmal bleibt. */}
           <button
             type="button"
             onClick={() => void laden()}
-            className="btn-ghost"
+            className="btn-ghost hidden md:inline-flex"
           >
             <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
             Neu einlesen
           </button>
+          <button
+            type="button"
+            onClick={() => aufZiel('einstellungen/anzeigen')}
+            aria-label="Anzeigen-Einstellungen"
+            title="Anzeigen-Einstellungen"
+            className="btn-icon hidden md:inline-flex"
+          >
+            <Settings className="h-4 w-4" aria-hidden />
+          </button>
+
+          <div ref={menueRef} className="plattform-menue md:hidden">
+            <button
+              type="button"
+              className="btn-icon"
+              aria-haspopup="menu"
+              aria-expanded={menueOffen}
+              aria-label="Weitere Aktionen"
+              onClick={() => setMenueOffen(o => !o)}
+            >
+              <MoreVertical className="h-4 w-4" aria-hidden />
+            </button>
+            {menueOffen && (
+              <div className="plattform-menue-panel" role="menu" aria-label="Weitere Aktionen">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenueOffen(false); void laden(); }}
+                >
+                  <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
+                  Neu einlesen
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setMenueOffen(false); aufZiel('einstellungen/anzeigen'); }}
+                >
+                  <Settings className="h-4 w-4" aria-hidden />
+                  Anzeigen-Einstellungen
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -420,33 +521,8 @@ export function BestandSeite({
         />
       )}
 
-      {/* Kein Vollbreite-Banner mehr (AP-2.25): Der eingereihte Lauf steht in
-          der Glocke oben. Hier bleibt die kurze Zeile mit dem Weg dorthin. */}
-      {downloadHinweis !== null && (
-        <p className="mb-4 text-sm text-leise">
-          Lauf {downloadHinweis} ist eingereiht.{' '}
-          <button
-            type="button"
-            onClick={() => aufZiel('warteschlange')}
-            className="font-medium underline"
-          >
-            Zur Warteschlange
-          </button>
-        </p>
-      )}
-
-      {aktualisierungsHinweis !== null && (
-        <p className="mb-4 text-sm text-leise">
-          Lauf {aktualisierungsHinweis} ist eingereiht – die Anzeige wird aktualisiert.{' '}
-          <button
-            type="button"
-            onClick={() => aufZiel('warteschlange')}
-            className="font-medium underline"
-          >
-            Zur Warteschlange
-          </button>
-        </p>
-      )}
+      {/* „Lauf N ist eingereiht" steht in der Glocke (siehe `meldungen` /
+          useMeldungenQuelle) - kein Vollbreite-Hinweis mehr im Seitenfluss. */}
 
       {fehler && (
         <p className="hinweis hinweis-fehler mb-4">{fehler}</p>
@@ -472,8 +548,25 @@ export function BestandSeite({
         />
       )}
 
-      <div className="mb-4 space-y-3">
-        <label className="relative block">
+      {/* Suche und Reiter in einer Zeile (2026-09-07). Auf dem Desktop steht die
+          Suche schmal links neben der Reiter-Leiste; unter sm klappt sie auf ein
+          Lupen-Icon zusammen und öffnet sich bei Bedarf als eigene Zeile. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setSucheOffen(o => !o)}
+          aria-label="Suche ein- oder ausblenden"
+          aria-expanded={sucheOffen}
+          className="btn-icon flex-shrink-0 sm:hidden"
+        >
+          <Search className="h-4 w-4" aria-hidden />
+        </button>
+
+        <label
+          className={`relative flex-shrink-0 sm:order-first sm:block sm:w-64 ${
+            sucheOffen ? 'order-last block w-full' : 'hidden'
+          }`}
+        >
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-leise" aria-hidden />
           <span className="sr-only">Anzeigen durchsuchen</span>
           <input
@@ -485,11 +578,8 @@ export function BestandSeite({
           />
         </label>
 
-        <div className="reiter-leiste">
+        <div className="reiter-leiste min-w-0 flex-1 overflow-x-auto sm:flex-none">
           {FILTER.map(f => {
-            // Jeder Reiter trägt seine Zahl (AP-2.36). Vorher hatten drei von
-            // fünf eine - gerade „Gelöscht" ist die Zahl aber die Auskunft, ob
-            // sich ein Blick überhaupt lohnt.
             const anzahl = zaehler[f.id] ?? null;
             return (
               <button
@@ -519,11 +609,13 @@ export function BestandSeite({
         </div>
       ) : (
         <>
-          {/* Zählzeile und Alles-Wählen in einer Zeile (AP-2.20). Das Kästchen
-              wählt, was gerade sichtbar ist - nicht den ganzen Bestand. Alles
-              andere wäre eine Auswahl, die man nicht sieht. */}
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-xs text-leise">
+          {/* Zählzeile, Alles-Wählen und - sobald etwas gewählt ist - die
+              Sammelaktionen in einer Zeile (AP-2.20, verdichtet 2026-09-07). Das
+              Kästchen sitzt auf demselben Links-Einzug wie die Zeilen-Kästchen.
+              Die Zeile hat eine feste Mindesthöhe, damit die Liste nicht nach
+              unten springt, wenn die Aktionsknöpfe erscheinen. */}
+          <div className="bestand-auswahlzeile mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <label className="flex items-center gap-2 pl-4 text-xs text-leise">
               <input
                 type="checkbox"
                 checked={alleGewaehlt}
@@ -531,24 +623,65 @@ export function BestandSeite({
                 className="h-4 w-4"
                 aria-label={alleGewaehlt ? 'Auswahl aufheben' : 'Alle sichtbaren auswählen'}
               />
-              {gefiltert.length} von {sichtbar.length} Anzeigen
+              {gewaehlte.length > 0
+                ? `${gewaehlte.length} ausgewählt`
+                : `${gefiltert.length} von ${sichtbar.length} Anzeigen`}
             </label>
-            {sammelHinweis && (
-              <span className="text-xs text-leise">{sammelHinweis}</span>
+
+            {gewaehlte.length > 0 ? (
+              <div
+                role="group"
+                aria-label="Sammelaktionen"
+                className="ml-auto flex flex-wrap items-center gap-2"
+              >
+                <button
+                  type="button"
+                  onClick={() => void sammelHerkunft()}
+                  disabled={sammelLaeuft !== null}
+                  className="btn-ghost text-xs"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+                  {sammelLaeuft === 'herkunft'
+                    ? 'Wird verschoben …'
+                    : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void sammelHochladen()}
+                  disabled={sammelLaeuft !== null}
+                  className="btn-ghost text-xs"
+                >
+                  <Upload className="h-3.5 w-3.5" aria-hidden />
+                  {sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
+                </button>
+                {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen
+                    Knöpfen daneben abheben (AP-2.20). */}
+                <button
+                  type="button"
+                  onClick={() => setLoeschDialog(gewaehlte)}
+                  disabled={sammelLaeuft !== null}
+                  className="btn-ghost text-xs"
+                  style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  Lokal löschen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuswahl(new Set())}
+                  disabled={sammelLaeuft !== null}
+                  className="btn-leise text-xs"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                  Auswahl aufheben
+                </button>
+              </div>
+            ) : (
+              sammelHinweis && (
+                <span className="ml-auto text-xs text-leise">{sammelHinweis}</span>
+              )
             )}
           </div>
-
-          {gewaehlte.length > 0 && (
-            <SammelLeiste
-              anzahl={gewaehlte.length}
-              eigene={eigene}
-              laeuft={sammelLaeuft}
-              aufHerkunft={() => void sammelHerkunft()}
-              aufHochladen={() => void sammelHochladen()}
-              aufLoeschen={() => setLoeschDialog(gewaehlte)}
-              aufAufheben={() => setAuswahl(new Set())}
-            />
-          )}
           {/* Der Rahmen entsteht nur mit Inhalt (AP-2.18). Ohne diese Bedingung
               stand bei „kein Treffer" ein 2 px hoher, leerer Kasten mit Rand und
               Schatten über dem gestrichelten Leerzustand - ein Strich, den
@@ -599,62 +732,6 @@ export function BestandSeite({
           )}
         </>
       )}
-    </div>
-  );
-}
-
-/** Erscheint, sobald etwas ausgewählt ist, und verschwindet mit der Auswahl. */
-function SammelLeiste({
-  anzahl, eigene, laeuft, aufHerkunft, aufHochladen, aufLoeschen, aufAufheben,
-}: {
-  anzahl: number;
-  eigene: boolean;
-  laeuft: string | null;
-  aufHerkunft: () => void;
-  aufHochladen: () => void;
-  aufLoeschen: () => void;
-  aufAufheben: () => void;
-}) {
-  const gesperrt = laeuft !== null;
-  return (
-    <div
-      role="group"
-      aria-label="Sammelaktionen"
-      className="karte mb-3 flex flex-wrap items-center gap-2 p-3"
-    >
-      <span className="mr-1 text-sm font-medium text-stark">
-        {anzahl} ausgewählt
-      </span>
-
-      <button type="button" onClick={aufHerkunft} disabled={gesperrt} className="btn-ghost text-xs">
-        <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-        {laeuft === 'herkunft'
-          ? 'Wird verschoben …'
-          : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen'}
-      </button>
-
-      <button type="button" onClick={aufHochladen} disabled={gesperrt} className="btn-ghost text-xs">
-        <Upload className="h-3.5 w-3.5" aria-hidden />
-        {laeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen'}
-      </button>
-
-      {/* Rot, weil es Dateien vernichtet - und nur hier, damit es sich vom
-          Verschieben und Hochladen daneben unterscheidet. */}
-      <button
-        type="button"
-        onClick={aufLoeschen}
-        disabled={gesperrt}
-        className="btn-ghost text-xs"
-        style={{ color: 'var(--hinweis-fehler-text)', borderColor: 'var(--hinweis-fehler-rand)' }}
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        Lokal löschen
-      </button>
-
-      <button type="button" onClick={aufAufheben} disabled={gesperrt} className="btn-leise ml-auto text-xs">
-        <X className="h-3.5 w-3.5" aria-hidden />
-        Auswahl aufheben
-      </button>
     </div>
   );
 }

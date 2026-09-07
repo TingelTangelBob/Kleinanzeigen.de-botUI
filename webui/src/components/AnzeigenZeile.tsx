@@ -114,17 +114,23 @@ function merkmaleVon(anzeige: BestandsAnzeige): MerkmalDaten[] {
   } else if (!anzeige.aktiv) {
     liste.push({ schluessel: 'inaktiv', text: 'Inaktiv', ton: 'grau' });
   }
-  if (anzeige.faellig) {
-    liste.push({
-      schluessel: 'faellig', text: 'Fällig', ton: 'blau', symbol: 'wiederholen',
-      titel: 'Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht.',
-    });
-  }
-  if (anzeige.lokal_geaendert) {
-    liste.push({
-      schluessel: 'geaendert', text: 'Lokal geändert', ton: 'gelb', symbol: 'stift',
-      titel: 'Lokal geändert. Ein erneutes Herunterladen würde die Änderung überschreiben.',
-    });
+  // Bei einer auf der Plattform nicht mehr aktiven Anzeige (AP-3.10) tragen
+  // „Fällig" und „Lokal geändert" nichts bei: neu einstellen lässt sich nichts,
+  // und neben „Gelöscht" verwirrt der Änderungshinweis nur. Die Zeile bleibt
+  // dann bei „Gelöscht".
+  if (!anzeige.geloescht) {
+    if (anzeige.faellig) {
+      liste.push({
+        schluessel: 'faellig', text: 'Fällig', ton: 'blau', symbol: 'wiederholen',
+        titel: 'Der eingestellte Abstand zur letzten Veröffentlichung ist erreicht.',
+      });
+    }
+    if (anzeige.lokal_geaendert) {
+      liste.push({
+        schluessel: 'geaendert', text: 'Lokal geändert', ton: 'gelb', symbol: 'stift',
+        titel: 'Lokal geändert. Ein erneutes Herunterladen würde die Änderung überschreiben.',
+      });
+    }
   }
   for (const h of anzeige.hinweise) {
     liste.push({

@@ -11,8 +11,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { fireEvent } from '@testing-library/dom';
+import type { ReactNode } from 'react';
 import { BestandSeite } from './BestandSeite';
+import { MeldungenProvider } from '../context/MeldungenContext';
 import type { BestandsAnzeige } from '../types';
+
+// BestandSeite meldet eingereihte Läufe an die Glocke (AP-2.30) und braucht
+// dafür den Provider.
+function huelle({ children }: { children: ReactNode }) {
+  return <MeldungenProvider>{children}</MeldungenProvider>;
+}
 
 const liste = vi.fn();
 const loeschen = vi.fn();
@@ -88,7 +96,7 @@ async function geladen() {
 describe('Mehrfachauswahl', () => {
 
   it('zeigt die Sammelleiste erst mit einer Auswahl', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     expect(screen.queryByRole('group', { name: 'Sammelaktionen' })).toBeNull();
@@ -100,7 +108,7 @@ describe('Mehrfachauswahl', () => {
   });
 
   it('wählt mit dem Kopfkästchen alle sichtbaren und hebt wieder auf', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(screen.getByLabelText('Alle sichtbaren auswählen'));
@@ -111,7 +119,7 @@ describe('Mehrfachauswahl', () => {
   });
 
   it('wählt nur, was der Filter übrig lässt', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.change(screen.getByPlaceholderText(/Titel, Kategorie/), {
@@ -126,7 +134,7 @@ describe('Mehrfachauswahl', () => {
 describe('Löschen', () => {
 
   it('sagt im Dialog, dass die Plattform unberührt bleibt', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));
@@ -139,7 +147,7 @@ describe('Löschen', () => {
   });
 
   it('schickt genau die ausgewählten Dateien', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));
@@ -154,7 +162,7 @@ describe('Löschen', () => {
   });
 
   it('reiht keinen Bot-Lauf ein', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));
@@ -167,7 +175,7 @@ describe('Löschen', () => {
   });
 
   it('liest die Liste neu und meldet das Ergebnis', async () => {
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
     const vorher = liste.mock.calls.length;
 
@@ -183,7 +191,7 @@ describe('Löschen', () => {
 
   it('lässt die Auswahl stehen, wenn das Löschen scheitert', async () => {
     loeschen.mockRejectedValueOnce(new Error('kaputt'));
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));
@@ -199,7 +207,7 @@ describe('Weitere Sammelaktionen', () => {
 
   it('verschiebt die Auswahl nacheinander', async () => {
     herkunftSetzen.mockResolvedValue(A);
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));
@@ -213,7 +221,7 @@ describe('Weitere Sammelaktionen', () => {
 
   it('reiht je Anzeige einen Hochladen-Lauf ein', async () => {
     hochladen.mockResolvedValue({ job_id: 7, anzeige: A });
-    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />);
+    render(<BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle });
     await geladen();
 
     fireEvent.click(kaestchen('Kinderwagen'));

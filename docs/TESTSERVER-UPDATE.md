@@ -4,6 +4,15 @@
 
 # Testserver aktualisieren
 
+Die verbindliche Zuordnung von Host, SSH, Projektpfad, Ports, Compose-Dateien und
+Konfliktregeln sowie der Agenten-Ablauf bei fehlender Erreichbarkeit stehen in
+[`Testserver.md`](../Testserver.md).
+
+Für dieses Projekt ist `192.168.178.127` die Testumgebung. Docker muss deshalb
+nicht auf dem lokalen Arbeitsplatz installiert sein: Der Deploy-Befehl überträgt
+den Arbeitsstand dorthin und führt Build, Prüfungen und Stack-Start in den
+Containern des Testservers aus.
+
 Für den ausdrücklich freigegebenen Anzeigen-Studio-LAN-Testserver gibt es
 einen gebündelten Ablauf:
 

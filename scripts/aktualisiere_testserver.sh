@@ -94,6 +94,19 @@ readonly SSH_OPTIONEN=(
   -o ConnectTimeout=10
 )
 
+# Nur das Ergebnis soll im Agenten-Chat anfallen; Details bleiben im Log.
+readonly LOG_DATEI="${TMPDIR:-/tmp}/anzeigen-studio-testserver-$$.log"
+# Die vollständige Ausgabe geht ins Log. Der ursprüngliche stderr bleibt für
+# die kurze Erfolg-/Fehlermeldung im manuellen Terminal erhalten.
+exec 3>&2
+exec >"${LOG_DATEI}" 2>&1
+fehlerbericht() {
+  local status=$?
+  printf 'FEHLER: Deploy fehlgeschlagen (Status %s). Log: %s\n' "${status}" "${LOG_DATEI}" >&3
+  exit "${status}"
+}
+trap fehlerbericht ERR
+
 echo "Übertrage Arbeitsstand nach ${ZIEL}:${TESTSERVER_ORDNER} …"
 COPYFILE_DISABLE=1 tar \
   --exclude='./.git' \
@@ -155,4 +168,6 @@ echo "Prüfe HTTP-Startseite …"
 ssh "${SSH_OPTIONEN[@]}" "${ZIEL}" \
   "for versuch in \$(seq 1 30); do curl --fail --silent --show-error http://127.0.0.1:8080/ >/dev/null && exit 0; sleep 2; done; echo 'HTTP-Prüfung des LAN-Stacks fehlgeschlagen.' >&2; exit 1"
 
-echo "Testserver aktualisiert: http://${TESTSERVER_HOST}:8080"
+trap - ERR
+printf 'OK: Testserver aktualisiert – http://%s:8080 | Log: %s\n' "${TESTSERVER_HOST}" "${LOG_DATEI}" >&3
+exec 3>&-

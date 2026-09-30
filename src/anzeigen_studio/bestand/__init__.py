@@ -5,11 +5,14 @@
 # Der lokale Anzeigenbestand (AP-3.2).
 
 from anzeigen_studio.bestand import plattform_reihenfolge
+from anzeigen_studio.bestand import versionen as versionen
 from anzeigen_studio.bestand.bearbeiten import (
     AENDERBAR,
     GEMISCHTE_GROESSEN_MELDUNG,
     pruefen_zum_veroeffentlichen,
     rohdaten_lesen,
+    rohtext_lesen,
+    rohtext_schreiben,
     speichern,
     versandgroessen_pruefen,
 )
@@ -53,6 +56,9 @@ __all__ = [
     "pruefen_zum_veroeffentlichen",
     "reihenfolge_pruefen",
     "rohdaten_lesen",
+    "rohtext_lesen",
+    "rohtext_schreiben",
     "speichern",
     "versandgroessen_pruefen",
+    "versionen",
 ]

@@ -17,6 +17,7 @@ from anzeigen_studio import bestand as bestand_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.bestand import plattform_reihenfolge
 from anzeigen_studio.bestand import stand as stand_dienst
+from anzeigen_studio.bestand import versionen as versionen_dienst
 from anzeigen_studio.bestand import vorlagen as vorlagen_dienst
 from anzeigen_studio.core import db
 from anzeigen_studio.core import profile as profile_dienst
@@ -270,6 +271,103 @@ def vergleich_lesen(
     )
 
 
+
+
+class VersionAusgabe(BaseModel):
+    id: int
+    datei: str
+    angelegt_am: str
+    groesse: int
+
+
+class VersionInhaltAusgabe(VersionAusgabe):
+    inhalt: str
+
+
+class VersionenListeAusgabe(BaseModel):
+    datei: str
+    max_versionen: int
+    versionen: list[VersionAusgabe]
+
+
+class ZuruecksetzenEingabe(BaseModel):
+    datei: str = Field(min_length = 1, max_length = 400)
+    version_id: int
+
+
+@router.get("/versionen", response_model = VersionenListeAusgabe)
+def versionen_liste(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> VersionenListeAusgabe:
+    """Fruehere Fassungen einer Anzeige (AP-3.5). Neueste zuerst."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    # Existenz der Anzeige pruefen - sonst Historie zu geloeschten Pfaden.
+    bestand_dienst.rohdaten_lesen(wurzel, datei)
+    profil_obj = _profil(conn, profil)
+    eintraege = versionen_dienst.liste(conn, profil_obj.id, datei)
+    return VersionenListeAusgabe(
+        datei = datei,
+        max_versionen = versionen_dienst.MAX_VERSIONEN,
+        versionen = [
+            VersionAusgabe(
+                id = v.id, datei = v.datei,
+                angelegt_am = v.angelegt_am, groesse = v.groesse,
+            )
+            for v in eintraege
+        ],
+    )
+
+
+@router.get("/version", response_model = VersionInhaltAusgabe)
+def version_lesen(
+    profil: str,
+    datei: Annotated[str, Query(max_length = 400)],
+    version_id: Annotated[int, Query(ge = 1)],
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> VersionInhaltAusgabe:
+    """Eine abgelegte Fassung inklusive YAML-Text."""
+    _profil_wurzel(conn, cfg, profil)
+    profil_obj = _profil(conn, profil)
+    v = versionen_dienst.lesen(conn, profil_obj.id, datei, version_id)
+    if v.inhalt is None:  # pragma: no cover - lesen liefert inhalt immer
+        raise FachlicherFehler("Version nicht gefunden.", status = 404)
+    return VersionInhaltAusgabe(
+        id = v.id, datei = v.datei, angelegt_am = v.angelegt_am,
+        groesse = v.groesse, inhalt = v.inhalt,
+    )
+
+
+@router.post("/version/zuruecksetzen", response_model = AnzeigeInhalt)
+def version_zuruecksetzen(
+    profil: str,
+    daten: ZuruecksetzenEingabe,
+    conn: Verbindung,
+    cfg: Konfiguration,
+) -> AnzeigeInhalt:
+    """Stellt eine fruehere Fassung wieder her und gibt die Anzeige zurueck."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    profil_obj = _profil(conn, profil)
+    versionen_dienst.zuruecksetzen(
+        conn, wurzel, profil_obj.id, daten.datei, daten.version_id,
+    )
+    felder = bestand_dienst.rohdaten_lesen(wurzel, daten.datei)
+    kopf = next(
+        (a for a in bestand_dienst.bestand_lesen(wurzel) if a.datei == daten.datei),
+        None,
+    )
+    if kopf is None:
+        raise FachlicherFehler("Anzeige nicht gefunden.", status = 404)
+    return AnzeigeInhalt(
+        kopf = _ausgabe(kopf),
+        felder = dict(felder),
+        aenderbar = sorted(bestand_dienst.AENDERBAR),
+    )
+
+
 @router.put("/anzeige", response_model = SpeichernAusgabe)
 def anzeige_speichern(
     profil: str,
@@ -294,7 +392,14 @@ def anzeige_speichern(
             raise FachlicherFehler("Bilder müssen eine Liste sein.", status = 400, feld = "images")
         bestand_dienst.reihenfolge_pruefen(wurzel, daten.datei, [str(b) for b in roh])
 
-    kopf, hinweise = bestand_dienst.speichern(wurzel, daten.datei, felder)
+    profil_obj = _profil(conn, profil)
+
+    def _version_ablegen(vorher: str) -> None:
+        versionen_dienst.ablegen(conn, profil_obj.id, daten.datei, vorher)
+
+    kopf, hinweise = bestand_dienst.speichern(
+        wurzel, daten.datei, felder, versions_ablegen = _version_ablegen,
+    )
     return SpeichernAusgabe(kopf = _ausgabe(kopf), hinweise = hinweise)
 
 
@@ -693,7 +798,11 @@ def anzeigen_loeschen(
     Kein Bot-Aufruf, keine Warteschlange - siehe `bestand/loeschen.py`.
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
+    profil_obj = _profil(conn, profil)
     fertig = bestand_dienst.mehrere_entfernen(wurzel, daten.dateien)
+    for g in fertig:
+        versionen_dienst.vergessen(conn, profil_obj.id, g.datei)
+        stand_dienst.vergessen(conn, profil_obj.id, g.datei)
     return LoeschenAusgabe(
         geloescht = [
             GeloeschtAusgabe(

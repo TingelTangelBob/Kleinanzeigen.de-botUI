@@ -318,6 +318,32 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         """,
     ),
     (
+        13,
+        "anzeigen-versionen",
+        """
+        -- Fruehere YAML-Fassungen je Anzeige (AP-3.5).
+        --
+        -- Beim Speichern wird die bisherige Datei hier abgelegt, bevor die neue
+        -- geschrieben wird. So laesst sich zuruecksetzen. Der Deckel
+        -- (MAX_VERSIONEN in bestand/versionen.py) greift in der Anwendung,
+        -- nicht in der Tabelle - SQLite kennt keine "behalte die letzten N".
+        --
+        -- In der Datenbank und nicht als Datei neben der Anzeige: Der Bot
+        -- sucht mit `ad_*.{yaml,yml,json}`; eine Begleitdatei waere davon
+        -- erfasst worden (gleicher Grund wie bei anzeige_stand).
+        CREATE TABLE anzeige_version (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            profil_id   INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            datei       TEXT    NOT NULL,
+            inhalt      TEXT    NOT NULL,
+            angelegt_am TEXT    NOT NULL
+        );
+
+        CREATE INDEX idx_anzeige_version_datei
+            ON anzeige_version(profil_id, datei, id);
+        """,
+    ),
+    (
         14,
         "automatisches-verlaengern",
         """

@@ -29,6 +29,7 @@ from anzeigen_studio.core.errors import FachlicherFehler
 from anzeigen_studio.katalog.daten import gemischte_versandgroessen
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
     from pathlib import Path
 
@@ -213,18 +214,40 @@ def versandgroessen_pruefen(daten: dict[str, Any]) -> None:
         )
 
 
+
+def rohtext_lesen(profil_wurzel: Path, datei: str) -> str:
+    """Liest den YAML-Text einer Anzeigendatei unveraendert."""
+    return _pfad(profil_wurzel, datei).read_text(encoding="utf-8")
+
+
+def rohtext_schreiben(profil_wurzel: Path, datei: str, inhalt: str) -> None:
+    """Schreibt einen YAML-Text atomar (ueber Speicher) auf die Platte."""
+    pfad = _pfad(profil_wurzel, datei)
+    # Gleicher Schutz wie bei speichern: erst fertig serialisieren, dann schreiben.
+    # Hier ist der Text schon fertig - trotzdem ueber einen Puffer, damit ein
+    # Abbruch mitten im write_text keine halbe Datei hinterlaesst? write_text
+    # ersetzt die Datei; bei sehr kurzen Texten reicht das. Wir schreiben direkt.
+    pfad.write_text(inhalt, encoding="utf-8")
+
+
 def speichern(
     profil_wurzel: Path,
     datei: str,
     aenderungen: dict[str, Any],
     *,
     jetzt: datetime | None = None,
+    versions_ablegen: Callable[[str], None] | None = None,
 ) -> tuple[BestandsAnzeige, list[str]]:
     """Schreibt geänderte Felder in die Anzeigendatei.
 
     Gibt die neu gelesene Anzeige und die Hinweise der Pruefung zurueck.
+
+    `versions_ablegen` erhaelt den bisherigen YAML-Text, bevor er
+    ueberschrieben wird (AP-3.5). Nur bei tatsaechlicher Aenderung und nur
+    wenn der Aufrufer es mitgibt - Tests ohne Datenbank bleiben schlank.
     """
     pfad = _pfad(profil_wurzel, datei)
+    vorher_text = pfad.read_text(encoding="utf-8")
     daten = rohdaten_lesen(profil_wurzel, datei)
 
     unerlaubt = sorted(set(aenderungen) - AENDERBAR)
@@ -247,7 +270,13 @@ def speichern(
     # Fehler beim Serialisieren darf keine halbe Datei hinterlassen.
     puffer = io.StringIO()
     _yaml_rund.dump(daten, puffer)
-    pfad.write_text(puffer.getvalue(), encoding = "utf-8")
+    neu_text = puffer.getvalue()
+
+    # Historie vor dem Ueberschreiben - und nur wenn sich wirklich etwas aendert.
+    if versions_ablegen is not None and neu_text != vorher_text:
+        versions_ablegen(vorher_text)
+
+    pfad.write_text(neu_text, encoding = "utf-8")
 
     return _anzeige_lesen(pfad, profil_wurzel.resolve(), jetzt = jetzt or _jetzt()), hinweise
 

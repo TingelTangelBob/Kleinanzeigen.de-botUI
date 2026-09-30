@@ -206,10 +206,10 @@ export const api = {
      * Anzeigennummer: mit Nummer `update` (bearbeiten), ohne Nummer `publish`
      * (neu einstellen). `befehl` in der Antwort sagt, was es wurde.
      */
-    hochladen: (profil: string, datei: string) =>
+    hochladen: (profil: string, datei: string, neuEinstellen = false) =>
       anfrage<{ job_id: number; anzeige: BestandsAnzeige; befehl: string }>(
         `/bestand/hochladen?profil=${encodeURIComponent(profil)}`,
-        { method: 'POST', ...json({ datei }) },
+        { method: 'POST', ...json({ datei, neu_einstellen: neuEinstellen }) },
       ),
 
     /** Reiht das plattformweite Löschen exakt dieser eigenen Anzeige ein. */

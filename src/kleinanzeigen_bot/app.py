@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: © Jens Bergmann and contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # SPDX-ArtifactOfProjectHomePage: https://github.com/Second-Hand-Friends/kleinanzeigen-bot/
+# Fork change 2026-09-10: Explicit Studio republish runs may include an
+# inactive local ad when a numeric selection is passed.
 import asyncio, importlib, os, sys  # isort: skip
 from gettext import gettext as _
 from pathlib import Path
@@ -276,7 +278,8 @@ class KleinanzeigenBot(WebScrapingMixin):  # noqa: PLR0904
                 sys.exit(2)
             self.ads_selector = "due"
 
-        if ads := self.load_ads():
+        include_inactive = os.environ.get("KLEINANZEIGEN_BOT_INCLUDE_INACTIVE") == "1"
+        if ads := self.load_ads(ignore_inactive = not include_inactive):
             await self._open_logged_in_browser()
             await self.publish_ads(ads)
         else:

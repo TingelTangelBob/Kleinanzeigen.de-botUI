@@ -474,6 +474,8 @@ def bild_entfernen(
 
 class HochladenEingabe(BaseModel):
     datei: str = Field(min_length = 1, max_length = 400)
+    #: Bei einer vorhandenen Anzeige bewusst `publish` statt `update` wählen.
+    neu_einstellen: bool = False
 
 
 class HochladenAusgabe(BaseModel):
@@ -530,12 +532,15 @@ async def hochladen(
 ) -> HochladenAusgabe:
     """Reiht einen Lauf ein, der genau diese eine Anzeige auf die Plattform bringt.
 
-    **Die Anzeigennummer entscheidet, welcher Befehl läuft** (AP-3.8):
+    **Die Anzeigennummer entscheidet standardmäßig, welcher Befehl läuft** (AP-3.8):
 
     * **Mit Nummer → `update`.** Die Anzeige steht online und wird bearbeitet.
       Niemals `publish`: Das löscht die alte und stellt eine neue ein -
       Anzeigennummer, Aufrufe, Merker und Alter wären weg (`docs/RUNDLAUF.md`,
       Abschnitt 4). Zusätzlich grenzt `--ads=<id>` den Lauf auf sie ein.
+    * **Neu einstellen → `publish --ads=<id>`.** Eine vorhandene Anzeige wird
+      bewusst als neue Anzeige eingestellt. Die alte Anzeigennummer bleibt in
+      der lokalen Datei, bis der Lauf erfolgreich eine neue Nummer zurückschreibt.
     * **Ohne Nummer → `publish --ads=new`.** Die Anzeige war nie online; es
       gibt nichts zu bearbeiten. `--ads=new` wählt genau die Anzeigen **ohne**
       Nummer aus und ignoriert `republication_interval`. Der `publish`-Standard
@@ -564,14 +569,17 @@ async def hochladen(
 
     _hochladbar(anzeige, dict(felder))
 
-    neu = anzeige.id is None
+    neu = anzeige.id is None or daten.neu_einstellen
     befehl = "publish" if neu else "update"
-    # AP-3.11: `--ads=new` statt leer. `new` grenzt auf Anzeigen ohne Nummer ein
-    # und ignoriert `republication_interval`; der `publish`-Standard `--ads=due`
-    # überspringt eine nie online gewesene Anzeige still, sobald sie ein
-    # `created_on` jünger als sieben Tage trägt (AP-3.9). Die Dateigrenze aus
-    # `anzeigen_glob` hält den Lauf trotzdem auf genau diese eine Anzeige.
-    argumente = ["--ads=new"] if neu else [f"--ads={anzeige.id}"]
+    # AP-3.11: `--ads=new` statt leer für Anzeigen ohne Nummer. `new` grenzt
+    # auf Anzeigen ohne Nummer ein und ignoriert `republication_interval`; der
+    # `publish`-Standard `--ads=due` überspringt eine nie online gewesene
+    # Anzeige still, sobald sie ein `created_on` jünger als sieben Tage trägt
+    # (AP-3.9). Beim bewussten Neu-Einstellen bleibt die vorhandene Nummer das
+    # Auswahlkriterium, auch wenn der Befehl von `update` auf `publish` wechselt.
+    # Die Dateigrenze aus `anzeigen_glob` hält den Lauf trotzdem auf genau diese
+    # eine Anzeige.
+    argumente = ["--ads=new"] if anzeige.id is None else [f"--ads={anzeige.id}"]
 
     job_id = await ws.einreihen(
         conn, p.id, befehl, argumente,

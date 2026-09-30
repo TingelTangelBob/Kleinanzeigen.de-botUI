@@ -22,6 +22,8 @@ interface Props {
   anzeige: BestandsAnzeige;
   profil: string;
   laeuft: boolean;
+  /** Erzwingt bei einer bereits veröffentlichten Anzeige den publish-Lauf. */
+  neuEinstellen?: boolean;
   aufAbbrechen: () => void;
   aufBestaetigen: () => void;
 }
@@ -131,7 +133,9 @@ function Vergleichsteil({ profil, datei }: { profil: string; datei: string }) {
   );
 }
 
-export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBestaetigen }: Props) {
+export function HochladenDialog({
+  anzeige, profil, laeuft, neuEinstellen = false, aufAbbrechen, aufBestaetigen,
+}: Props) {
   // Die Anzeigennummer entscheidet, welcher Vorgang das ist (AP-3.8) - dieselbe
   // Bedingung wie im Backend. Ohne Nummer war die Anzeige nie online; es gibt
   // nichts zu bearbeiten, also wird eingestellt.
@@ -146,10 +150,12 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
         className="dialog"
       >
         <h2 id="hochladen-titel" className="mb-1 font-semibold text-stark">
-          {neu ? 'Neu auf kleinanzeigen.de einstellen' : 'Auf kleinanzeigen.de aktualisieren'}
+          {neu || neuEinstellen
+            ? 'Neu auf kleinanzeigen.de einstellen'
+            : 'Auf kleinanzeigen.de aktualisieren'}
         </h2>
         <p className="mb-4 text-sm text-normal">
-          {neu
+          {neu || neuEinstellen
             ? 'Der Bot meldet sich an, füllt das Aufgabeformular mit dem hier gespeicherten Stand und stellt die Anzeige ein.'
             : 'Der Bot meldet sich an, öffnet diese Anzeige und schreibt den hier gespeicherten Stand hinein.'}
         </p>
@@ -185,15 +191,17 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
 
         {/* Ein Vergleich mit dem letzten Plattformstand ergibt nur Sinn, wenn es
             einen gibt. Bei einer nie veröffentlichten Anzeige gibt es keinen. */}
-        {!neu && <Vergleichsteil profil={profil} datei={anzeige.datei} />}
+        {!neu && !neuEinstellen && <Vergleichsteil profil={profil} datei={anzeige.datei} />}
 
         <div className="hinweis mb-4 flex items-start gap-2">
           <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden />
-          {neu ? (
+          {neu || neuEinstellen ? (
             <p>
               Die Anzeige wird <span className="font-medium">neu eingestellt</span>. Sie ist
-              danach öffentlich sichtbar und bekommt ihre Anzeigennummer. Bestehende
-              Anzeigen bleiben unberührt – auch eine gleichnamige wird nicht ersetzt.
+              danach öffentlich sichtbar und bekommt {neuEinstellen ? 'eine neue' : 'ihre'}{' '}
+              Anzeigennummer. {neuEinstellen
+                ? 'Die bisherige Anzeige bleibt bestehen, bis du sie selbst löschst oder Kleinanzeigen sie entfernt.'
+                : 'Bestehende Anzeigen bleiben unberührt – auch eine gleichnamige wird nicht ersetzt.'}
             </p>
           ) : (
             <p>
@@ -204,7 +212,7 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
         </div>
 
         <p className="mb-4 text-xs text-leise">
-          {neu
+          {neu || neuEinstellen
             ? 'Der Lauf sieht nur diese eine Datei – kein anderer Entwurf geht mit online. '
             : 'Verglichen wird mit dem letzten Stand, den der Bot geschrieben hat – hat jemand die '
               + 'Anzeige seither auf kleinanzeigen.de selbst bearbeitet, weiß das hier niemand. '
@@ -231,7 +239,7 @@ export function HochladenDialog({ anzeige, profil, laeuft, aufAbbrechen, aufBest
             <ArrowUpFromLine className="h-4 w-4" aria-hidden />
             {laeuft
               ? 'Wird eingereiht …'
-              : neu ? 'Jetzt veröffentlichen' : 'Jetzt aktualisieren'}
+              : neuEinstellen ? 'Jetzt neu einstellen' : neu ? 'Jetzt veröffentlichen' : 'Jetzt aktualisieren'}
           </button>
         </div>
       </div>

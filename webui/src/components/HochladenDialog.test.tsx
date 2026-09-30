@@ -82,6 +82,23 @@ describe('Ohne Anzeigennummer: veröffentlichen', () => {
 
 describe('Mit Anzeigennummer: aktualisieren', () => {
 
+  it('kann eine vorhandene Anzeige ausdrücklich neu einstellen', () => {
+    render(
+      <HochladenDialog
+        anzeige={anzeige(3310837392)}
+        profil="test"
+        laeuft={false}
+        neuEinstellen
+        aufAbbrechen={vi.fn()}
+        aufBestaetigen={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('heading', { name: /Neu auf kleinanzeigen\.de einstellen/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Jetzt neu einstellen/ })).toBeTruthy();
+    expect(screen.queryByText(/Felder ändern sich/)).toBeNull();
+  });
+
   it('heißt Aktualisieren und nennt die Nummer', () => {
     zeigen(3310837392);
     expect(screen.getByRole('heading', { name: /Auf kleinanzeigen\.de aktualisieren/ })).toBeTruthy();

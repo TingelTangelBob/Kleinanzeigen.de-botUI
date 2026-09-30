@@ -422,6 +422,16 @@ class Warteschlange:
         # nicht in der Einstellung: Von der Laufliste aus gestartete Laeufe
         # sollen weiter tun, was der Mensch dort eingestellt hat.
         neue_anzeige = job.befehl == "publish" and einzelne_datei
+        # Eine ausdrückliche Neu-Einstellung darf auch eine lokale, archivierte
+        # Anzeige veröffentlichen. Der Bot filtert in Hintergrundläufen
+        # `active: false` heraus; die numerische Auswahl aus dieser Aktion ist
+        # dagegen bewusst eindeutig.
+        if (
+            job.befehl == "publish"
+            and einzelne_datei
+            and any(argument.startswith("--ads=") and argument != "--ads=new" for argument in job.argumente)
+        ):
+            umgebung["KLEINANZEIGEN_BOT_INCLUDE_INACTIVE"] = "1"
         # Ein gezieltes Delete aus der Anzeige soll die lokale Kopie behalten,
         # aber als nicht mehr online markieren. Ein profilweiter Delete aus
         # der Warteschlange behaelt dagegen die Nutzereinstellung.

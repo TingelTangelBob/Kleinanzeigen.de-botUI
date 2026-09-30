@@ -165,6 +165,18 @@ class TestBefehlswahl:
         job = _job(client, antwort.json()["job_id"])
         assert job["befehl"] != "publish"
 
+    def test_neu_einstellen_erzwingt_publish(self, client: TestClient, mit_nummer: str) -> None:
+        antwort = client.post(
+            "/api/bestand/hochladen", params = {"profil": PROFIL},
+            json = {"datei": mit_nummer, "neu_einstellen": True},
+        )
+        assert antwort.status_code == 202, antwort.text
+        assert antwort.json()["befehl"] == "publish"
+
+        job = _job(client, antwort.json()["job_id"])
+        assert job["befehl"] == "publish"
+        assert job["argumente"] == ["--ads=3310837392"]
+
     def test_lauf_sieht_nur_diese_datei(
         self, client: TestClient, ohne_nummer: str, tmp_path: Path,
     ) -> None:

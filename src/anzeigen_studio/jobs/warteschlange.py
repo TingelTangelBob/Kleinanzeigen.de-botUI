@@ -93,6 +93,21 @@ _DELETE_NICHT_GEFUNDEN_MUSTER: Final[re.Pattern[str]] = re.compile(
     r"\bnot found\b|\bnicht gefunden\b", re.IGNORECASE,
 )
 
+# Beim gezielten Nachladen meldet der Bot eine nicht mehr erreichbare Anzeige
+# als reguläre Fehlerzeile, beendet den Lauf aber oft trotzdem mit Rückgabecode
+# 0. Die Information gehört deshalb in die Laufmeldung und nicht als dauerhafte
+# Warnung auf die Bestandsseite.
+_DOWNLOAD_NICHT_ERREICHBAR_MUSTER: Final[re.Pattern[str]] = re.compile(
+    r"There is no ad under the given ID|keine Anzeige unter der angegebenen ID|ad .* not found|Anzeige .*"
+    r"(?:nicht gefunden|nicht erreichbar)",
+    re.IGNORECASE,
+)
+
+_DOWNLOAD_NICHT_ERREICHBAR_MELDUNG: Final[str] = (
+    "Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen. "
+    "Endgültig gelöschte Anzeigen sind weg – kein Werkzeug holt sie zurück."
+)
+
 
 class Warteschlange:
     """Nimmt Jobs entgegen und arbeitet sie ab.
@@ -486,6 +501,7 @@ class Warteschlange:
         skip_gesehen = False
         nichts_geladen = False
         delete_nicht_gefunden = False
+        download_nicht_erreichbar = False
 
         await lauf.starten()
         async for ereignis in lauf.ereignisse():
@@ -497,6 +513,8 @@ class Warteschlange:
                 nichts_geladen = True
             if job.befehl == "delete" and _DELETE_NICHT_GEFUNDEN_MUSTER.search(ereignis.text):
                 delete_nicht_gefunden = True
+            if nachladen and _DOWNLOAD_NICHT_ERREICHBAR_MUSTER.search(ereignis.text):
+                download_nicht_erreichbar = True
             with db.transaction(conn):
                 speicher.log_anhaengen(conn, job_id, ereignis)
                 # Woran der Lauf gerade ist (AP-2.8). Sagt die Zeile nichts
@@ -608,6 +626,14 @@ class Warteschlange:
                 "dass die Anzeige nicht gefunden wurde). Die lokale Kopie bleibt zur "
                 "Prüfung erhalten."
             )
+
+        if nachladen and download_nicht_erreichbar:
+            # Der Lauf kann neben einem fehlenden Link noch andere Anzeigen
+            # erfolgreich holen. In beiden Fällen muss der Mensch die Meldung
+            # sehen; ein fehlender Link darf nicht wie ein sauberer Lauf wirken.
+            if zustand is JobZustand.FERTIG:
+                zustand = JobZustand.PRUEFEN
+            meldung = _DOWNLOAD_NICHT_ERREICHBAR_MELDUNG
 
         # Bei der kombinierten Löschung bleibt die lokale Datei bis hierhin
         # liegen. Erst wenn der Plattformlauf wirklich als FERTIG feststeht,

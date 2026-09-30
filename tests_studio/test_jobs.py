@@ -717,6 +717,33 @@ class TestAnzeigenGlob:
         geschrieben = (verzeichnis / "config.yaml").read_text(encoding = "utf-8")
         assert "fremde-ads" in geschrieben
 
+    @pytest.mark.asyncio
+    async def test_nachladen_meldet_nicht_mehr_erreichbare_anzeige(
+            self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        """Der Hinweis erscheint erst nach einem echten Abrufversuch."""
+        cfg, conn, profil_id, verzeichnis = umgebung
+        ws = Warteschlange(
+            cfg, taktung = OHNE_TAKT,
+            lauf_fabrik = lambda a: ErsatzLauf(  # type: ignore[arg-type,return-value]
+                a, zeilen = [_ereignis("There is no ad under the given ID.")],
+            ),
+        )
+
+        job_id = await ws.einreihen(
+            conn, profil_id, "download", ["--ads=3310837392"],
+            profil_verzeichnis = verzeichnis,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.PRUEFEN
+        assert job.meldung == (
+            "Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen. "
+            "Endgültig gelöschte Anzeigen sind weg – kein Werkzeug holt sie zurück."
+        )
+
 
 class TestWartendenLaufAbbrechen:
     """Ein Lauf, der noch nicht gestartet ist, muss abbrechbar sein.

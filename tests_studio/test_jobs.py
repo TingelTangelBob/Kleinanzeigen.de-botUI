@@ -12,6 +12,7 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 import pytest
+from kleinanzeigen_bot import order_flow
 
 from anzeigen_studio.botbridge.events import Aufmerksamkeit, Ereignis, LaufErgebnis, Stufe
 from anzeigen_studio.core import db
@@ -329,6 +330,50 @@ class TestWarteschlange:
         assert job is not None
         assert job.zustand is JobZustand.GESCHEITERT
         assert datei.exists()
+
+    @pytest.mark.asyncio
+    async def test_sync_order_entfernt_lokal_fehlende_eigene_anzeige(
+        self, umgebung:tuple[Settings, sqlite3.Connection, int, Path],
+    ) -> None:
+        cfg, conn, profil_id, verzeichnis = umgebung
+        fehlend = verzeichnis / "downloaded-ads" / "ad_111_fehlt" / "ad_111.yaml"
+        fehlend.parent.mkdir(parents = True)
+        fehlend.write_text("title: Fehlt\nid: 111\nactive: true\nimages: []\n", encoding = "utf-8")
+        behalten = verzeichnis / "downloaded-ads" / "ad_222_bleibt" / "ad_222.yaml"
+        behalten.parent.mkdir(parents = True)
+        behalten.write_text("title: Bleibt\nid: 222\nactive: true\nimages: []\n", encoding = "utf-8")
+        fremd = verzeichnis / "fremde-ads" / "ad_333_fremd" / "ad_333.yaml"
+        fremd.parent.mkdir(parents = True)
+        fremd.write_text("title: Fremd\nid: 333\nactive: true\nimages: []\n", encoding = "utf-8")
+
+        def lauf_mit_plattform_liste(auftrag:LaufAuftrag) -> ErsatzLauf:
+            order_flow.speichern(
+                verzeichnis / order_flow.DATEINAME,
+                [
+                    {"id": 111, "state": "deleted"},
+                    {"id": 222, "state": "active"},
+                ],
+            )
+            return ErsatzLauf(auftrag)
+
+        ws = Warteschlange(
+            cfg, taktung = OHNE_TAKT,
+            lauf_fabrik = lauf_mit_plattform_liste,  # type: ignore[arg-type]
+        )
+        job_id = await ws.einreihen(
+            conn, profil_id, "sync-order", [], profil_verzeichnis = verzeichnis,
+        )
+        await asyncio.gather(*list(ws._aufgaben))  # noqa: SLF001
+
+        job = speicher.holen(conn, job_id)
+        assert job is not None
+        assert job.zustand is JobZustand.FERTIG
+        assert not fehlend.exists()
+        assert behalten.exists()
+        assert fremd.exists()
+        assert job.meldung == (
+            "1 lokale Anzeige entfernt, die auf kleinanzeigen.de nicht mehr vorhanden ist."
+        )
 
     @pytest.mark.asyncio
     async def test_erfolgreicher_lauf(self, umgebung:tuple[Settings, sqlite3.Connection, int, Path]) -> None:

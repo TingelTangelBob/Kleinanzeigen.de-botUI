@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from anzeigen_studio.core.settings import Settings
+    from anzeigen_studio.jobs.modelle import Job
 
 LOG = logging.getLogger(__name__)
 
@@ -331,10 +332,64 @@ class Warteschlange:
                     LOG.exception("Aufraeumen nach Job %d ist gescheitert", job_id)
                 conn.close()
 
-    # Die Reihenfolge bildet die Zustandsmaschine aus Botlauf, Prüfung und
-    # optionaler lokaler Folgeaktion ab; getrennte Hilfsmethoden würden diese
-    # sicherheitsrelevanten Übergänge unnötig auseinanderziehen.
-    async def _lauf_durchfuehren(self, conn: sqlite3.Connection, job_id: int,  # noqa: PLR0915
+    def _plattform_reihenfolge_nach_lauf(
+        self, conn: sqlite3.Connection, job: Job, job_id: int,
+        profil_verzeichnis: Path, zustand: JobZustand, meldung: str | None,
+    ) -> tuple[JobZustand, str | None]:
+        """Importiert den Sidecar und zieht fehlende Anzeigen lokal nach."""
+        if zustand is not JobZustand.FERTIG:
+            return zustand, meldung
+
+        try:
+            with db.transaction(conn):
+                order_geaendert = plattform_reihenfolge.uebernehmen(
+                    conn, job.profil_id,
+                    profil_verzeichnis / plattform_reihenfolge.DATEINAME,
+                )
+            if order_geaendert is not None:
+                LOG.info(
+                    "Job %d: Plattform-Reihenfolge übernommen%s",
+                    job_id, " (geändert)" if order_geaendert else " (unverändert)",
+                )
+            if job.befehl != "sync-order" or order_geaendert is None:
+                return zustand, meldung
+
+            rang, _, _ = plattform_reihenfolge.laden(conn, job.profil_id)
+            lokal_entfernt = lokal_loeschen.entfernen_nicht_auf_plattform(
+                profil_verzeichnis, set(rang),
+            )
+            if lokal_entfernt:
+                with db.transaction(conn):
+                    for geloescht in lokal_entfernt:
+                        stand.vergessen(conn, job.profil_id, geloescht.datei)
+                anzahl = len(lokal_entfernt)
+                bezeichnung = "Anzeige" if anzahl == 1 else "Anzeigen"
+                meldung = (
+                    f"{anzahl} lokale {bezeichnung} "
+                    "entfernt, die auf kleinanzeigen.de nicht mehr vorhanden ist."
+                )
+            return zustand, meldung
+        except Exception:
+            # Der Reihenfolgeindex ist Zusatzinformation. Eine lokale
+            # Löschung nach einer gültigen Kontoliste gehört dagegen zum
+            # fachlichen Ergebnis: Wenn sie nicht gelingt, muss jemand
+            # nachsehen, statt einen scheinbar sauberen Bestand zu zeigen.
+            LOG.warning(
+                "Job %d: Plattform-Reihenfolge konnte nicht übernommen werden",
+                job_id, exc_info = True,
+            )
+            if job.befehl != "sync-order":
+                return zustand, meldung
+            return (
+                JobZustand.PRUEFEN,
+                (
+                    "Die Plattform-Reihenfolge wurde gelesen, aber eine nicht mehr "
+                    "vorhandene lokale Anzeige konnte nicht entfernt werden. "
+                    "Bitte den lokalen Bestand prüfen."
+                ),
+            )
+
+    async def _lauf_durchfuehren(self, conn: sqlite3.Connection, job_id: int,  # noqa: C901, PLR0912, PLR0915
                                  profil_id: int, profil_verzeichnis: Path) -> None:
         job = speicher.holen(conn, job_id)
         if job is None or job.zustand is not JobZustand.WARTET:
@@ -599,22 +654,23 @@ class Warteschlange:
         # entfernter Stand uebereinstimmen - dann etwas als abgeglichen zu
         # merken waere die Behauptung einer Sicherheit, die es nicht gibt.
         if zustand is JobZustand.FERTIG:
-            try:
-                with db.transaction(conn):
-                    order_geaendert = plattform_reihenfolge.uebernehmen(
-                        conn, job.profil_id,
-                        profil_verzeichnis / plattform_reihenfolge.DATEINAME,
-                    )
-                if order_geaendert is not None:
-                    LOG.info(
-                        "Job %d: Plattform-Reihenfolge übernommen%s",
-                        job_id, " (geändert)" if order_geaendert else " (unverändert)",
-                    )
-            except Exception:
-                # Der Reihenfolgeindex ist Zusatzinformation. Ein Fehler darf
-                # einen erfolgreichen Plattformlauf nicht nachtraeglich
-                # umdeuten; der Sidecar bleibt fuer den naechsten Lauf liegen.
-                LOG.warning("Job %d: Plattform-Reihenfolge konnte nicht übernommen werden", job_id, exc_info = True)
+            zustand, meldung = self._plattform_reihenfolge_nach_lauf(
+                conn, job, job_id, profil_verzeichnis, zustand, meldung,
+            )
+            # Der Sidecar kann den fachlichen Ausgang noch ändern: Bei einem
+            # sync-order werden fehlende lokale Anzeigen entfernt, und ein
+            # Fehler dabei wird zu PRUEFEN. Diesen aktualisierten Ausgang
+            # sofort speichern, bevor der anschließende Abgleich weiterläuft.
+            with db.transaction(conn):
+                speicher.zustand_setzen(
+                    conn, job_id, zustand,
+                    rueckgabecode = ergebnis.rueckgabecode,
+                    aufmerksamkeit = [str(a) for a in ergebnis.aufmerksamkeit],
+                    eingriff = None,
+                    meldung = meldung,
+                )
+            if zustand is not JobZustand.FERTIG:
+                return
             try:
                 with db.transaction(conn):
                     anzahl = stand.abgleich_nach_lauf(

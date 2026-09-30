@@ -19,6 +19,14 @@ def test_ids_aus_ads_erhaelt_reihenfolge_und_entfernt_doppelte() -> None:
     assert order_flow.ids_aus_ads(ads) == [22, 11]
 
 
+def test_ids_aus_ads_ueberspringt_explizit_geloeschte_eintraege() -> None:
+    ads: list[dict[str, Any]] = [
+        {"id": 22, "state": "deleted"},
+        {"id": 11, "state": "active"},
+    ]
+    assert order_flow.ids_aus_ads(ads) == [11]
+
+
 def test_sidecar_wird_atomar_geschrieben_und_gelesen(tmp_path: Path) -> None:
     datei = tmp_path / order_flow.DATEINAME
     order_flow.speichern(datei, [{"id": 22}, {"id": 11}])

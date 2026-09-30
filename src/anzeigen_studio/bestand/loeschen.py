@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from ruamel.yaml import YAML
 
-from anzeigen_studio.bestand.lesen import ANZEIGEN_ORDNER, BILD_ENDUNGEN
+from anzeigen_studio.bestand.lesen import ANZEIGEN_ORDNER, BILD_ENDUNGEN, bestand_lesen
 from anzeigen_studio.core.errors import FachlicherFehler
 
 if TYPE_CHECKING:
@@ -181,3 +181,27 @@ def mehrere_entfernen(profil_wurzel: Path, dateien: Sequence[str]) -> list[Geloe
                 status = fehler.status, feld = fehler.feld,
             ) from fehler
     return fertig
+
+
+def entfernen_nicht_auf_plattform(
+    profil_wurzel: Path, plattform_ids: set[int],
+) -> list[Geloescht]:
+    """Entfernt eigene Anzeigen, die in einer frischen Kontoliste fehlen.
+
+    ``sync-order`` liefert die vollständige Liste der eigenen Anzeigen. Eine
+    lokale Anzeige mit Nummer, die darin fehlt, ist damit auf der Plattform
+    nicht mehr vorhanden. Fremde Anzeigen und lokale Entwürfe ohne Nummer
+    werden bewusst nicht berücksichtigt.
+
+    Die eigentliche Löschung läuft über ``mehrere_entfernen`` und damit über
+    dieselben Pfad- und Bildschranken wie eine vom Nutzer gestartete lokale
+    Löschung.
+    """
+    dateien = [
+        anzeige.datei
+        for anzeige in bestand_lesen(profil_wurzel)
+        if anzeige.herkunft == "eigene"
+        and anzeige.id is not None
+        and anzeige.id not in plattform_ids
+    ]
+    return mehrere_entfernen(profil_wurzel, dateien)

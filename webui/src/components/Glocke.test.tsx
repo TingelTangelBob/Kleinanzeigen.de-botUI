@@ -120,6 +120,24 @@ describe('Glocke – Laufzeilen (AP-2.39)', () => {
     expect(aktiv.querySelector('.status-punkt-aktiv')).toBeTruthy();
   });
 
+  it('zeigt sync-order nicht in den letzten Läufen', async () => {
+    jobsListe.mockResolvedValue([
+      job({ id: 1, befehl: 'sync-order' }),
+      job({ id: 2, befehl: 'update' }),
+    ]);
+
+    render(
+      <MeldungenProvider>
+        <Glocke aufZiel={vi.fn()} />
+      </MeldungenProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Benachrichtigungen/ }));
+    const menue = await screen.findByRole('menu', { name: 'Benachrichtigungen' });
+    expect(within(menue).getByText('Aktualisieren')).toBeDefined();
+    expect(within(menue).queryByText('sync-order')).toBeNull();
+  });
+
   it('lädt den Anzeigenbezug für jedes Profil der Läufe', async () => {
     jobsListe.mockResolvedValue([
       job({ id: 1, profil_slug: 'eins' }),

@@ -14,8 +14,12 @@ Der neue Bot-Befehl `sync-order` fragt diese JSON-Seiten ab und schreibt neben
 `config.yaml` vorübergehend `.anzeigen-studio-plattform-reihenfolge.json`.
 Darin stehen nur numerische Anzeigen-IDs, ihre Reihenfolge und der
 Prüfzeitpunkt. Nach einem erfolgreichen Lauf übernimmt das Backend die Daten
-in SQLite und löscht den Sidecar. Bei einer unvollständigen Antwort bleibt der
-letzte gültige Stand erhalten.
+in SQLite und löscht den Sidecar. Eigene lokale Anzeigen mit einer ID, die in
+der vollständigen Antwort fehlt oder dort ausdrücklich den Status `deleted`
+trägt, werden dabei ebenfalls aus `ads/` bzw. `downloaded-ads/` entfernt;
+fremde Anzeigen und Entwürfe ohne ID bleiben erhalten. Bei einer
+unvollständigen Antwort bleibt der letzte gültige Stand erhalten und es wird
+nichts lokal entfernt.
 
 Die Oberfläche sortiert eigene Anzeigen nach diesem Rang. Entwürfe, fremde
 Anzeigen und Anzeigen, die noch nicht in der letzten Plattformantwort standen,

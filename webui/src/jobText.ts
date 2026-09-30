@@ -27,6 +27,11 @@ export function befehlText(befehl: string): string {
   return BEFEHL_TEXT[befehl] ?? befehl;
 }
 
+/** Hintergrund-Abgleiche gehören nicht in die sichtbare Liste „Letzte Läufe“. */
+export function istTechnischerLauf(befehl: string): boolean {
+  return befehl === 'sync-order';
+}
+
 /**
  * Ein Symbol je Bot-Befehl (AP-2.32). Steht in der Warteschlange und auf dem
  * Dashboard links vor dem Anzeigentitel und ersetzt dort das zweite große

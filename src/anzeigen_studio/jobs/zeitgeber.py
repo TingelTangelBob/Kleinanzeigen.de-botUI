@@ -37,11 +37,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 
 from anzeigen_studio.bestand import plattform_reihenfolge, tagesabgleich, verlaengern
-from anzeigen_studio.jobs.warteschlange import GLOB_HERUNTERGELADEN
 from anzeigen_studio.core import db, zugang
 from anzeigen_studio.core import profile as profile_dienst
 from anzeigen_studio.jobs import speicher
 from anzeigen_studio.jobs.modelle import JobZustand
+from anzeigen_studio.jobs.warteschlange import GLOB_HERUNTERGELADEN
 
 if TYPE_CHECKING:
     import sqlite3
@@ -289,7 +289,7 @@ class Zeitgeber:
         if job.laeuft_noch:
             return
         text = (
-            "Plattform-Reihenfolge geprüft."
+            job.meldung or "Plattform-Reihenfolge geprüft."
             if job.zustand is JobZustand.FERTIG
             else f"Plattform-Reihenfolge endete als {job.zustand.value}."
         )

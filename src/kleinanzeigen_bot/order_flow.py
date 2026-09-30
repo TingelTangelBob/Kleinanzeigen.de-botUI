@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # SPDX-ArtifactOfProjectHomePage: https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/
+#
+# Anzeigen-Studio-Fork, 2026-09-10: Ein expliziter Plattformstatus
+# `deleted` wird nicht in den gültigen Konto-Rang übernommen. So kann das
+# Studio eine als gelöscht gemeldete lokale Kopie beim `sync-order` entfernen.
 """Read-only synchronisation of the account listing order.
 
 The manage-ads JSON endpoint is the cheapest reliable source available to the
@@ -30,21 +34,33 @@ LOG = logging.getLogger(__name__)
 DATEINAME = ".anzeigen-studio-plattform-reihenfolge.json"
 
 
+def _ist_geloescht(ad: dict[str, Any]) -> bool:
+    """Whether the account endpoint explicitly marks the entry as deleted."""
+    return str(ad.get("state", "")).casefold() == "deleted"
+
+
+def _id_aus_ad(ad: dict[str, Any]) -> int | None:
+    try:
+        ad_id = int(ad["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return ad_id if ad_id > 0 else None
+
+
 def datei_fuer(config_datei: str | Path) -> Path:
     """Return the sidecar path next to the active config file."""
     return Path(config_datei).resolve().parent / DATEINAME
 
 
 def ids_aus_ads(ads: list[dict[str, Any]]) -> list[int]:
-    """Extract valid IDs while retaining the endpoint's order."""
+    """Extract current valid IDs while retaining the endpoint's order."""
     ids: list[int] = []
     gesehen: set[int] = set()
     for ad in ads:
-        try:
-            ad_id = int(ad["id"])
-        except (KeyError, TypeError, ValueError):
+        ad_id = _id_aus_ad(ad)
+        if ad_id is None or _ist_geloescht(ad):
             continue
-        if ad_id > 0 and ad_id not in gesehen:
+        if ad_id not in gesehen:
             ids.append(ad_id)
             gesehen.add(ad_id)
     return ids
@@ -53,7 +69,11 @@ def ids_aus_ads(ads: list[dict[str, Any]]) -> list[int]:
 def speichern(datei: Path, ads: list[dict[str, Any]]) -> None:
     """Atomically persist the ordered IDs after a complete fetch."""
     ids = ids_aus_ads(ads)
-    if len(ids) != len(ads):
+    alle_ids = [_id_aus_ad(ad) for ad in ads]
+    aktuelle_ads = sum(not _ist_geloescht(ad) for ad in ads)
+    if len(ids) != aktuelle_ads:
+        raise ValueError("Die Plattformantwort enthält ungültige oder doppelte Anzeigen-IDs.")
+    if any(ad_id is None for ad_id in alle_ids) or len(set(alle_ids)) != len(alle_ids):
         raise ValueError("Die Plattformantwort enthält ungültige oder doppelte Anzeigen-IDs.")
     datei.parent.mkdir(parents = True, exist_ok = True)
     payload = {
@@ -85,6 +105,6 @@ async def synchronisieren(
     """Fetch all ordered pages and write the sidecar; return the ad count."""
     ads = await published_ads.fetch_published_ads(web, root_url, strict = True)
     speichern(datei, ads)
-    anzahl = len(ads)
+    anzahl = len(ids_aus_ads(ads))
     LOG.info("Saved platform order for %s ads.", anzahl)
     return anzahl

@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Bell, Info, Lightbulb, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../services/api';
-import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
+import { anzeigeBezug, befehlIcon, befehlText, istTechnischerLauf } from '../jobText';
 import { useMeldungen } from '../context/useMeldungen';
 import type { MeldungTon } from '../context/meldungenKontext';
 import type { BestandsAnzeige, Job, JobZustand } from '../types';
@@ -193,6 +193,7 @@ export function Glocke({ aufZiel }: { aufZiel: (ziel: string) => void }) {
   // absteigend - die Liste vom Backend ist schon so sortiert, aber verlassen
   // wollen wir uns hier nicht drauf.
   const juengste = [...jobs]
+    .filter(job => !istTechnischerLauf(job.befehl))
     .sort((a, b) => (b.eingereicht_am ?? '').localeCompare(a.eingereicht_am ?? ''))
     .slice(0, 6);
 

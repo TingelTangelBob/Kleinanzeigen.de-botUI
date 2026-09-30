@@ -191,6 +191,27 @@ class TestMehrere:
         assert bestand_lesen(tmp_path) == []
 
 
+def test_entfernt_eigene_deren_id_in_der_plattform_liste_fehlt(tmp_path: Path) -> None:
+    fehlend = _anzeige(tmp_path, "downloaded-ads", "ad_1_dimmer", "ad_1", titel = "Fehlt")
+    behalten = _anzeige(tmp_path, "ads", "ad_2_lampe", "ad_2", titel = "Bleibt")
+    behalten.write_text(
+        behalten.read_text(encoding = "utf-8").replace("3310837392", "2222222222"),
+        encoding = "utf-8",
+    )
+    fremd = _anzeige(tmp_path, "fremde-ads", "ad_9_fremd", "ad_9", titel = "Fremd")
+    entwurf = tmp_path / "ads" / "entwurf" / "entwurf.yaml"
+    entwurf.parent.mkdir(parents = True)
+    entwurf.write_text("title: Entwurf\nactive: true\nimages: []\n", encoding = "utf-8")
+
+    ergebnis = loeschen.entfernen_nicht_auf_plattform(tmp_path, {2222222222})
+
+    assert [g.titel for g in ergebnis] == ["Fehlt"]
+    assert not fehlend.exists()
+    assert behalten.exists()
+    assert fremd.exists()
+    assert entwurf.exists()
+
+
 def test_kein_bot_aufruf_und_kein_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Loeschen fasst die Platte an und sonst nichts.
 

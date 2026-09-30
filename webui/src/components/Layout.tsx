@@ -10,14 +10,15 @@
 // gibt.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Archive, LayoutDashboard, ListOrdered, LogOut, Menu, Settings, Sparkles, Tag, User, Users, X } from 'lucide-react';
+import { Archive, ArrowRight, LayoutDashboard, ListOrdered, LogOut, Menu, Settings, Sparkles, Tag, User, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/useAuth';
 import { useProfil } from '../context/useProfil';
+import { KI_STATUS_EVENT, ZUGANG_STATUS_EVENT } from '../context/profilKontext';
 import type { Route } from '../routing';
 import { hashFuer } from '../routing';
-import type { JobZustand } from '../types';
+import type { JobZustand, KiStatus, ZugangStatus } from '../types';
 import { useThema } from '../hooks/useThema';
 import { KopfAktionenKontext } from '../context/kopfAktionenKontext';
 import { Glocke } from './Glocke';
@@ -75,12 +76,15 @@ function seitenTitel(route: Route): string {
 
 export function Layout({ route, aufZiel, children }: LayoutProps) {
   const { status, abmelden } = useAuth();
-  const { profile, aktiv, waehlen } = useProfil();
+  const { profile, aktiv, fehler: profilFehler, waehlen } = useProfil();
   const [menuOffen, setMenuOffen] = useState(false);
   // Nur noch das effektive Erscheinungsbild fürs `data-theme` am `#app-shell`.
   // Die Theme-*Wahl* sitzt seit AP-2.32 allein unter Einstellungen › Darstellung.
   const { effektiv: themaEffektiv } = useThema();
   const aktiveLaeufe = useAktiveLaufAnzahl();
+  const [zugang, setZugang] = useState<ZugangStatus | null>(null);
+  const [kiStatus, setKiStatus] = useState<KiStatus | null>(null);
+  const aktiveSlug = aktiv?.slug ?? null;
   // Slots für die Seiten-Aktionsknöpfe: `kopfZiel` sitzt in der Topleiste (ab
   // md), `kopfZielMobil` als eigene Zeile darunter (unter md, weil die
   // Topleiste auf ~375 px zu eng ist). Die Seite füllt einen davon per Portal
@@ -108,6 +112,57 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
     beobachter.observe(kopfZiel, { childList: true });
     return () => beobachter.disconnect();
   }, [kopfZiel]);
+
+  // Die Seitenleiste zeigt den wichtigsten fehlenden Einrichtungsschritt dort,
+  // wo er gebraucht wird. Nach dem Speichern im Profil-Reiter verschwindet der
+  // Hinweis sofort, ohne dass die ganze App neu geladen werden muss.
+  useEffect(() => {
+    let verworfen = false;
+
+    const zugangLaden = async () => {
+      if (!aktiveSlug) {
+        setZugang(null);
+        return;
+      }
+      try {
+        const status = await api.profile.zugang(aktiveSlug);
+        if (!verworfen) setZugang(status);
+      } catch {
+        // Der Hinweis ist nur Orientierung. Wenn der Status nicht abrufbar ist,
+        // soll er nicht fälschlich einen fehlenden Zugang behaupten.
+        if (!verworfen) setZugang(null);
+      }
+    };
+
+    const kiLaden = async () => {
+      try {
+        // Die optionale Abfrage hält die App-Schale auch in älteren Test-/Demo-
+        // Umgebungen funktionsfähig, in denen der KI-Endpunkt noch fehlt.
+        if (api.ki?.status) {
+          const status = await api.ki.status();
+          if (!verworfen) setKiStatus(status);
+        }
+      } catch {
+        // Kein falscher Einrichtungsalarm, wenn nur der Statusabruf gestört ist.
+        if (!verworfen) setKiStatus(null);
+      }
+    };
+
+    void zugangLaden();
+    void kiLaden();
+    const aktualisiert = (ereignis: Event) => {
+      const slug = (ereignis as CustomEvent<string>).detail;
+      if (!slug || slug === aktiveSlug) void zugangLaden();
+    };
+    const kiAktualisiert = () => void kiLaden();
+    window.addEventListener(ZUGANG_STATUS_EVENT, aktualisiert);
+    window.addEventListener(KI_STATUS_EVENT, kiAktualisiert);
+    return () => {
+      verworfen = true;
+      window.removeEventListener(ZUGANG_STATUS_EVENT, aktualisiert);
+      window.removeEventListener(KI_STATUS_EVENT, kiAktualisiert);
+    };
+  }, [aktiveSlug]);
 
   // Der Seitentitel steht seit AP-2.33 direkt in der Kopfleiste. Die Seiten
   // behalten dafür einen semantischen, visuell versteckten h1.
@@ -205,9 +260,8 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
         {/*
           Nav-Ordnung AP-2.58: Übersicht (Dashboard), Warteschlange, dann die
           Anzeigen-Gruppe (Meine / Von anderen / Neue Anzeige / Archiv) —
-          dieselbe visuelle Gruppierung wie `nav-gruppe` + `nav-unter` oben und
-          Einstellungen vs. Abmelden unten (Randlinie). Einstellungen/Abmelden
-          bleiben im Fuß (AP-2.49).
+          mit einer dezenten Trennlinie, aber ohne zusätzliche Überschrift.
+          Einstellungen/Abmelden bleiben im Fuß (AP-2.49).
         */}
         <nav className="px-2 py-1">
           <NavKnopf
@@ -224,33 +278,29 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
             onClick={() => wechseln('warteschlange')}
           />
 
-          <p className="nav-gruppe">Anzeigen</p>
+          <div className="nav-trenner" aria-hidden="true" />
           <NavKnopf
             aktiv={anzeigenAktiv && route.anzeigen === 'eigene'}
             icon={User}
             label="Meine Anzeigen"
-            unter
             onClick={() => wechseln(hashFuer('anzeigen', 'eigene'))}
           />
           <NavKnopf
             aktiv={anzeigenAktiv && route.anzeigen === 'fremde'}
             icon={Users}
             label="Von anderen"
-            unter
             onClick={() => wechseln(hashFuer('anzeigen', 'fremde'))}
           />
           <NavKnopf
             aktiv={route.seite === 'neu'}
             icon={Sparkles}
             label="Neue Anzeige"
-            unter
             onClick={() => wechseln('neu')}
           />
           <NavKnopf
             aktiv={anzeigenAktiv && route.anzeigen === 'archiv'}
             icon={Archive}
             label="Archiv"
-            unter
             onClick={() => wechseln(hashFuer('anzeigen', 'archiv'))}
           />
         </nav>
@@ -260,6 +310,24 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
             Profil-/Konto-Aktion). Warteschlange sitzt seit AP-2.58 unter der
             Übersicht in der Hauptnav. */}
         <div className="safe-unten mt-auto p-2">
+          {(
+            (aktiv && zugang && !zugang.passwort_hinterlegt)
+            || (kiStatus && !kiStatus.hinterlegt)
+            || (!aktiv && profile.length === 0 && !profilFehler)
+          ) && (
+            <div className="sidebar-zugang mb-2 rounded-xl p-3">
+              <p className="text-xs font-semibold">Ersteinrichtung abschließen</p>
+              <p className="mt-1 text-xs">Profil, Zugang und KI-Zugang einrichten.</p>
+              <button
+                type="button"
+                onClick={() => wechseln('einstellungen')}
+                className="sidebar-zugang-knopf mt-2"
+              >
+                <span>Einrichtung öffnen</span>
+                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
+              </button>
+            </div>
+          )}
           <NavKnopf
             aktiv={route.seite === 'einstellungen'}
             icon={Settings}
@@ -351,12 +419,11 @@ export function Layout({ route, aufZiel, children }: LayoutProps) {
 }
 
 function NavKnopf({
-  aktiv, icon: Icon, label, unter, badge, onClick,
+  aktiv, icon: Icon, label, badge, onClick,
 }: {
   aktiv: boolean;
   icon: LucideIcon;
   label: string;
-  unter?: boolean;
   /** Zahl rechts am Eintrag; 0 oder undefined blendet sie aus. */
   badge?: number;
   onClick: () => void;
@@ -366,7 +433,7 @@ function NavKnopf({
       type="button"
       onClick={onClick}
       aria-current={aktiv ? 'page' : undefined}
-      className={`nav-link mb-0.5 ${unter ? 'nav-unter' : ''} ${aktiv ? 'nav-link-aktiv' : ''}`}
+      className={`nav-link mb-0.5 ${aktiv ? 'nav-link-aktiv' : ''}`}
     >
       <Icon className="h-4 w-4 flex-shrink-0" />
       <span className="truncate">{label}</span>

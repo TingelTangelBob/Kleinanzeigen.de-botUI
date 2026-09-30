@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: © Anzeigen-Studio contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Studio-Einstellungen einer einzelnen Anzeige (2026-09-07).
+// Studio-Einstellungen einer einzelnen Anzeige (2026-09-07, überarbeitet 2026-09-10).
 //
 // „Anzeige bearbeiten" zeigt nur, was von kleinanzeigen.de kommt. Was das
 // Studio selbst steuert - ob die Anzeige mitgeführt wird und in welchem Abstand
@@ -34,11 +34,11 @@ export function AnzeigeEinstellungenDialog({
           <Settings className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary-custom" aria-hidden />
           <div className="min-w-0 flex-1">
             <h2 id="anzeige-einst-titel" className="font-semibold text-stark">
-              Studio-Einstellungen dieser Anzeige
+              Einstellungen für diese Anzeige
             </h2>
             <p className="mt-1 text-sm text-normal">
-              Gilt nur für diese Anzeige und wird mit „Speichern" übernommen. Diese Angaben
-              stehen nicht auf kleinanzeigen.de – sie steuern, wie das Studio die Anzeige führt.
+              Diese Angaben gelten nur im Studio. Sie ändern nichts direkt auf kleinanzeigen.de.
+              Mit „Speichern“ unten im Editor übernimmst du sie dauerhaft.
             </p>
           </div>
           <button
@@ -61,15 +61,15 @@ export function AnzeigeEinstellungenDialog({
               className="mt-0.5 h-4 w-4 flex-shrink-0"
             />
             <span>
-              Aktiv
+              Bei automatischen Läufen berücksichtigen
               <span className="mt-0.5 block text-xs text-leise">
-                Ausgeschaltet lässt das Studio die Anzeige bei Sammelläufen aus.
+                Ausgeschaltet: Sammelläufe überspringen diese Anzeige.
               </span>
             </span>
           </label>
 
           <label className="block sm:max-w-xs">
-            <span className="beschriftung">Abstand zur Neueinstellung (Tage)</span>
+              <span className="beschriftung">Nach wie vielen Tagen neu einstellen?</span>
             <input
               type="number"
               step="1"
@@ -88,7 +88,7 @@ export function AnzeigeEinstellungenDialog({
               className="feld mt-1"
             />
             <span className="mt-1 block text-xs text-leise">
-              Leer lassen nutzt den Standard aus{' '}
+              Leer lassen verwendet den Standard aus{' '}
               <a href="#einstellungen/anzeigen" className="font-medium underline">
                 Einstellungen › Anzeigen
               </a>.
@@ -96,9 +96,14 @@ export function AnzeigeEinstellungenDialog({
           </label>
         </div>
 
-        <div className="mt-5 flex justify-end">
+        <p className="mt-5 text-xs text-leise">
+          Änderungen bleiben zunächst im Formular. Erst „Speichern“ übernimmt sie in die
+          Anzeigendatei.
+        </p>
+
+        <div className="mt-4 flex justify-end">
           <button type="button" onClick={aufSchliessen} className="btn-ghost">
-            Schließen
+            Fertig
           </button>
         </div>
       </div>

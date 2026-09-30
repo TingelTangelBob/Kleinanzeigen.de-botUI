@@ -109,6 +109,22 @@ describe('UebersichtSeite – Letzte Läufe (AP-2.29)', () => {
     expect(await screen.findByText('Aktualisieren')).toBeDefined();
   });
 
+  it('zeigt sync-order nicht in Letzte Läufe und schneidet danach zu', async () => {
+    jobsListe.mockResolvedValue([
+      job({ id: 1, befehl: 'sync-order' }),
+      job({ id: 2, befehl: 'sync-order' }),
+      job({ id: 3, befehl: 'sync-order' }),
+      job({ id: 4, befehl: 'sync-order' }),
+      job({ id: 5, befehl: 'sync-order' }),
+      job({ id: 6, befehl: 'update' }),
+    ]);
+
+    render(<UebersichtSeite aufZiel={vi.fn()} />);
+
+    expect(await screen.findByText('Aktualisieren')).toBeDefined();
+    expect(screen.queryByText('sync-order')).toBeNull();
+  });
+
   it('nennt die Anzeige über den Glob beim Hochladen einer einzelnen Anzeige', async () => {
     jobsListe.mockResolvedValue([
       job({ id: 1, befehl: 'update', anzeigen_glob: './downloaded-ads/ad_4711/ad_4711.yaml' }),
@@ -202,7 +218,9 @@ describe('UebersichtSeite – Kacheln und Steht an (AP-2.48)', () => {
     render(<UebersichtSeite aufZiel={vi.fn()} />);
 
     expect(await screen.findByRole('heading', { name: /Steht an/ })).toBeDefined();
-    expect(screen.getByText('Roter Sessel')).toBeDefined();
+    // Die Anzeige erscheint zusätzlich in „Neueste Anzeigen“ und bleibt
+    // deshalb auch unter „Steht an“ als konkrete Handlung sichtbar.
+    expect(screen.getAllByText('Roter Sessel')).toHaveLength(2);
     expect(screen.queryByText('Keine Anzeige ist zur Neueinstellung fällig.')).toBeNull();
   });
 
@@ -219,7 +237,8 @@ describe('UebersichtSeite – Kacheln und Steht an (AP-2.48)', () => {
 
     render(<UebersichtSeite aufZiel={vi.fn()} />);
 
-    expect(await screen.findByText('Keine Anzeige ist zur Neueinstellung fällig.')).toBeDefined();
+    await screen.findByText('Anzeigen');
+    expect(screen.queryByRole('heading', { name: /Steht an/ })).toBeNull();
     expect(screen.queryByText('Amazon Fire TV Stick')).toBeNull();
   });
 });

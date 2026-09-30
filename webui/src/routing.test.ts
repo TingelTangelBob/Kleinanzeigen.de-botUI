@@ -20,7 +20,7 @@ describe('routeAusHash', () => {
     expect(routeAusHash('#jobs').seite).toBe('warteschlange');
   });
 
-  it('führt unbekannte Einstellungs-Unterpunkte auf den Bot-Abschnitt', () => {
+  it('hält alte Läufe-Hashes durch die Warteschlange kompatibel', () => {
     const route = routeAusHash('#einstellungen/laeufe');
     // Die Umlenkung greift, bevor der Abschnitt geraten wird.
     expect(route.seite).toBe('warteschlange');
@@ -28,6 +28,21 @@ describe('routeAusHash', () => {
       seite: 'einstellungen',
       einstellung: 'profile',
     });
+  });
+
+  it('öffnet die Ersteinrichtung über den nackten Einstellungen-Hash', () => {
+    expect(routeAusHash('#einstellungen')).toMatchObject({
+      seite: 'einstellungen',
+      einstellung: 'uebersicht',
+    });
+  });
+
+  it('öffnet einen fertigen KI-Entwurf direkt zur Prüfung', () => {
+    expect(routeAusHash('#neu?erkennung=42')).toMatchObject({
+      seite: 'neu',
+      erkennungId: 42,
+    });
+    expect(routeAusHash('#neu?erkennung=0').erkennungId).toBeNull();
   });
 
   it('fällt für Unbekanntes auf die Übersicht zurück', () => {
@@ -71,6 +86,11 @@ describe('routeAusHash', () => {
 describe('hashFuer', () => {
   it('gibt den nackten Seitennamen für die Warteschlange zurück', () => {
     expect(hashFuer('warteschlange')).toBe('warteschlange');
+  });
+
+  it('trennt die Ersteinrichtung vom Bot-Abschnitt', () => {
+    expect(hashFuer('einstellungen')).toBe('einstellungen');
+    expect(hashFuer('einstellungen', 'bot')).toBe('einstellungen/bot');
   });
 
   it('kodiert den Archiv-Listenpfad (AP-2.58)', () => {

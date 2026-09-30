@@ -86,8 +86,9 @@ beforeEach(() => {
   objektUrlNummer = 0;
   status.mockResolvedValue({
     hinterlegt: true, endet_auf: 'TR0A', geaendert_am: null,
-    modell: 'gpt-5.6-luna', bildkante: 768,
+    modell: 'gpt-5.6-luna', bildkante: 512,
     verbrauch_usd: 0, budget_usd: 5, verbrauch_aufrufe: 0,
+    modus: 'open_source', schluessel_selbst_setzbar: true, max_bilder: 4,
   });
   // jsdom kennt keine Objekt-URLs.
   URL.createObjectURL = vi.fn(() => `blob:test-${objektUrlNummer++}`);
@@ -158,17 +159,19 @@ describe('Bildauswahl', () => {
 });
 
 describe('Erkennen-Knopf', () => {
-  it('sagt, warum er nicht geht, wenn kein Schlüssel hinterlegt ist', async () => {
+  it('führt bei fehlendem KI-Zugang zur Ersteinrichtung', async () => {
     status.mockResolvedValue({
       hinterlegt: false, endet_auf: null, geaendert_am: null,
-      modell: 'gpt-5.6-luna', bildkante: 768,
+      modell: 'gpt-5.6-luna', bildkante: 512,
       verbrauch_usd: 0, budget_usd: 5, verbrauch_aufrufe: 0,
+      modus: 'open_source', schluessel_selbst_setzbar: true, max_bilder: 4,
     });
     render(<NeueAnzeigeSeite />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Es fehlt der OpenAI-Schlüssel/)).toBeDefined();
+      expect(screen.getByText(/Ersteinrichtung abschließen/)).toBeDefined();
     });
+    expect(screen.queryByLabelText('Datenschutz-Hinweis')).toBeNull();
   });
 
   it('sagt es auch, wenn sich der Zustand gar nicht laden ließ', async () => {
@@ -177,8 +180,32 @@ describe('Erkennen-Knopf', () => {
     render(<NeueAnzeigeSeite />);
 
     await waitFor(() => {
-      expect(screen.getByText(/ließ sich nicht laden/)).toBeDefined();
+      expect(screen.getByText(/konnte gerade nicht geprüft werden/)).toBeDefined();
     });
+  });
+
+  it('zeigt den Datenschutz-Hinweis nur mit eingerichtetem KI-Zugang', async () => {
+    render(<NeueAnzeigeSeite />);
+
+    const hinweis = await screen.findByLabelText('Datenschutz-Hinweis');
+    expect(hinweis.textContent).toContain('Die Fotos werden an OpenAI geschickt.');
+    expect(hinweis.textContent).toContain('Was genau passiert?');
+    expect(screen.queryByText('Weniger')).toBeNull();
+  });
+
+  it('übernimmt die serverseitige Bildbegrenzung in die Auswahl', async () => {
+    status.mockResolvedValue({
+      hinterlegt: true, endet_auf: 'TR0A', geaendert_am: null,
+      modell: 'gpt-5.6-luna', bildkante: 512,
+      verbrauch_usd: 0, budget_usd: 5, verbrauch_aufrufe: 0,
+      modus: 'gehostet', schluessel_selbst_setzbar: false, max_bilder: 2,
+    });
+    const { container } = render(<NeueAnzeigeSeite />);
+    const feld = container.querySelector('input[type=file]') as HTMLInputElement;
+
+    auswaehlen(feld, [foto('a.jpg'), foto('b.jpg'), foto('c.jpg')]);
+
+    await waitFor(() => expect(screen.getByText(/2 von 2 Fotos/)).toBeDefined());
   });
 });
 
@@ -230,7 +257,7 @@ async function bisZumEntwurf(
 
   fireEvent.click(screen.getByRole('button', { name: 'Erkennen lassen' }));
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: /Anzeige anlegen/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Anzeige lokal speichern/ })).toBeDefined();
   });
   return gerendert;
 }
@@ -254,7 +281,7 @@ describe('Preisvorschlag', () => {
   it('legt ohne Klick keinen Preis an', async () => {
     await bisZumEntwurf();
 
-    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige lokal speichern/ }));
     await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
 
     // Der Kern: Die Schätzung allein setzt nichts.
@@ -265,7 +292,9 @@ describe('Preisvorschlag', () => {
     const aufZiel = vi.fn();
     await bisZumEntwurf(ENTWURF, aufZiel);
 
-    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige lokal speichern/ }));
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'Anzeige öffnen und hochladen' })).toBeDefined(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Anzeige öffnen und hochladen' }));
     await waitFor(() => { expect(aufZiel).toHaveBeenCalledWith('anzeigen/eigene?datei=ads%2Fa.yaml&bearbeiten=1'); });
   });
 
@@ -273,7 +302,7 @@ describe('Preisvorschlag', () => {
     await bisZumEntwurf();
 
     fireEvent.click(screen.getByRole('button', { name: '30,00 €' }));
-    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige lokal speichern/ }));
     await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
 
     expect(anlegen.mock.calls[0][4]).toMatchObject({ preis: 30 });
@@ -301,7 +330,7 @@ describe('Kategorievorschlag', () => {
     });
     expect(kategorie.getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: /Anzeige anlegen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Anzeige lokal speichern/ }));
     await waitFor(() => { expect(anlegen).toHaveBeenCalled(); });
     expect(anlegen.mock.calls[0][4]).toMatchObject({ kategorie: '161/278' });
   });

@@ -8,13 +8,14 @@
 // hier einfügen. Was dabei mitkommt, ist selten sauber - deshalb frisst das
 // Feld ganze Absätze und sucht sich die Nummern heraus.
 //
-// Eine Grenze gehört hierher und nicht in eine Fußnote: Was Kleinanzeigen
-// gelöscht hat, ist weg. Steht das nicht vorher da, liest sich ein leeres
-// Ergebnis wie ein Fehler des Programms.
+// Nicht erreichbare Anzeigen werden erst nach einem tatsächlichen Versuch als
+// Laufmeldung angezeigt. Vorher ist noch offen, ob eine Eingabe nur ungültig
+// war oder ob die Seite wirklich nicht mehr existiert.
 
 import { useState } from 'react';
-import { AlertTriangle, Download, Info } from 'lucide-react';
+import { Download, Info } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
+import { useLaufStartHinweis } from './LaufStartDialog';
 
 interface Props {
   profil: string;
@@ -33,6 +34,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
   const [eingereiht, setEingereiht] = useState<{ job_id: number; nummern: number[] } | null>(null);
+  const laufHinweis = useLaufStartHinweis();
 
   const pruefen = async (roh: string) => {
     setText(roh);
@@ -50,7 +52,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
     }
   };
 
-  const holen = async () => {
+  const nachladenStarten = async () => {
     setLaeuft(true);
     setFehler(null);
     try {
@@ -62,8 +64,21 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
     }
   };
 
+  const holen = () => {
+    if (!fund || fund.neu.length === 0) return;
+    const anzahl = fund.neu.length;
+    laufHinweis.anfragen(
+      {
+        titel: `${anzahl} ${anzahl === 1 ? 'Anzeige' : 'Anzeigen'} per Link holen?`,
+        text: 'Die eingefügten Links werden nacheinander geöffnet. Erreichbare Anzeigen werden lokal unter „Von anderen“ gespeichert.',
+      },
+      nachladenStarten,
+    );
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      {laufHinweis.dialog}
       <div
         role="dialog"
         aria-modal="true"
@@ -83,7 +98,7 @@ export function NachladenDialog({ profil, aufSchliessen }: Props) {
             <p className="mb-4 hinweis">
               Lauf {eingereiht.job_id} ist eingereiht und holt {eingereiht.nummern.length}{' '}
               {eingereiht.nummern.length === 1 ? 'Anzeige' : 'Anzeigen'}. Unter Einstellungen →
-              Läufe lässt er sich mitlesen.
+              Warteschlange lässt er sich mitlesen.
             </p>
             <div className="flex justify-end">
               <button
@@ -134,15 +149,6 @@ className="feld"
                 )}
               </div>
             )}
-
-            <p className="hinweis hinweis-warn mt-3 flex items-start gap-2 text-xs">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden />
-              <span>
-                Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen.
-                Endgültig gelöschte Anzeigen kann kein Werkzeug zurückholen – der Lauf meldet
-                sie dann einzeln als nicht erreichbar.
-              </span>
-            </p>
 
             {fehler && (
               <p role="alert" className="mt-3 hinweis hinweis-fehler">

@@ -187,8 +187,8 @@ describe('Bestand: Maske folgt der Navigation (AP-2.13)', () => {
 
 });
 
-describe('Bestand: Fremde-Hinweis wegklickbar (AP-2.59)', () => {
-  it('zeigt den Lösch-Hinweis nur unter „Von anderen“', async () => {
+describe('Bestand: Hinweis zu nicht erreichbaren Anzeigen (AP-2.60)', () => {
+  it('zeigt den Hinweis nicht dauerhaft vor dem Abrufversuch', async () => {
     const { rerender } = render(
       <BestandSeite herkunft="eigene" aufZiel={vi.fn()} />, { wrapper: huelle },
     );
@@ -196,23 +196,6 @@ describe('Bestand: Fremde-Hinweis wegklickbar (AP-2.59)', () => {
     expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
 
     rerender(<BestandSeite herkunft="fremde" aufZiel={vi.fn()} />);
-    expect(await screen.findByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Hinweis ausblenden' })).toBeDefined();
-  });
-
-  it('blendet den Hinweis dauerhaft aus (localStorage)', async () => {
-    const { unmount } = render(
-      <BestandSeite herkunft="fremde" aufZiel={vi.fn()} />, { wrapper: huelle },
-    );
-    expect(await screen.findByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeDefined();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hinweis ausblenden' }));
-    expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
-
-    unmount();
-    render(
-      <BestandSeite herkunft="fremde" aufZiel={vi.fn()} />, { wrapper: huelle },
-    );
     expect(await screen.findByText('Bohrmaschine')).toBeDefined();
     expect(screen.queryByText(/Endgültig gelöschte Anzeigen sind weg/)).toBeNull();
   });

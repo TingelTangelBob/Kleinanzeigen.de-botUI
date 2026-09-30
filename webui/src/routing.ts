@@ -15,7 +15,7 @@ export type AnzeigenHerkunft = 'eigene' | 'fremde';
  */
 export type AnzeigenListe = AnzeigenHerkunft | 'archiv';
 export type EinstellungsAbschnitt =
-  'anzeigen' | 'bot' | 'profile' | 'browser' | 'passwort' | 'darstellung';
+  'uebersicht' | 'anzeigen' | 'bot' | 'profile' | 'browser' | 'passwort' | 'darstellung';
 
 export interface Route {
   seite: Hauptseite;
@@ -23,10 +23,11 @@ export interface Route {
   einstellung: EinstellungsAbschnitt;
   anzeigeDatei: string | null;
   anzeigeBearbeiten: boolean;
+  erkennungId: number | null;
 }
 
 const EINSTELLUNG: EinstellungsAbschnitt[] = [
-  'anzeigen', 'bot', 'profile', 'browser', 'passwort', 'darstellung',
+  'uebersicht', 'anzeigen', 'bot', 'profile', 'browser', 'passwort', 'darstellung',
 ];
 
 /** Alte Top-Level-Hashes, die es in der Nav nicht mehr gibt. */
@@ -68,35 +69,45 @@ export function routeAusHash(hash = typeof window === 'undefined' ? '' : window.
     return {
       seite: 'anzeigen',
       anzeigen: anzeigenListeAus(rest),
-      einstellung: 'bot',
+      einstellung: 'uebersicht',
       anzeigeDatei,
       anzeigeBearbeiten: anzeigeDatei !== null && parameter.get('bearbeiten') === '1',
+      erkennungId: null,
     };
   }
   if (seiteRoh === 'neu') {
+    const parameter = new URLSearchParams(query);
+    const rohId = parameter.get('erkennung');
+    const erkennungId = rohId && /^\d+$/.test(rohId) ? Number(rohId) : null;
+    const sichereErkennungId = erkennungId !== null
+      && Number.isSafeInteger(erkennungId)
+      && erkennungId > 0
+      ? erkennungId
+      : null;
     return {
-      seite: 'neu', anzeigen: 'eigene', einstellung: 'bot',
+      seite: 'neu', anzeigen: 'eigene', einstellung: 'uebersicht',
       anzeigeDatei: null, anzeigeBearbeiten: false,
+      erkennungId: sichereErkennungId,
     };
   }
   if (seiteRoh === 'warteschlange') {
     return {
-      seite: 'warteschlange', anzeigen: 'eigene', einstellung: 'bot',
-      anzeigeDatei: null, anzeigeBearbeiten: false,
+      seite: 'warteschlange', anzeigen: 'eigene', einstellung: 'uebersicht',
+      anzeigeDatei: null, anzeigeBearbeiten: false, erkennungId: null,
     };
   }
   if (seiteRoh === 'einstellungen') {
     const abschnitt = (EINSTELLUNG as string[]).includes(rest)
       ? (rest as EinstellungsAbschnitt)
-      : 'bot';
+      : 'uebersicht';
     return {
       seite: 'einstellungen', anzeigen: 'eigene', einstellung: abschnitt,
-      anzeigeDatei: null, anzeigeBearbeiten: false,
+      anzeigeDatei: null, anzeigeBearbeiten: false, erkennungId: null,
     };
   }
   return {
-    seite: 'uebersicht', anzeigen: 'eigene', einstellung: 'bot',
-    anzeigeDatei: null, anzeigeBearbeiten: false,
+    seite: 'uebersicht', anzeigen: 'eigene', einstellung: 'uebersicht',
+    anzeigeDatei: null, anzeigeBearbeiten: false, erkennungId: null,
   };
 }
 
@@ -107,7 +118,7 @@ export function hashFuer(seite: Hauptseite, rest?: string): string {
     return 'anzeigen/eigene';
   }
   if (seite === 'einstellungen') {
-    if (!rest || rest === 'bot') return 'einstellungen';
+    if (!rest || rest === 'uebersicht') return 'einstellungen';
     return `einstellungen/${rest}`;
   }
   return seite;

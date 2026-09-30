@@ -3,8 +3,8 @@
 //
 // Die Warteschlange des aktuellen Profils, kompakt (AP-2.21).
 //
-// Wozu: „Neue Anzeige" reiht selbst keinen Lauf ein, aber die Queue ist je
-// Profil einspurig. Wer hier gerade eine Anzeige anlegt, während ein
+// Wozu: „Neue Anzeige" reiht selbst keinen Bot-Lauf ein, aber die Bot-Queue ist
+// je Profil einspurig. Wer hier gerade eine Anzeige anlegt, während ein
 // Download läuft, wartet danach auf etwas, wovon er auf dieser Seite nichts
 // sieht. Ein wartender Lauf, den man nicht kennt, sieht aus wie ein Hänger.
 //
@@ -77,7 +77,7 @@ export function ProfilWarteschlange({ profil }: { profil: string }) {
       </div>
 
       <p className="lesebreite mb-2 text-xs text-leise">
-        Je Profil läuft ein Lauf nach dem anderen. Ein neuer reiht sich dahinter ein.
+        Bot-Läufe laufen je Profil nacheinander. KI-Erkennungen stehen separat und können parallel laufen.
       </p>
 
       {fehler && (

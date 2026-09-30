@@ -122,6 +122,22 @@ describe('AnzeigenZeile: „Gelöscht"-Badge (AP-3.10)', () => {
 });
 
 describe('AnzeigenZeile: Aktionsspalte (AP-2.50)', () => {
+  it('zeigt die Aktion „Neu einstellen“ für eine vorhandene Anzeige', () => {
+    const aufNeuEinstellen = vi.fn();
+    const daten = anzeige({ id: 4711 });
+    render(
+      <AnzeigenZeile
+        anzeige={daten}
+        profil="test"
+        aufNeuEinstellen={aufNeuEinstellen}
+      />,
+    );
+
+    const aktion = screen.getByRole('button', { name: /Amazon Fire TV Stick.*neu einstellen/ });
+    fireEvent.click(aktion);
+    expect(aufNeuEinstellen).toHaveBeenCalledWith(daten);
+  });
+
   it('legt Aktualisieren, Öffnen und Umsortieren in eine gemeinsame Icon-Reihe', () => {
     const { container } = render(
       <AnzeigenZeile

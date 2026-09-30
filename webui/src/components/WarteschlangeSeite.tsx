@@ -18,16 +18,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, Plus, Trash2 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
-import { anzeigeBezug } from '../jobText';
+import { anzeigeBezug, istTechnischerLauf } from '../jobText';
 import type { BestandsAnzeige, Job, JobZustand } from '../types';
 import { JobKarte, LaufStarten } from './JobSeite';
+import { KiEntwurfWarteschlange } from './KiEntwurfWarteschlange';
 
 const AKTIV = new Set<JobZustand>(['wartet', 'laeuft', 'braucht_eingabe']);
 
 /** Wie viele beendete Läufe die Seite zeigt - der Rest wäre eine Wand. */
 const BEENDET_MAX = 8;
 
-export function WarteschlangeSeite() {
+export function WarteschlangeSeite({ aufZiel }: { aufZiel?: (ziel: string) => void }) {
   const { aktiv } = useProfil();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [bestand, setBestand] = useState<BestandsAnzeige[]>([]);
@@ -36,6 +37,7 @@ export function WarteschlangeSeite() {
   const [fehler, setFehler] = useState<string | null>(null);
   const [leerenOffen, setLeerenOffen] = useState(false);
   const [leert, setLeert] = useState(false);
+  const ziel = aufZiel ?? ((hash: string) => { window.location.hash = hash; });
 
   const jobsLaden = useCallback(async () => {
     try {
@@ -79,7 +81,7 @@ export function WarteschlangeSeite() {
       .filter(j => AKTIV.has(j.zustand))
       .sort((x, y) => (x.eingereicht_am ?? '').localeCompare(y.eingereicht_am ?? ''));
     const b = jobs
-      .filter(j => !AKTIV.has(j.zustand))
+      .filter(j => !AKTIV.has(j.zustand) && !istTechnischerLauf(j.befehl))
       .sort((x, y) =>
         (y.beendet_am ?? y.eingereicht_am ?? '').localeCompare(x.beendet_am ?? x.eingereicht_am ?? ''))
       .slice(0, BEENDET_MAX);
@@ -122,13 +124,15 @@ export function WarteschlangeSeite() {
         Warteschlange
       </h1>
       <p className="seite-beschrieb mb-6">
-        Was läuft, was wartet, was zuletzt fertig wurde. Ein Lauf nach dem anderen je Profil –
-        Protokoll, Captcha und Abbruch je Lauf.
+        Was läuft, was wartet, was zuletzt fertig wurde. Bot-Läufe laufen je Profil nacheinander;
+        KI-Erkennungen können parallel arbeiten. Protokoll, Captcha und Abbruch je Bot-Lauf.
       </p>
 
       {fehler && (
         <p role="alert" className="hinweis hinweis-fehler mb-4">{fehler}</p>
       )}
+
+      {aktiv && <KiEntwurfWarteschlange profil={aktiv.slug} aufZiel={ziel} />}
 
       <section className="mb-8">
         <h2 className="mb-3 flex items-center gap-2 text-base font-semibold tracking-tight text-stark">

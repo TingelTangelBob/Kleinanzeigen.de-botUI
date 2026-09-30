@@ -52,7 +52,12 @@ vi.mock('../services/api', () => ({
       passwortAendern: vi.fn(),
     },
     ki: {
-      status: vi.fn().mockResolvedValue({ hinterlegt: false, bildkante: 768 }),
+      status: vi.fn().mockResolvedValue({
+        hinterlegt: false, bildkante: 512, modell: 'gpt-5.6-luna',
+        endet_auf: null, geaendert_am: null, verbrauch_usd: 0, budget_usd: 5,
+        verbrauch_aufrufe: 0, modus: 'open_source', schluessel_selbst_setzbar: true,
+        max_bilder: 4,
+      }),
       schluesselSetzen: vi.fn(),
       schluesselEntfernen: vi.fn(),
     },
@@ -74,7 +79,7 @@ vi.mock('../context/useProfil', () => ({
 }));
 
 vi.mock('../hooks/useThema', () => ({
-  useThema: () => ({ wahl: 'system' as const, setzen: vi.fn() }),
+  useThema: () => ({ wahl: 'system' as const, setWahl: vi.fn(), effektiv: 'hell' as const }),
 }));
 
 function gruppe(
@@ -175,6 +180,26 @@ beforeEach(() => {
 });
 
 describe('EinstellungenSeite AP-2.47', () => {
+  it('zeigt die Ersteinrichtung als übersichtlichen Einstieg', async () => {
+    render(<EinstellungenSeite abschnitt="uebersicht" aufZiel={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Ersteinrichtung' })).toBeTruthy();
+      expect(screen.getByText('Profil ist angelegt')).toBeTruthy();
+      expect(screen.getByText('Kleinanzeigen-Zugang ist hinterlegt')).toBeTruthy();
+      expect(screen.getByText('KI-Zugang einrichten')).toBeTruthy();
+    });
+  });
+
+  it('stellt System in der Darstellung nach oben und wählt es standardmäßig', async () => {
+    render(<EinstellungenSeite abschnitt="darstellung" aufZiel={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: /System/ })).toBeTruthy());
+    const system = screen.getByDisplayValue('system') as HTMLInputElement;
+    expect(system.checked).toBe(true);
+    expect(screen.getAllByRole('radio')[0]).toBe(system);
+  });
+
   it('zeigt keine Seitenbeschreibung über den Reitern', async () => {
     render(<EinstellungenSeite abschnitt="bot" aufZiel={vi.fn()} />);
     await warteAufBot();

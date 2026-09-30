@@ -87,11 +87,12 @@ describe('Kachelzahlen zählen nur eigene Anzeigen', () => {
     ]);
     render(<UebersichtSeite aufZiel={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText('Anzeigen')).toBeTruthy());
-    const kacheln = document.querySelectorAll('.kachel');
-    const zahlen = [...kacheln].map(k => k.querySelector('.kachel-zahl')?.textContent);
-    // Anzeigen, Lokal geändert, Mit Hinweis
-    expect(zahlen).toEqual(['2', '2', '2']);
+    await waitFor(() => {
+      const kacheln = document.querySelectorAll('.kachel');
+      const zahlen = [...kacheln].map(k => k.querySelector('.kachel-zahl')?.textContent);
+      // Anzeigen, Lokal geändert, Mit Hinweis
+      expect(zahlen).toEqual(['2', '2', '2']);
+    });
   });
 
   it('die Kachel führt auf dieselbe Liste, die sie zählt', async () => {

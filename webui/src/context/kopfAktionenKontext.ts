@@ -3,7 +3,7 @@
 //
 // Aktionsknöpfe einer Seite in der App-Chrome (2026-09-07, mobil 2026-09-09).
 //
-// Statt dass jede Seite ihre Knöpfe („Vom Konto holen", „Neu einlesen" …) in
+// Statt dass jede Seite ihre Knöpfe („Vom Konto holen", „Lokal neu einlesen" …) in
 // einen eigenen Kopfbereich setzt, rendert sie sie per Portal in einen festen
 // Slot. Es gibt zwei Slots:
 //

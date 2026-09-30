@@ -23,3 +23,9 @@ export interface ProfilWert {
 }
 
 export const ProfilKontext = createContext<ProfilWert | null>(null);
+
+/** Wird nach dem Speichern eines Plattformzugangs an die App-Schale gesendet. */
+export const ZUGANG_STATUS_EVENT = 'anzeigen-studio:zugang-status';
+
+/** Wird nach dem Speichern des globalen KI-Zugangs an die App-Schale gesendet. */
+export const KI_STATUS_EVENT = 'anzeigen-studio:ki-status';

@@ -295,19 +295,11 @@ html:has(#app-shell[data-theme='dark']) {
     font-weight: 600;
   }
   .nav-link-aktiv svg { color: var(--primary-akzent); }
-  .nav-unter { padding-left: 1.75rem; }
-
-  /* Gruppenzeile über einem Navigationsblock. Vorher als Utility-Kette am
-     Element; hier steht sie neben den Einträgen, mit denen sie ausgerichtet
-     sein muss. */
-  .nav-gruppe {
-    margin: 1rem 0 0.2rem;
-    padding-inline: 0.875rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--sidebar-text-schwach);
+  /* Anzeigen gehören optisch zur Hauptnavigation. Die feine Linie trennt den
+     Block, ohne einen zusätzlichen Überschriftseintrag zu erzeugen. */
+  .nav-trenner {
+    margin: 0.7rem 0.875rem 0.35rem;
+    border-top: 1px solid var(--sidebar-rand);
   }
 
   /* Ab lg bedient ein Zeigegerät die Leiste, kein Daumen - dort darf sie
@@ -319,7 +311,7 @@ html:has(#app-shell[data-theme='dark']) {
       min-height: 38px;
       padding-block: 0.3rem;
     }
-    .nav-gruppe { margin-top: 0.85rem; }
+    .nav-trenner { margin-top: 0.8rem; }
   }
 
   /* Der Drei-Wege-Theme-Schalter im Sidebar-Fuß (AP-2.27) ist mit AP-2.32
@@ -430,6 +422,125 @@ html:has(#app-shell[data-theme='dark']) {
     max-width: 52ch;
     font-size: 0.875rem;
     color: var(--text-schwach);
+  }
+
+  /* Neue Anzeige: drei benannte Schritte mit einer ruhigen, sichtbaren Führung. */
+  .neue-anzeige-schritt {
+    display: flex;
+    height: 1.75rem;
+    width: 1.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pille);
+    background: var(--primary-light);
+    color: var(--primary-color);
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+  .neue-anzeige-einstieg {
+    max-width: none;
+    border-color: color-mix(in srgb, var(--primary-color) 22%, var(--karte-rand));
+    background: color-mix(in srgb, var(--primary-light) 55%, var(--karte));
+  }
+  .neue-anzeige-intro-text {
+    max-width: 58ch;
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+  @media (min-width: 640px) {
+    .neue-anzeige-intro-text { font-size: 1.0625rem; }
+  }
+  .neue-anzeige-ablauf {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .neue-anzeige-ablauf-schritt {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--karte-rand);
+    padding: 0.45rem 0.25rem;
+    color: var(--text-schwach);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .neue-anzeige-ablauf-schritt-aktiv {
+    border-bottom-color: var(--primary-color);
+    color: var(--text-stark);
+  }
+  .neue-anzeige-ablauf-schritt-erledigt { color: var(--primary-color); }
+  .neue-anzeige-ablauf-nummer {
+    display: inline-flex;
+    height: 1.5rem;
+    width: 1.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-pille);
+    background: var(--merkmal-grau-flaeche);
+    color: var(--text-schwach);
+    font-size: 0.75rem;
+  }
+  .neue-anzeige-ablauf-schritt-aktiv .neue-anzeige-ablauf-nummer,
+  .neue-anzeige-ablauf-schritt-erledigt .neue-anzeige-ablauf-nummer {
+    background: var(--primary-light);
+    color: var(--primary-color);
+  }
+  .einrichtung-karte-fertig {
+    border-color: color-mix(in srgb, var(--primary-color) 28%, var(--karte-rand));
+    background: color-mix(in srgb, var(--primary-light) 32%, var(--karte));
+  }
+  .neue-anzeige-datenschutz {
+    display: flex;
+    min-height: 3rem;
+    align-items: center;
+    min-width: 0;
+    flex: 1 1 30rem;
+  }
+  .neue-anzeige-datenschutz-gruppe {
+    position: relative;
+    min-width: 0;
+    flex: 1 1 30rem;
+  }
+  .neue-anzeige-datenschutz-popover {
+    position: absolute;
+    z-index: 30;
+    right: 0;
+    bottom: calc(100% + 0.5rem);
+    width: min(32rem, calc(100vw - 2rem));
+    max-height: min(24rem, calc(100vh - 2rem));
+    overflow-y: auto;
+    border: 1px solid var(--karte-rand);
+    border-radius: var(--radius-kontrolle);
+    background: var(--karte);
+    box-shadow: var(--schatten), 0 12px 28px rgb(20 32 23 / 0.14);
+    padding: 0.8rem 1rem;
+    color: var(--text);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transform: translateY(0.25rem);
+    transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .neue-anzeige-datenschutz-gruppe:hover .neue-anzeige-datenschutz-popover {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+      transform: translateY(0);
+    }
+  }
+  @media (max-width: 639px) {
+    .neue-anzeige-datenschutz-popover {
+      display: none;
+    }
   }
 
   /* Überschrift einer Feldgruppe im Editor (AP-2.15). Kleiner als eine
@@ -1102,6 +1213,12 @@ html:has(#app-shell[data-theme='dark']) {
     color: var(--text);
   }
 
+  /* Native Checkboxen behalten sonst auch im dunklen Bestätigungsdialog ihre
+     helle Standardfarbe. Der Akzent folgt dem jeweiligen Theme. */
+  .dialog input[type='checkbox'] {
+    accent-color: var(--primary-color);
+  }
+
   .leiste-fix {
     border-top: 1px solid var(--karte-rand);
     background: var(--karte);
@@ -1124,6 +1241,34 @@ html:has(#app-shell[data-theme='dark']) {
        nicht mehr stimmt, etwa in der Schublade auf einem quer gehaltenen
        Telefon, bleibt Abmelden erreichbar, statt unten abgeschnitten zu sein. */
     overflow-y: auto;
+  }
+
+  /* Der fehlende Plattformzugang ist ein Einrichtungs-Schritt, kein weiterer
+     Navigationspunkt. Die Karte sitzt deshalb direkt über Einstellungen und
+     bleibt auch in der mobilen Schublade gut erreichbar. */
+  .sidebar-zugang {
+    border: 1px solid var(--hinweis-warn-rand);
+    background: var(--hinweis-warn-flaeche);
+    color: var(--hinweis-warn-text);
+  }
+  .sidebar-zugang-knopf {
+    display: flex;
+    min-height: 32px;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--hinweis-warn-text) 42%, var(--hinweis-warn-rand));
+    border-radius: var(--radius-kontrolle);
+    background: color-mix(in srgb, var(--hinweis-warn-text) 7%, var(--hinweis-warn-flaeche));
+    padding: 0.35rem 0.55rem;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 650;
+    color: var(--hinweis-warn-text);
+  }
+  .sidebar-zugang-knopf:hover {
+    background: color-mix(in srgb, var(--hinweis-warn-text) 14%, var(--hinweis-warn-flaeche));
   }
 
   /*
@@ -1430,7 +1575,9 @@ html:has(#app-shell[data-theme='dark']) {
   .plattform-menue-panel {
     position: absolute;
     z-index: 20;
-    top: calc(100% + 0.35rem);
+    /* Keine Hover-Lücke: Das Panel überlappt den unteren Rand des Knopfs,
+       damit der Mauszeiger beim Wechsel nicht kurz außerhalb liegt. */
+    top: calc(100% - 0.35rem);
     right: 0;
     min-width: 13rem;
     padding: 0.35rem;
@@ -1548,10 +1695,12 @@ html:has(#app-shell[data-theme='dark']) {
     flex: 1;
   }
   .kategorie-wert-pfad {
-    flex-shrink: 0;
+    display: block;
+    margin-top: 0.3rem;
     color: var(--text-schwach);
     font-size: 0.75rem;
-    white-space: nowrap;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
   .kategorie-suche-knopf {
     display: inline-flex;

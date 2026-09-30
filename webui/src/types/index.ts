@@ -176,6 +176,11 @@ export interface KiStatus {
   verbrauch_usd: number;
   budget_usd: number;
   verbrauch_aufrufe: number;
+  /** Open Source verwaltet den Zugang selbst; gehostet wird er bereitgestellt. */
+  modus: 'open_source' | 'gehostet';
+  schluessel_selbst_setzbar: boolean;
+  /** Servergrenze je Entwurf, damit keine unerwarteten Bilder versendet werden. */
+  max_bilder: number;
 }
 
 export interface KiOption {
@@ -246,6 +251,38 @@ export interface KiKosten {
 export interface KiEntwurfAntwort {
   entwurf: KiEntwurf;
   kosten: KiKosten;
+}
+
+/** Zustände einer serverseitigen KI-Erkennung. */
+export type KiErkennungZustand =
+  | 'wartet'
+  | 'laeuft'
+  | 'pruefen'
+  | 'speichert'
+  | 'gespeichert'
+  | 'gescheitert'
+  | 'abgebrochen';
+
+/** Ein Entwurf, der unabhängig vom geöffneten Browserfenster weiterläuft. */
+export interface KiErkennung {
+  id: number;
+  profil_slug: string;
+  zustand: KiErkennungZustand;
+  eingereicht_am: string;
+  gestartet_am: string | null;
+  beendet_am: string | null;
+  bilder: number;
+  entwurf: KiEntwurf | null;
+  kosten: KiKosten | null;
+  meldung: string | null;
+}
+
+export interface KiErkennungAnlegen {
+  antworten: Record<string, string>;
+  beschreibung?: string;
+  kategorie?: string | null;
+  versandpakete?: string[];
+  preis?: number | null;
 }
 
 export interface KiAnlegenAntwort {

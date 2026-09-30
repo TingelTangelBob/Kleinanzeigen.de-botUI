@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
-  AlertTriangle, ArrowLeftRight, Download, RefreshCw, Search,
+  AlertTriangle, Archive, ArrowLeftRight, Download, RefreshCw, Search,
   Trash2, Upload, X,
 } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
@@ -30,8 +30,8 @@ import { AnzeigenEditor } from './AnzeigenEditor';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { HochladenDialog } from './HochladenDialog';
 import { LoeschDialog } from './LoeschDialog';
+import { useLaufStartHinweis } from './LaufStartDialog';
 import { NachladenDialog } from './NachladenDialog';
-import { Hinweis } from './Hinweis';
 import { VorlagenListe } from './VorlagenListe';
 
 type Filter = 'aktiv' | 'geaendert' | 'geloescht' | 'alle';
@@ -103,6 +103,9 @@ export function BestandSeite({
   const [aktualisierung, setAktualisierung] = useState<BestandsAnzeige | null>(null);
   const [laedtAktualisierung, setLaedtAktualisierung] = useState(false);
   const [aktualisierungsHinweis, setAktualisierungsHinweis] = useState<number | null>(null);
+  const [neuEinstellung, setNeuEinstellung] = useState<BestandsAnzeige | null>(null);
+  const [laedtNeuEinstellung, setLaedtNeuEinstellung] = useState(false);
+  const [neuEinstellHinweis, setNeuEinstellHinweis] = useState<number | null>(null);
   const [zuletztHerkunft, setZuletztHerkunft] = useState<AnzeigenListe>(herkunft);
   // AP-2.20: Mehrfachauswahl über die Dateipfade - dieselbe Kennung, mit der
   // auch das Backend arbeitet.
@@ -112,6 +115,7 @@ export function BestandSeite({
   const [sammelHinweis, setSammelHinweis] = useState<string | null>(null);
   // Auf schmalen Fenstern zusammengeklappte Suche.
   const [sucheOffen, setSucheOffen] = useState(false);
+  const laufHinweis = useLaufStartHinweis();
 
   // App.tsx rendert für #anzeigen/eigene|fremde|archiv dieselbe Komponente;
   // nur `herkunft` (Listen-Modus) wechselt. React unmountet dabei nicht, also
@@ -130,6 +134,8 @@ export function BestandSeite({
     setDownloadHinweis(null);
     setAktualisierung(null);
     setAktualisierungsHinweis(null);
+    setNeuEinstellung(null);
+    setNeuEinstellHinweis(null);
     setFehler(null);
     setSuche('');
     // Archiv zeigt nur schon archivierte Einträge – „Aktiv" als Vorgabe wäre leer.
@@ -180,23 +186,10 @@ export function BestandSeite({
     alle: sichtbar.length,
   }), [sichtbar]);
 
-  const kontoHolen = async (trotzdem = false) => {
+  const kontoLaufStarten = async () => {
     if (!aktiv) return;
-    setFehler(null);
     setStartetDownload(true);
     try {
-      if (!trotzdem) {
-        try {
-          const betroffen = await api.bestand.lokaleAenderungen(aktiv.slug);
-          const eigene = betroffen.filter(a => a.herkunft === 'eigene');
-          if (eigene.length > 0) {
-            setWarnung(eigene);
-            return;
-          }
-        } catch {
-          // Die Prüfung ist eine Vorsichtsmaßnahme, keine Voraussetzung.
-        }
-      }
       const job = await api.jobs.starten(aktiv.slug, 'download');
       setDownloadHinweis(job.id);
     } catch (ursache) {
@@ -204,6 +197,28 @@ export function BestandSeite({
     } finally {
       setStartetDownload(false);
     }
+  };
+
+  const kontoHolen = async () => {
+    if (!aktiv) return;
+    setFehler(null);
+    try {
+      const betroffen = await api.bestand.lokaleAenderungen(aktiv.slug);
+      const eigene = betroffen.filter(a => a.herkunft === 'eigene');
+      if (eigene.length > 0) {
+        setWarnung(eigene);
+        return;
+      }
+    } catch {
+      // Die Prüfung ist eine Vorsichtsmaßnahme, keine Voraussetzung.
+    }
+    laufHinweis.anfragen(
+      {
+        titel: 'Anzeigen vom Konto holen?',
+        text: 'Anzeigen-Studio meldet sich bei deinem Kleinanzeigen-Konto an und liest deine eigenen Anzeigen neu ein. Lokale Änderungen werden vorher angezeigt.',
+      },
+      kontoLaufStarten,
+    );
   };
 
   const umsortieren = async (anzeige: BestandsAnzeige) => {
@@ -217,11 +232,29 @@ export function BestandSeite({
     }
   };
 
+  /** Archiv ist ein lokaler Status: Die Datei bleibt erhalten, wird aber aus
+   * den aktiven Listen genommen. */
+  const archivieren = async (anzeige: BestandsAnzeige) => {
+    if (!aktiv || anzeige.unlesbar !== null) return;
+    try {
+      await api.bestand.speichern(aktiv.slug, anzeige.datei, { active: false });
+      await laden();
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    }
+  };
+
   /** Öffnet die Rückfrage für eine bestehende Anzeige aus der Listenzeile. */
   const aktualisieren = (anzeige: BestandsAnzeige) => {
     if (anzeige.id === null || anzeige.unlesbar !== null) return;
     setFehler(null);
     setAktualisierung(anzeige);
+  };
+
+  const neuEinstellen = (anzeige: BestandsAnzeige) => {
+    if (anzeige.id === null || anzeige.unlesbar !== null) return;
+    setFehler(null);
+    setNeuEinstellung(anzeige);
   };
 
   const aktualisierungStarten = async () => {
@@ -236,6 +269,21 @@ export function BestandSeite({
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
       setLaedtAktualisierung(false);
+    }
+  };
+
+  const neuEinstellenStarten = async () => {
+    if (!aktiv || !neuEinstellung) return;
+    setLaedtNeuEinstellung(true);
+    setFehler(null);
+    try {
+      const job = await api.bestand.hochladen(aktiv.slug, neuEinstellung.datei, true);
+      setNeuEinstellHinweis(job.job_id);
+      setNeuEinstellung(null);
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setLaedtNeuEinstellung(false);
     }
   };
 
@@ -269,13 +317,14 @@ export function BestandSeite({
    */
   const sammeln = async (
     art: string, tun: (dateien: string[]) => Promise<string>,
+    dateien = gewaehlte.map(a => a.datei),
   ) => {
-    if (!aktiv || gewaehlte.length === 0) return;
+    if (!aktiv || dateien.length === 0) return;
     setFehler(null);
     setSammelHinweis(null);
     setSammelLaeuft(art);
     try {
-      const meldung = await tun(gewaehlte.map(a => a.datei));
+      const meldung = await tun(dateien);
       setAuswahl(new Set());
       setSammelHinweis(meldung);
     } catch (ursache) {
@@ -297,14 +346,32 @@ export function BestandSeite({
     return `${dateien.length} ${dateien.length === 1 ? 'Anzeige' : 'Anzeigen'} verschoben.`;
   });
 
-  const sammelHochladen = () => sammeln('hochladen', async dateien => {
-    const jobs: number[] = [];
+  const sammelArchivieren = () => sammeln('archiv', async dateien => {
     for (const datei of dateien) {
-      const antwort = await api.bestand.hochladen(aktiv!.slug, datei);
-      jobs.push(antwort.job_id);
+      await api.bestand.speichern(aktiv!.slug, datei, { active: false });
     }
-    return `${jobs.length} ${jobs.length === 1 ? 'Lauf' : 'Läufe'} eingereiht.`;
+    return `${dateien.length} ${dateien.length === 1 ? 'Anzeige' : 'Anzeigen'} ins Archiv verschoben.`;
   });
+
+  const sammelHochladen = () => {
+    const dateien = gewaehlte.map(a => a.datei);
+    if (!aktiv || dateien.length === 0) return;
+    laufHinweis.anfragen(
+      {
+        titel: String(dateien.length) + (dateien.length === 1 ? ' Anzeige hochladen?' : ' Anzeigen hochladen?'),
+        text: 'Die ausgewählten Anzeigen werden nacheinander auf kleinanzeigen.de eingestellt. Jede Anzeige wird vorher noch einmal einzeln geprüft.',
+        ueberspringenErlaubt: false,
+      },
+      () => sammeln('hochladen', async ausgewaehlt => {
+        const jobs: number[] = [];
+        for (const datei of ausgewaehlt) {
+          const antwort = await api.bestand.hochladen(aktiv!.slug, datei);
+          jobs.push(antwort.job_id);
+        }
+        return String(jobs.length) + (jobs.length === 1 ? ' Lauf eingereiht.' : ' Läufe eingereiht.');
+      }, dateien),
+    );
+  };
 
   const loeschenAusfuehren = (dateien: string[]) => sammeln('loeschen', async () => {
     const antwort = await api.bestand.loeschen(aktiv!.slug, dateien);
@@ -337,8 +404,16 @@ export function BestandSeite({
         text: 'Die Anzeige wird auf kleinanzeigen.de aktualisiert.',
       });
     }
+    if (neuEinstellHinweis !== null) {
+      liste.push({
+        id: 'bestand-neu-einstellen',
+        ton: 'hinweis',
+        titel: `Lauf ${neuEinstellHinweis} ist eingereiht`,
+        text: 'Die Anzeige wird als neue Anzeige auf kleinanzeigen.de eingestellt.',
+      });
+    }
     return liste;
-  }, [downloadHinweis, aktualisierungsHinweis]);
+  }, [downloadHinweis, aktualisierungsHinweis, neuEinstellHinweis]);
   useMeldungenQuelle('bestand', meldungen);
 
   // Unter md wandern die Sammelaktionen in eine fixe Leiste unten (statt über
@@ -354,7 +429,7 @@ export function BestandSeite({
   // als eigene Zeile unter der Leiste (useKopfAktionen entscheidet das Ziel).
   //
   // „Vom Konto holen" startet einen Bot-Lauf (Anmeldung + Download vom Konto),
-  // „Neu einlesen" liest nur die lokalen Dateien frisch ein - deshalb die
+  // „Lokal neu einlesen" liest nur die lokalen Dateien frisch ein - deshalb die
   // vollen Beschriftungen. Der Such-Icon-Knopf hängt nur unter md hier mit
   // (in der Topleiste ab md steckt die Suche im Filterstreifen). Archiv: keine
   // Konto-/Link-Aktion (AP-2.58).
@@ -382,16 +457,16 @@ export function BestandSeite({
         </button>
       ))}
 
-      {/* „Neu einlesen" ist nur das frische Lesen der lokalen Dateien - auf dem
+      {/* „Lokal neu einlesen" ist nur das frische Lesen der lokalen Dateien - auf dem
           Handy verzichtbar, dort zählt der Platz. Ab sm wieder sichtbar. */}
       <button
         type="button"
         onClick={() => void laden()}
         className="btn-ghost hidden sm:inline-flex"
-        title="Liest die lokalen Anzeigendateien frisch von der Platte ein - kein Konto, kein Lauf."
+        title="Liest nur die lokalen Anzeigendateien frisch von der Platte ein - kein Konto, kein Lauf."
       >
         <RefreshCw className={`h-4 w-4 ${laedt ? 'animate-spin' : ''}`} aria-hidden />
-        Neu einlesen
+        Lokal neu einlesen
       </button>
 
       <button
@@ -454,6 +529,7 @@ export function BestandSeite({
     <div className={`seite ${istMobil && gewaehlte.length > 0 ? 'pb-24' : ''}`}>
       <h1 className="sr-only">{archiv ? 'Archiv' : eigene ? 'Meine Anzeigen' : 'Von anderen'}</h1>
       {kopfAktionen}
+      {laufHinweis.dialog}
       {holtNach && (
         <NachladenDialog profil={aktiv.slug} aufSchliessen={() => { setHoltNach(false); void laden(); }} />
       )}
@@ -473,7 +549,7 @@ export function BestandSeite({
           aufAbbrechen={() => setWarnung(null)}
           aufWeiter={() => {
             setWarnung(null);
-            void kontoHolen(true);
+            void kontoLaufStarten();
           }}
         />
       )}
@@ -488,24 +564,22 @@ export function BestandSeite({
         />
       )}
 
+      {neuEinstellung && (
+        <HochladenDialog
+          anzeige={neuEinstellung}
+          profil={aktiv.slug}
+          laeuft={laedtNeuEinstellung}
+          neuEinstellen
+          aufAbbrechen={() => setNeuEinstellung(null)}
+          aufBestaetigen={() => void neuEinstellenStarten()}
+        />
+      )}
+
       {/* „Lauf N ist eingereiht" steht in der Glocke (siehe `meldungen` /
           useMeldungenQuelle) - kein Vollbreite-Hinweis mehr im Seitenfluss. */}
 
       {fehler && (
         <p className="hinweis hinweis-fehler mb-4">{fehler}</p>
-      )}
-
-      {/* Wegklickbar mit localStorage (AP-2.59) – Hinweis-Komponente wie auf der Jobseite. */}
-      {!eigene && !archiv && (
-        <Hinweis
-          id="bestand-fremde-geloescht"
-          ton="warn"
-          icon={AlertTriangle}
-          className="mb-4"
-        >
-          Nur was auf kleinanzeigen.de noch als Seite erreichbar ist, lässt sich holen.
-          Endgültig gelöschte Anzeigen sind weg – kein Werkzeug holt sie zurück.
-        </Hinweis>
       )}
 
       {eigene && !archiv && (
@@ -612,6 +686,7 @@ export function BestandSeite({
                   eigene={eigene}
                   sammelLaeuft={sammelLaeuft}
                   aufHerkunft={() => void sammelHerkunft()}
+                  aufArchivieren={() => void sammelArchivieren()}
                   aufHochladen={() => void sammelHochladen()}
                   aufLoeschen={() => setLoeschDialog(gewaehlte)}
                   aufAufheben={() => setAuswahl(new Set())}
@@ -636,6 +711,7 @@ export function BestandSeite({
                 eigene={eigene}
                 sammelLaeuft={sammelLaeuft}
                 aufHerkunft={() => void sammelHerkunft()}
+                aufArchivieren={() => void sammelArchivieren()}
                 aufHochladen={() => void sammelHochladen()}
                 aufLoeschen={() => setLoeschDialog(gewaehlte)}
                 aufAufheben={() => setAuswahl(new Set())}
@@ -670,7 +746,13 @@ export function BestandSeite({
                         ? () => aktualisieren(a)
                         : undefined
                     }
+                    aufNeuEinstellen={
+                      a.herkunft === 'eigene' && a.id !== null && !a.unlesbar
+                        ? () => neuEinstellen(a)
+                        : undefined
+                    }
                     aufUmsortieren={archiv ? undefined : () => void umsortieren(a)}
+                    aufArchivieren={archiv ? undefined : () => void archivieren(a)}
                   />
                 </div>
               </li>
@@ -693,13 +775,15 @@ export function BestandSeite({
  * `role="group"`.
  */
 function SammelAktionen({
-  archiv, eigene, sammelLaeuft, aufHerkunft, aufHochladen, aufLoeschen, aufAufheben,
+  archiv, eigene, sammelLaeuft, aufHerkunft, aufArchivieren, aufHochladen, aufLoeschen,
+  aufAufheben,
   className = '', nurIcons = false,
 }: {
   archiv: boolean;
   eigene: boolean;
   sammelLaeuft: string | null;
   aufHerkunft: () => void;
+  aufArchivieren: () => void;
   aufHochladen: () => void;
   aufLoeschen: () => void;
   aufAufheben: () => void;
@@ -711,6 +795,7 @@ function SammelAktionen({
     ? 'Wird verschoben …'
     : eigene ? 'Zu „Von anderen"' : 'Zu meinen Anzeigen';
   const hochladenText = sammelLaeuft === 'hochladen' ? 'Wird eingereiht …' : 'Hochladen';
+  const archivText = sammelLaeuft === 'archiv' ? 'Wird archiviert …' : 'Ins Archiv';
 
   /** Ein Aktionsknopf: nurIcons → Icon-Knopf mit sr-only-Text; sonst Text-Knopf. */
   const knopf = (
@@ -738,6 +823,7 @@ function SammelAktionen({
       className={`flex items-center ${nurIcons ? 'flex-nowrap gap-1.5' : 'flex-wrap gap-2'} ${className}`}
     >
       {!archiv && knopf(aufHerkunft, ArrowLeftRight, herkunftText, 'btn-ghost')}
+      {!archiv && knopf(aufArchivieren, Archive, archivText, 'btn-ghost')}
       {!archiv && knopf(aufHochladen, Upload, hochladenText, 'btn-ghost')}
       {/* Rot: Es vernichtet Dateien und soll sich von den harmlosen Knöpfen
           daneben abheben (AP-2.20). */}

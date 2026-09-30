@@ -8,14 +8,15 @@
 // Fachseiten. Eine Übersicht, die alles zeigt, zeigt nichts.
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowRight, KeyRound } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
-import { anzeigeBezug, befehlIcon, befehlText } from '../jobText';
+import { anzeigeBezug, befehlIcon, befehlText, istTechnischerLauf } from '../jobText';
 import { useProfil } from '../context/useProfil';
 import { hashFuerAnzeige } from '../routing';
 import type { BestandsAnzeige, Job, ZugangStatus } from '../types';
 import { AnzeigenZeile } from './AnzeigenZeile';
 import { InfoTip } from './InfoTip';
+import { KiEntwurfWarteschlange } from './KiEntwurfWarteschlange';
 import { useWartezeit, warteHinweisText } from './Wartezeit';
 import { Wartehinweis } from './Wartehinweis';
 
@@ -51,6 +52,13 @@ function zeitText(iso: string | null): string {
   return zeitpunkt.toLocaleString('de-DE', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function zeitwert(anzeige: BestandsAnzeige): number {
+  const wert = anzeige.erstellt_am ?? anzeige.aktualisiert_am;
+  if (!wert) return 0;
+  const zeit = Date.parse(wert);
+  return Number.isNaN(zeit) ? 0 : zeit;
 }
 
 function Kachel({
@@ -150,7 +158,10 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
         api.profile.zugang(aktiv.slug),
       ]);
       setAnzeigen(bestand);
-      setJobs(laeufe.slice(0, 5));
+      // Der technische Folgeabgleich dient nur dazu, die lokale Reihenfolge
+      // und den Bestand nachzuziehen. In „Letzte Läufe“ soll er nicht als
+      // eigener Vorgang auftauchen.
+      setJobs(laeufe.filter(job => !istTechnischerLauf(job.befehl)).slice(0, 5));
       setZugang(zugangsdaten);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
@@ -221,6 +232,10 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
    * `faellig` tragen, ist aber keine Handlung mehr.
    */
   const eigene = anzeigen.filter(a => a.herkunft === 'eigene');
+  const neueste = [...eigene]
+    .filter(a => a.aktiv && !a.geloescht)
+    .sort((a, b) => zeitwert(b) - zeitwert(a))
+    .slice(0, 4);
   const faellige = eigene.filter(a => a.faellig && !a.geloescht);
   const geaendert = eigene.filter(a => a.lokal_geaendert).length;
   const auffaellig = eigene.filter(a => a.hinweise.length > 0 || a.unlesbar).length;
@@ -232,28 +247,14 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
           <h1 className="sr-only">Übersicht</h1>
           <p className="seite-beschrieb">{aktiv.anzeigename}</p>
         </div>
+        <button type="button" onClick={() => aufZiel('neu')} className="btn-primaer">
+          <Plus className="h-4 w-4" aria-hidden />
+          Neue Anzeige erstellen
+        </button>
       </div>
 
       {fehler && (
         <p className="hinweis hinweis-fehler lesebreite mb-4">{fehler}</p>
-      )}
-
-      {!zugang?.passwort_hinterlegt && (
-        <div className="hinweis hinweis-warn lesebreite mb-6 flex items-start gap-3">
-          <KeyRound className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p>
-              Für dieses Profil sind keine Zugangsdaten hinterlegt. Ohne sie kann kein Lauf starten.
-            </p>
-            <button
-              type="button"
-              onClick={() => aufZiel('einstellungen/profile')}
-              className="mt-2 text-sm font-medium underline"
-            >
-              Zugangsdaten hinterlegen
-            </button>
-          </div>
-        </div>
       )}
 
       {/* Das Raster behält die volle Seitenbreite – es baut die Seite mit auf
@@ -269,22 +270,63 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
         <Kachel zahl={auffaellig} label="Mit Hinweis" />
       </div>
 
-      <section className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-stark">Letzte Läufe</h2>
-          <button
-            type="button"
-            onClick={() => aufZiel('warteschlange')}
-            className="btn-leise"
-          >
-            Zur Warteschlange <ArrowRight className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-        {jobs.length === 0 ? (
-          <p className="leer">
-            Noch kein Lauf. In der Warteschlange lässt sich einer starten.
+      <KiEntwurfWarteschlange profil={aktiv.slug} aufZiel={aufZiel} kompakt />
+
+      {neueste.length > 0 && (
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-stark">Neueste Anzeigen</h2>
+            <button
+              type="button"
+              onClick={() => aufZiel('anzeigen/eigene')}
+              className="btn-leise"
+            >
+              Alle Anzeigen <ArrowRight className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
+          <ul className="liste">
+            {neueste.map(a => (
+              <li key={a.datei}>
+                <AnzeigenZeile
+                  anzeige={a}
+                  profil={aktiv.slug}
+                  aufKlick={() => aufZiel(hashFuerAnzeige('eigene', a.datei))}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="mb-8 grid gap-3 sm:grid-cols-2">
+        <div className="karte p-4">
+          <h2 className="text-base font-semibold tracking-tight text-stark">
+            Aktives Kleinanzeigen-Konto
+          </h2>
+          <p className="mt-2 text-sm text-normal">{aktiv.anzeigename}</p>
+          <p className="mt-1 text-sm text-leise">
+            {zugang?.passwort_hinterlegt ? zugang.benutzername : 'Noch nicht verbunden'}
           </p>
-        ) : (
+        </div>
+        <div className="karte p-4">
+          <h2 className="text-base font-semibold tracking-tight text-stark">Aktives eBay-Konto</h2>
+          <p className="mt-2 text-sm text-normal">Noch nicht verbunden</p>
+          <p className="mt-1 text-sm text-leise">Die eBay-Anbindung folgt später.</p>
+        </div>
+      </section>
+
+      {jobs.length > 0 && (
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-stark">Letzte Läufe</h2>
+            <button
+              type="button"
+              onClick={() => aufZiel('warteschlange')}
+              className="btn-leise"
+            >
+              Zur Warteschlange <ArrowRight className="h-4 w-4" aria-hidden />
+            </button>
+          </div>
           <ul className="liste">
             {jobs.map(job => {
               const zustandText = ZUSTAND_TEXT[job.zustand] ?? job.zustand;
@@ -303,10 +345,10 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
               );
             })}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
 
-      <section>
+      {faellige.length > 0 && <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-1 text-base font-semibold tracking-tight text-stark">
             Steht an
@@ -327,29 +369,23 @@ export function UebersichtSeite({ aufZiel }: { aufZiel: (ziel: string) => void }
             Alle Anzeigen <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
         </div>
-        {faellige.length === 0 ? (
-          <p className="leer">
-            Keine Anzeige ist zur Neueinstellung fällig.
-          </p>
-        ) : (
-          <>
-            <ul className="liste">
-              {faellige.slice(0, 5).map(a => (
-                <li key={a.datei}>
-                  <AnzeigenZeile
-                    anzeige={a}
-                    profil={aktiv.slug}
-                    aufOeffnen={() => aufZiel(hashFuerAnzeige('eigene', a.datei))}
-                  />
-                </li>
-              ))}
-            </ul>
-            {faellige.length > 5 && (
-              <p className="mt-2 text-sm text-leise">und {faellige.length - 5} weitere</p>
-            )}
-          </>
-        )}
-      </section>
+        <>
+          <ul className="liste">
+            {faellige.slice(0, 5).map(a => (
+              <li key={a.datei}>
+                <AnzeigenZeile
+                  anzeige={a}
+                  profil={aktiv.slug}
+                  aufOeffnen={() => aufZiel(hashFuerAnzeige('eigene', a.datei))}
+                />
+              </li>
+            ))}
+          </ul>
+          {faellige.length > 5 && (
+            <p className="mt-2 text-sm text-leise">und {faellige.length - 5} weitere</p>
+          )}
+        </>
+      </section>}
     </div>
   );
 }

@@ -9,7 +9,7 @@
 import type {
   AbgleichMeldung, AbgleichStand, VerlaengernStand, ArchivErgebnis, ArchivVorschau,
   AnzeigeInhalt, AuthStatus, BestandsAnzeige, Einstellungen, Gesundheit, Job, Kategorie, LogZeile,
-  KiAnlegenAntwort, KiEntwurfAntwort, KiStatus,
+  KiAnlegenAntwort, KiEntwurfAntwort, KiErkennung, KiErkennungAnlegen, KiStatus,
   Profil, SpeichernAusgabe, Vergleich, Versandpaket, Vorlage, ZugangStatus,
 } from '../types';
 
@@ -247,6 +247,25 @@ export const api = {
     schluesselSetzen: (apiSchluessel: string) =>
       anfrage<KiStatus>('/ki/schluessel', { method: 'PUT', ...json({ api_schluessel: apiSchluessel }) }),
     schluesselEntfernen: () => anfrage<KiStatus>('/ki/schluessel', { method: 'DELETE' }),
+
+    /** Reiht eine Bildanalyse ein; die kostenpflichtige Arbeit läuft danach serverseitig. */
+    erkennungStarten: (profil: string, dateien: File[]) => {
+      const daten = new FormData();
+      daten.append('profil', profil);
+      dateien.forEach(datei => daten.append('bilder', datei));
+      return anfrage<KiErkennung>('/ki/erkennungen', { method: 'POST', body: daten });
+    },
+    erkennungen: (profil: string) =>
+      anfrage<KiErkennung[]>(`/ki/erkennungen?profil=${encodeURIComponent(profil)}`),
+    erkennung: (profil: string, id: number) =>
+      anfrage<KiErkennung>(
+        `/ki/erkennungen/${id}?profil=${encodeURIComponent(profil)}`,
+      ),
+    erkennungAnlegen: (profil: string, id: number, daten: KiErkennungAnlegen) =>
+      anfrage<KiAnlegenAntwort>(
+        `/ki/erkennungen/${id}/anlegen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST', ...json(daten) },
+      ),
 
     /**
      * Der einzige Aufruf, der Geld kostet. Bewusst über XHR statt fetch: Nur

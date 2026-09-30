@@ -12,7 +12,7 @@
 // nowrap-Tokens - vorher brach sie Wort für Wort um.
 
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowLeftRight, Eye, ImageOff, MoreVertical, Pencil, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeftRight, ArrowUpFromLine, Eye, ImageOff, MoreVertical, Pencil, RefreshCw } from 'lucide-react';
 import type { BestandsAnzeige } from '../types';
 import { api } from '../services/api';
 import { titelFuerAnzeige } from '../titel';
@@ -90,8 +90,11 @@ interface Props {
   aufKlick?: (anzeige: BestandsAnzeige) => void;
   aufOeffnen?: (anzeige: BestandsAnzeige) => void;
   aufAktualisieren?: (anzeige: BestandsAnzeige) => void;
+  aufNeuEinstellen?: (anzeige: BestandsAnzeige) => void;
   /** Herkunft wechseln: eigene ↔ Von anderen (AP-2.50). */
   aufUmsortieren?: (anzeige: BestandsAnzeige) => void;
+  /** Anzeige lokal ins Archiv legen. */
+  aufArchivieren?: (anzeige: BestandsAnzeige) => void;
 }
 
 interface MerkmalDaten {
@@ -167,13 +170,16 @@ function umsortierenLabel(anzeige: BestandsAnzeige, titel: string): { aria: stri
  * Schließen bei Klick daneben und Escape – dieselbe Sprache wie der Bestandskopf.
  */
 function ZeileAktionen({
-  titel, anzeige, aufOeffnen, aufAktualisieren, aufUmsortieren,
+  titel, anzeige, aufOeffnen, aufAktualisieren, aufNeuEinstellen, aufUmsortieren,
+  aufArchivieren,
 }: {
   titel: string;
   anzeige: BestandsAnzeige;
   aufOeffnen?: (anzeige: BestandsAnzeige) => void;
   aufAktualisieren?: (anzeige: BestandsAnzeige) => void;
+  aufNeuEinstellen?: (anzeige: BestandsAnzeige) => void;
   aufUmsortieren?: (anzeige: BestandsAnzeige) => void;
+  aufArchivieren?: (anzeige: BestandsAnzeige) => void;
 }) {
   const [menueOffen, setMenueOffen] = useState(false);
   const menueRef = useRef<HTMLDivElement>(null);
@@ -211,6 +217,17 @@ function ZeileAktionen({
             <RefreshCw className="h-4 w-4" aria-hidden />
           </button>
         )}
+        {aufNeuEinstellen && (
+          <button
+            type="button"
+            onClick={() => aufNeuEinstellen(anzeige)}
+            aria-label={'„' + titel + '“ neu einstellen'}
+            title="Anzeige neu einstellen"
+            className="btn-icon zeile-neu-einstellen"
+          >
+            <ArrowUpFromLine className="h-4 w-4" aria-hidden />
+          </button>
+        )}
         {aufOeffnen && (
           <button
             type="button"
@@ -231,6 +248,17 @@ function ZeileAktionen({
             className="btn-icon zeile-umsortieren"
           >
             <ArrowLeftRight className="h-4 w-4" aria-hidden />
+          </button>
+        )}
+        {aufArchivieren && (
+          <button
+            type="button"
+            onClick={() => aufArchivieren(anzeige)}
+            aria-label={'„' + titel + '“ ins Archiv verschieben'}
+            title="Ins Archiv verschieben"
+            className="btn-icon zeile-archivieren"
+          >
+            <Archive className="h-4 w-4" aria-hidden />
           </button>
         )}
       </div>
@@ -263,6 +291,16 @@ function ZeileAktionen({
                 Aktualisieren
               </button>
             )}
+            {aufNeuEinstellen && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenueOffen(false); aufNeuEinstellen(anzeige); }}
+              >
+                <ArrowUpFromLine className="h-4 w-4" aria-hidden />
+                Neu einstellen
+              </button>
+            )}
             {aufOeffnen && (
               <button
                 type="button"
@@ -283,6 +321,16 @@ function ZeileAktionen({
                 {umsortieren.menue}
               </button>
             )}
+            {aufArchivieren && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenueOffen(false); aufArchivieren(anzeige); }}
+              >
+                <Archive className="h-4 w-4" aria-hidden />
+                Ins Archiv
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -291,7 +339,8 @@ function ZeileAktionen({
 }
 
 export function AnzeigenZeile({
-  anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren, aufUmsortieren,
+  anzeige, profil, aufKlick, aufOeffnen, aufAktualisieren, aufNeuEinstellen,
+  aufUmsortieren, aufArchivieren,
 }: Props) {
   const bildUrl = anzeige.vorschaubild
     ? api.bestand.bildUrl(profil, anzeige.datei, anzeige.vorschaubild)
@@ -368,7 +417,9 @@ export function AnzeigenZeile({
     </>
   );
 
-  const hatAktionen = Boolean(aufOeffnen || aufAktualisieren || aufUmsortieren);
+  const hatAktionen = Boolean(
+    aufOeffnen || aufAktualisieren || aufNeuEinstellen || aufUmsortieren || aufArchivieren,
+  );
 
   return (
     <div className="zeile">
@@ -395,7 +446,9 @@ export function AnzeigenZeile({
             anzeige={anzeige}
             aufOeffnen={aufOeffnen}
             aufAktualisieren={aufAktualisieren}
+            aufNeuEinstellen={aufNeuEinstellen}
             aufUmsortieren={aufUmsortieren}
+            aufArchivieren={aufArchivieren}
           />
         )}
         <span className="zeile-preis">{preisText(anzeige)}</span>

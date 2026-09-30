@@ -159,6 +159,7 @@ export function AnzeigenEditor({
   const [speichert, setSpeichert] = useState(false);
   const [schmutzig, setSchmutzig] = useState(false);
   const [fragtHochladen, setFragtHochladen] = useState(false);
+  const [fragtNeuEinstellen, setFragtNeuEinstellen] = useState(false);
   const [dupliziert, setDupliziert] = useState(false);
   const [wirdVorlage, setWirdVorlage] = useState(false);
   const [vorlageAngelegt, setVorlageAngelegt] = useState(false);
@@ -368,17 +369,21 @@ export function AnzeigenEditor({
 
   // Hochladen ist der erste Vorgang, der etwas auf der Plattform veraendert -
   // deshalb erst die Rueckfrage, dann der Lauf.
-  const hochladen = async () => {
+  const hochladen = async (neuEinstellen = false) => {
     setLaedtHoch(true);
     setFehler(null);
     try {
-      const ergebnis = await api.bestand.hochladen(profil, datei);
+      const ergebnis = neuEinstellen
+        ? await api.bestand.hochladen(profil, datei, true)
+        : await api.bestand.hochladen(profil, datei);
       setEingereiht(ergebnis.job_id);
       setEingereihterBefehl(ergebnis.befehl);
       setFragtHochladen(false);
+      setFragtNeuEinstellen(false);
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
       setFragtHochladen(false);
+      setFragtNeuEinstellen(false);
     } finally {
       setLaedtHoch(false);
     }
@@ -389,27 +394,42 @@ export function AnzeigenEditor({
   // im Formular. Die Kennung `editor-speichern-lokal` ist dieselbe wie beim
   // früheren Banner - wer ihn schon weggeklickt hatte, sieht ihn nicht wieder.
   const meldungen = useMemo<Meldung[]>(() => {
-    if (!inhalt || !bearbeitbar) return [];
-    const liste: Meldung[] = [{
-      id: 'editor-speichern-lokal',
-      ton: 'hinweis',
-      titel: 'Speichern bleibt auf diesem Rechner',
-      text: inhalt.kopf.id !== null
-        ? 'Speichern ändert nichts auf kleinanzeigen.de - dafür ist „Aktualisieren". '
-          + 'Und ein späteres Herunterladen überschreibt, was hier geändert wurde.'
-        : 'Speichern ändert nichts auf kleinanzeigen.de. Diese Anzeige war nie online - '
-          + '„Veröffentlichen" stellt sie neu ein, erst danach hat sie eine Nummer.',
-    }];
-    for (const h of hinweise) {
+    if (!inhalt) return [];
+    const liste: Meldung[] = [];
+    if (bearbeitbar) {
       liste.push({
-        id: `editor-nicht-veroeffentlichbar:${h}`,
-        ton: 'warnung',
-        titel: 'Gespeichert, aber so nicht veröffentlichbar',
-        text: h,
+        id: 'editor-speichern-lokal',
+        ton: 'hinweis',
+        titel: 'Speichern bleibt auf diesem Rechner',
+        text: inhalt.kopf.id !== null
+          ? 'Speichern ändert nichts auf kleinanzeigen.de - dafür ist „Aktualisieren". '
+            + 'Und ein späteres Herunterladen überschreibt, was hier geändert wurde.'
+          : 'Speichern ändert nichts auf kleinanzeigen.de. Diese Anzeige war nie online - '
+            + '„Veröffentlichen" stellt sie neu ein, erst danach hat sie eine Nummer.',
+      });
+      for (const h of hinweise) {
+        liste.push({
+          id: `editor-nicht-veroeffentlichbar:${h}`,
+          ton: 'warnung',
+          titel: 'Gespeichert, aber so nicht veröffentlichbar',
+          text: h,
+        });
+      }
+    }
+    if (eingereiht !== null) {
+      liste.push({
+        id: `editor-lauf:${eingereiht}`,
+        ton: 'hinweis',
+        titel: eingereihterBefehl === 'publish'
+          ? `Lauf ${eingereiht} eingereiht – Anzeige wird neu eingestellt`
+          : eingereihterBefehl === 'delete'
+            ? `Lauf ${eingereiht} eingereiht – Anzeige wird auf kleinanzeigen.de gelöscht`
+            : `Lauf ${eingereiht} eingereiht – Anzeige wird aktualisiert`,
+        text: 'Der Lauf erscheint in der Warteschlange. Dort kannst du den Fortschritt mitlesen und den Lauf abbrechen.',
       });
     }
     return liste;
-  }, [bearbeitbar, inhalt, hinweise]);
+  }, [bearbeitbar, eingereiht, eingereihterBefehl, hinweise, inhalt]);
   useMeldungenQuelle('editor', meldungen);
 
   if (fehler && !inhalt) {
@@ -517,8 +537,8 @@ export function AnzeigenEditor({
               <button
                 type="button"
                 onClick={() => setEinstellungenOffen(true)}
-                aria-label="Studio-Einstellungen dieser Anzeige"
-                title="Studio-Einstellungen dieser Anzeige"
+                aria-label="Einstellungen für diese Anzeige"
+                title="Einstellungen für diese Anzeige"
                 className="btn-icon"
               >
                 <Settings className="h-4 w-4" aria-hidden />
@@ -533,6 +553,17 @@ export function AnzeigenEditor({
                 className="btn-icon"
               >
                 <RefreshCw className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+            {inhalt.kopf.id !== null && (
+              <button
+                type="button"
+                onClick={() => setFragtNeuEinstellen(true)}
+                aria-label="Anzeige neu einstellen"
+                title="Anzeige neu einstellen"
+                className="btn-icon"
+              >
+                <ArrowUpFromLine className="h-4 w-4" aria-hidden />
               </button>
             )}
             {inhalt.kopf.id !== null && (
@@ -592,28 +623,11 @@ export function AnzeigenEditor({
         />
       )}
 
-      {(fehler || eingereiht !== null) && (
+      {fehler && (
         <div className="mb-4 space-y-2">
-          {fehler && (
-            <p role="alert" className="hinweis hinweis-fehler lesebreite">
-              {fehler}
-            </p>
-          )}
-          {eingereiht !== null && (
-            <p className="lesebreite text-sm text-leise">
-              {eingereihterBefehl === 'publish'
-                ? 'Lauf ' + eingereiht + ' ist eingereiht – die Anzeige wird neu eingestellt.'
-                : eingereihterBefehl === 'delete'
-                  ? 'Lauf ' + eingereiht + ' ist eingereiht – die Anzeige wird auf kleinanzeigen.de gelöscht. '
-                    + 'Prüfe danach den öffentlichen Link mit dem Mini-Skript.'
-                  : 'Lauf ' + eingereiht + ' ist eingereiht – die bestehende Anzeige wird bearbeitet.'}
-              {' '}
-              <a href="#warteschlange" className="font-medium underline">
-                Zur Warteschlange
-              </a>{' '}
-              – dort mitlesen und abbrechen.
-            </p>
-          )}
+          <p role="alert" className="hinweis hinweis-fehler lesebreite">
+            {fehler}
+          </p>
         </div>
       )}
 
@@ -624,6 +638,17 @@ export function AnzeigenEditor({
           laeuft={laedtHoch}
           aufAbbrechen={() => setFragtHochladen(false)}
           aufBestaetigen={() => void hochladen()}
+        />
+      )}
+
+      {fragtNeuEinstellen && inhalt && (
+        <HochladenDialog
+          anzeige={inhalt.kopf}
+          profil={profil}
+          laeuft={laedtHoch}
+          neuEinstellen
+          aufAbbrechen={() => setFragtNeuEinstellen(false)}
+          aufBestaetigen={() => void hochladen(true)}
         />
       )}
 
@@ -962,6 +987,21 @@ export function AnzeigenEditor({
               <ArrowUpFromLine className="h-4 w-4" aria-hidden />
               {inhalt.kopf.id === null ? 'Veröffentlichen' : 'Aktualisieren'}
             </button>
+
+            {inhalt.kopf.id !== null && (
+              <button
+                type="button"
+                onClick={() => setFragtNeuEinstellen(true)}
+                disabled={speichert || schmutzig || nichtUebertragbar}
+                title={schmutzig
+                  ? 'Erst speichern - übertragen wird der gespeicherte Stand.'
+                  : 'Legt diese Anzeige als neue Anzeige auf kleinanzeigen.de an.'}
+                className="btn-ghost"
+              >
+                <ArrowUpFromLine className="h-4 w-4" aria-hidden />
+                Neu einstellen
+              </button>
+            )}
 
             <button
               type="button"

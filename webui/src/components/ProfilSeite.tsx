@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { KiStatus, Profil, ZugangStatus } from '../types';
+import { KI_STATUS_EVENT, ZUGANG_STATUS_EVENT } from '../context/profilKontext';
 
 export function ProfilSeite({ ohneTitel = false }: { ohneTitel?: boolean } = {}) {
   const [profile, setProfile] = useState<Profil[]>([]);
@@ -120,6 +121,7 @@ function KiZugang() {
     setLaeuft(true);
     try {
       setStatus(await api.ki.schluesselSetzen(eingabe));
+      window.dispatchEvent(new Event(KI_STATUS_EVENT));
       // Sofort aus dem Speicher der Oberfläche entfernen. Er liegt danach
       // verschlüsselt im Backend; im Browser hat er nichts mehr zu suchen.
       setEingabe('');
@@ -134,6 +136,7 @@ function KiZugang() {
     setFehler(null);
     try {
       setStatus(await api.ki.schluesselEntfernen());
+      window.dispatchEvent(new Event(KI_STATUS_EVENT));
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     }
@@ -146,8 +149,10 @@ function KiZugang() {
         KI-Zugang
       </h2>
       <p className="mt-1 text-sm text-leise">
-        Gilt für die ganze Installation, nicht für ein einzelnes Profil. Ohne ihn bleibt
-        „Neue Anzeige aus Fotos“ aus.
+        Gilt für die ganze Installation, nicht für ein einzelnes Profil.
+        {status?.modus === 'gehostet'
+          ? ' Der KI-Zugang wird vom Betreiber bereitgestellt.'
+          : ' In der Open-Source-Version kannst du deinen eigenen Zugang hier hinterlegen.'}
       </p>
 
       {status && (
@@ -158,7 +163,8 @@ function KiZugang() {
               {' · Schlüssel hinterlegt'}
               {status.endet_auf && <> (endet auf <span className="font-mono text-xs">…{status.endet_auf}</span>)</>}
             </>
-          ) : ' · kein Schlüssel hinterlegt'}
+          ) : ' · noch nicht eingerichtet'}
+          {status.max_bilder && <> · bis zu {status.max_bilder} Fotos je Entwurf</>}
         </p>
       )}
 
@@ -168,37 +174,45 @@ function KiZugang() {
         </p>
       )}
 
-      <form onSubmit={ereignis => void speichern(ereignis)} className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <input
-          type="password"
-          value={eingabe}
-          onChange={ereignis => setEingabe(ereignis.target.value)}
-          placeholder={status?.hinterlegt ? 'Neuen Schlüssel eintragen' : 'OpenAI-Schlüssel einfügen'}
-          aria-label="OpenAI-Schlüssel"
-          autoComplete="off"
-          className="feld min-w-0 flex-1 font-mono"
-        />
-        <button
-          type="submit"
-          disabled={laeuft || !eingabe.trim()}
-          className="btn-primaer"
-        >
-          {laeuft ? 'Wird gespeichert …' : 'Speichern'}
-        </button>
-        {status?.hinterlegt && (
-          <button
-            type="button"
-            onClick={() => void entfernen()}
-            className="btn-ghost"
-          >
-            Entfernen
-          </button>
-        )}
-      </form>
-      <p className="mt-2 text-xs text-leise">
-        Wird verschlüsselt gespeichert, genau wie die Kleinanzeigen-Zugangsdaten, und nie
-        im Protokoll ausgegeben.
-      </p>
+      {status?.schluessel_selbst_setzbar !== false ? (
+        <>
+          <form onSubmit={ereignis => void speichern(ereignis)} className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="password"
+              value={eingabe}
+              onChange={ereignis => setEingabe(ereignis.target.value)}
+              placeholder={status?.hinterlegt ? 'Neuen Schlüssel eintragen' : 'OpenAI-Schlüssel einfügen'}
+              aria-label="OpenAI-Schlüssel"
+              autoComplete="off"
+              className="feld min-w-0 flex-1 font-mono"
+            />
+            <button
+              type="submit"
+              disabled={laeuft || !eingabe.trim()}
+              className="btn-primaer"
+            >
+              {laeuft ? 'Wird gespeichert …' : 'Speichern'}
+            </button>
+            {status?.hinterlegt && (
+              <button
+                type="button"
+                onClick={() => void entfernen()}
+                className="btn-ghost"
+              >
+                Entfernen
+              </button>
+            )}
+          </form>
+          <p className="mt-2 text-xs text-leise">
+            Wird verschlüsselt gespeichert, genau wie die Kleinanzeigen-Zugangsdaten, und nie
+            im Protokoll ausgegeben.
+          </p>
+        </>
+      ) : (
+        <p className="hinweis hinweis-warn mt-3 text-sm">
+          Dieser KI-Zugang wird vom Betreiber verwaltet. Eine Eingabe ist hier nicht nötig.
+        </p>
+      )}
     </section>
   );
 }
@@ -324,6 +338,7 @@ function ZugangForm({
       // Leeres Feld heißt: vorhandenes Passwort behalten. So lässt sich der
       // Benutzername korrigieren, ohne das Passwort erneut einzugeben.
       await api.profile.zugangSetzen(slug, benutzername, passwort === '' ? null : passwort);
+      window.dispatchEvent(new CustomEvent(ZUGANG_STATUS_EVENT, { detail: slug }));
       aufFertig();
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');

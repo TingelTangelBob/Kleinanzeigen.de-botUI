@@ -249,6 +249,7 @@ describe('Weitere Sammelaktionen', () => {
 
     fireEvent.click(kaestchen('Kinderwagen'));
     fireEvent.click(screen.getByRole('button', { name: /Hochladen/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lauf starten' }));
 
     await waitFor(() => expect(hochladen).toHaveBeenCalledWith('test', A.datei));
   });

@@ -15,6 +15,7 @@ import { useProfil } from '../context/useProfil';
 import { befehlIcon, befehlText } from '../jobText';
 import type { BestandsAnzeige, Job, JobZustand, LogZeile } from '../types';
 import { Hinweis } from './Hinweis';
+import { useLaufStartHinweis, type LaufStartDetails } from './LaufStartDialog';
 import { useWartezeit } from './Wartezeit';
 import { Wartehinweis } from './Wartehinweis';
 
@@ -26,6 +27,31 @@ const BEFEHLE: { id: string; label: string; hinweis: string; schreibend: boolean
   { id: 'publish', label: 'Veröffentlichen', hinweis: 'Stellt Anzeigen auf kleinanzeigen.de ein.', schreibend: true },
   { id: 'extend', label: 'Verlängern', hinweis: 'Kostenlos +60 Tage im Acht-Tage-Fenster. Kein Hochschieben, kein Paid-Boost.', schreibend: true },
 ];
+
+const LAUF_DETAILS: Record<string, LaufStartDetails> = {
+  verify: {
+    titel: 'Einstellungen prüfen?',
+    text: 'Es wird nur geprüft, ob die Einstellungen und der Browserstart funktionieren. Dein Konto wird nicht verändert.',
+  },
+  diagnose: {
+    titel: 'Browser prüfen?',
+    text: 'Der Browser wird gestartet und die Verbindung geprüft. Auf kleinanzeigen.de wird nichts veröffentlicht.',
+  },
+  download: {
+    titel: 'Anzeigen vom Konto holen?',
+    text: 'Anzeigen-Studio meldet sich bei deinem Kleinanzeigen-Konto an und liest deine eigenen Anzeigen neu ein. Lokale Änderungen werden vorher angezeigt.',
+  },
+  publish: {
+    titel: 'Anzeigen veröffentlichen?',
+    text: 'Der Lauf stellt alle passenden lokalen Anzeigen auf kleinanzeigen.de ein. Diese Rückfrage erscheint aus Sicherheitsgründen jedes Mal.',
+    ueberspringenErlaubt: false,
+  },
+  extend: {
+    titel: 'Anzeigen verlängern?',
+    text: 'Der Lauf verlängert passende Anzeigen kostenlos um 60 Tage. Es gibt kein Hochschieben und keinen Paid-Boost. Diese Rückfrage erscheint jedes Mal.',
+    ueberspringenErlaubt: false,
+  },
+};
 
 const ZUSTAND_TEXT: Record<JobZustand, { text: string; klasse: string }> = {
   wartet: { text: 'wartet', klasse: 'merkmal merkmal-grau' },
@@ -71,6 +97,7 @@ export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number)
   const [startet, setStartet] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [warnung, setWarnung] = useState<BestandsAnzeige[] | null>(null);
+  const laufHinweis = useLaufStartHinweis();
 
   const einreihen = async (befehl: string) => {
     setFehler(null);
@@ -85,11 +112,21 @@ export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number)
     }
   };
 
+  const startAnfragen = (befehl: string) => {
+    laufHinweis.anfragen(
+      LAUF_DETAILS[befehl] ?? {
+        titel: 'Lauf starten?',
+        text: 'Der Bot wird für das ausgewählte Profil gestartet.',
+      },
+      () => einreihen(befehl),
+    );
+  };
+
   // Vor dem Herunterladen nachsehen, ob lokale Änderungen überschrieben würden
   // (AP-3.1). Wer etwas geändert hat, soll das vorher erfahren, nicht hinterher.
   const starten = async (befehl: string) => {
     if (befehl !== 'download' || !gewaehlt) {
-      await einreihen(befehl);
+      startAnfragen(befehl);
       return;
     }
     setFehler(null);
@@ -105,7 +142,7 @@ export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number)
     } finally {
       setStartet(null);
     }
-    await einreihen(befehl);
+    startAnfragen(befehl);
   };
 
   if (profile.length === 0) {
@@ -169,6 +206,8 @@ export function LaufStarten({ aufEingereiht }: { aufEingereiht?: (jobId: number)
           </button>
         ))}
       </div>
+
+      {laufHinweis.dialog}
 
       {warnung && (
         <UeberschreibWarnung

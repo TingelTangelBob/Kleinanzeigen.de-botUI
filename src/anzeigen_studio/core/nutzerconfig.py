@@ -59,7 +59,7 @@ GRUPPEN: Final[tuple[dict[str, Any], ...]] = (
         "id": "ad_defaults",
         "wurzel": "ad_defaults",
         "titel": "Standardwerte für Anzeigen",
-        "beschreibung": "Gelten für neue Anzeigen, soweit die Anzeigendatei nichts anderes setzt.",
+        "beschreibung": "",
         "eingeklappt": False,
     },
     {

@@ -76,8 +76,10 @@ function Inhalt() {
           aufZiel={wechseln}
         />
       )}
-      {route.seite === 'neu' && <NeueAnzeigeSeite aufZiel={wechseln} />}
-      {route.seite === 'warteschlange' && <WarteschlangeSeite />}
+      {route.seite === 'neu' && (
+        <NeueAnzeigeSeite aufZiel={wechseln} erkennungId={route.erkennungId} />
+      )}
+      {route.seite === 'warteschlange' && <WarteschlangeSeite aufZiel={wechseln} />}
       {route.seite === 'einstellungen' && (
         <EinstellungenSeite abschnitt={route.einstellung} aufZiel={wechseln} />
       )}

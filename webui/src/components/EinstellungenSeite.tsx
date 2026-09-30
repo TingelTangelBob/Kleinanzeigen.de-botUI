@@ -17,18 +17,24 @@
 //
 // AP-2.47: Seitenintros über den Reitern entfernt. Reiterleiste wie Meine
 // Anzeigen (nicht vollbreit, Suche rechts, filtert Gruppen/Felder).
+// UI-Anpassung 2026-09-13: Die drei kurzen Bot-Karten stehen auf breiten
+// Bildschirmen in einem responsiven Raster; die umfangreiche Sicherung bleibt
+// als eigene Karte darunter.
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  AlertTriangle, CalendarClock, Check, ChevronsDownUp, ChevronsUpDown, KeyRound, Monitor, Moon,
-  RotateCcw, Save, Search, Sparkles, Sun,
+  AlertTriangle, ArrowRight, CalendarClock, Check, ChevronsDownUp, ChevronsUpDown, KeyRound, Monitor, Moon,
+  RotateCcw, Save, Search, Sparkles, Sun, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
+import { KI_STATUS_EVENT } from '../context/profilKontext';
 import { useThema, type ThemaWahl } from '../hooks/useThema';
 import type { EinstellungsAbschnitt } from '../routing';
-import type { AbgleichStand, EinstellungsFeld, EinstellungsGruppe, VerlaengernStand, ZugangStatus } from '../types';
+import type {
+  AbgleichStand, EinstellungsFeld, EinstellungsGruppe, KiStatus, Profil, VerlaengernStand, ZugangStatus,
+} from '../types';
 import { BrowsersichtSeite } from './BrowsersichtSeite';
 import { InfoTip } from './InfoTip';
 import { ProfilSeite } from './ProfilSeite';
@@ -43,6 +49,20 @@ const VERLAENGERN_PFAD = 'verlaengern.eingeschaltet';
 // unverändert über denselben Lade- und Speicherweg geführt - nur anders
 // einsortiert, damit „Bot" die reinen Bot-Schrauben behält.
 const ANZEIGEN_GRUPPEN_IDS = new Set(['ad_defaults']);
+
+// Die Voreinstellungen sollen im Alltag genügen. Technische Stellschrauben
+// bleiben über „Weitere Einstellungen“ und die Suche erreichbar, stehen aber
+// nicht mehr zwischen den wenigen Entscheidungen, die die meisten Menschen
+// tatsächlich treffen müssen.
+const WICHTIGE_FELDER = new Set([
+  'ad_defaults.active',
+  'ad_defaults.type',
+  'ad_defaults.price_type',
+  'ad_defaults.shipping_type',
+  'ad_defaults.sell_directly',
+  'ad_defaults.republication_interval',
+  'download.preserve_local_settings',
+]);
 
 function holen(werte: Record<string, unknown>, pfad: string): unknown {
   let knoten: unknown = werte;
@@ -255,14 +275,16 @@ function Gruppe({
           <AlertTriangle className="mb-1 inline h-4 w-4" /> {gruppe.warnung}
         </p>
       )}
-      {felder.map(feld => (
-        <Feld
-          key={feld.pfad}
-          feld={feld}
-          wert={holen(werte, feld.pfad)}
-          onChange={wert => onChange(feld.pfad, wert)}
-        />
-      ))}
+      <div className={gruppe.id === 'ad_defaults' ? 'grid gap-4 sm:grid-cols-2' : 'space-y-4'}>
+        {felder.map(feld => (
+          <Feld
+            key={feld.pfad}
+            feld={feld}
+            wert={holen(werte, feld.pfad)}
+            onChange={wert => onChange(feld.pfad, wert)}
+          />
+        ))}
+      </div>
     </div>
   );
 
@@ -307,10 +329,11 @@ function Gruppe({
 }
 
 export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: EinstellungsAbschnitt; aufZiel: (ziel: string) => void }) {
-  const { aktiv, laedt: profileLaden } = useProfil();
+  const { aktiv, profile, fehler: profileFehler, laedt: profileLaden } = useProfil();
   const [gruppen, setGruppen] = useState<EinstellungsGruppe[]>([]);
   const [werte, setWerte] = useState<Record<string, unknown>>({});
   const [zugang, setZugang] = useState<ZugangStatus | null>(null);
+  const [kiStatus, setKiStatus] = useState<KiStatus | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [laedt, setLaedt] = useState(true);
   const [speichert, setSpeichert] = useState(false);
@@ -337,6 +360,7 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   const laden = useCallback(async () => {
     if (!aktiv) {
       setLaedt(false);
+      setZugang(null);
       setAbgleichStand(null);
       setUrspruenglicherAbgleich(null);
       setVerlaengernStand(null);
@@ -389,6 +413,28 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   }, [aktiv]);
 
   useEffect(() => { void laden(); }, [laden]);
+
+  // Der KI-Zugang ist installationsweit und wird deshalb auch ohne aktives
+  // Profil angezeigt. Die Abfrage bleibt getrennt von den Profil-Einstellungen,
+  // damit eine Störung hier nicht das Speichern der Bot-Felder blockiert.
+  useEffect(() => {
+    let verworfen = false;
+    const ladenKi = async () => {
+      try {
+        const status = await api.ki.status();
+        if (!verworfen) setKiStatus(status);
+      } catch {
+        if (!verworfen) setKiStatus(null);
+      }
+    };
+    void ladenKi();
+    const aktualisiert = () => void ladenKi();
+    window.addEventListener(KI_STATUS_EVENT, aktualisiert);
+    return () => {
+      verworfen = true;
+      window.removeEventListener(KI_STATUS_EVENT, aktualisiert);
+    };
+  }, []);
 
   const aendern = (pfad: string, wert: unknown) => {
     setWerte(vorher => setzen(vorher, pfad, wert));
@@ -494,8 +540,40 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     return gruppen.filter(g => ANZEIGEN_GRUPPEN_IDS.has(g.id) === fuerAnzeigen);
   }, [gruppen, abschnitt]);
 
-  const sichtbareGruppen = useMemo(() => {
-    if (!sucheAktiv) return reiterGruppen.map(g => ({ gruppe: g, felder: g.felder }));
+  const aufgeteilteGruppen = useMemo(() => reiterGruppen.map(gruppe => ({
+    gruppe,
+    wichtigeFelder: gruppe.felder.filter(feld => WICHTIGE_FELDER.has(feld.pfad)),
+    weitereFelder: gruppe.felder.filter(feld => !WICHTIGE_FELDER.has(feld.pfad)),
+  })), [reiterGruppen]);
+
+  const wichtigeGruppen = useMemo(
+    () => aufgeteilteGruppen
+      .filter(t => t.wichtigeFelder.length > 0)
+      .map(t => ({
+        gruppe: t.gruppe,
+        // Die zwei häufigsten Schalter stehen zusammen. Auf schmalen
+        // Bildschirmen fällt das Raster auf eine Spalte zurück.
+        felder: t.gruppe.id === 'ad_defaults'
+          ? [...t.wichtigeFelder].sort((a, b) => {
+            const reihenfolge = ['ad_defaults.active', 'ad_defaults.sell_directly'];
+            const platzA = reihenfolge.indexOf(a.pfad);
+            const platzB = reihenfolge.indexOf(b.pfad);
+            return (platzA < 0 ? reihenfolge.length : platzA)
+              - (platzB < 0 ? reihenfolge.length : platzB);
+          })
+          : t.wichtigeFelder,
+      })),
+    [aufgeteilteGruppen],
+  );
+
+  const weitereGruppen = useMemo(
+    () => aufgeteilteGruppen
+      .filter(t => t.weitereFelder.length > 0)
+      .map(t => ({ gruppe: t.gruppe, felder: t.weitereFelder })),
+    [aufgeteilteGruppen],
+  );
+
+  const gesuchteGruppen = useMemo(() => {
     return reiterGruppen
       .map(g => {
         const gruppeTrifft = heuhaufen(`${g.titel} ${g.beschreibung}`).includes(gesucht);
@@ -505,12 +583,16 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
         };
       })
       .filter(t => t.felder.length > 0);
-  }, [reiterGruppen, gesucht, sucheAktiv]);
+  }, [reiterGruppen, gesucht]);
+
+  const sichtbareGruppen = sucheAktiv ? gesuchteGruppen : wichtigeGruppen;
 
   const felderGesamt = useMemo(
     () => reiterGruppen.reduce((summe, g) => summe + g.felder.length, 0),
     [reiterGruppen],
   );
+  const wichtigeFelderGesamt = wichtigeGruppen.reduce((summe, t) => summe + t.felder.length, 0);
+  const weitereFelderGesamt = weitereGruppen.reduce((summe, t) => summe + t.felder.length, 0);
   const felderSichtbar = sichtbareGruppen.reduce((summe, t) => summe + t.felder.length, 0);
   const alleOffen = sichtbareGruppen.length > 0
     && sichtbareGruppen.every(t => offeneGruppen[t.gruppe.id]);
@@ -518,10 +600,6 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   const alleKlappen = (offen: boolean) => {
     setOffeneGruppen(Object.fromEntries(gruppen.map(g => [g.id, offen])));
   };
-
-  /** Wie viele angefasste Felder in einer Gruppe liegen - für die Kopfzeile. */
-  const geaendertIn = (gruppe: EinstellungsGruppe) =>
-    gruppe.felder.filter(f => angefasst.has(f.pfad)).length;
 
   const diagnoseHinweis = useMemo(() => {
     const gruppe = gruppen.find(g => g.id === 'diagnostics');
@@ -533,6 +611,9 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
     });
   }, [gruppen, werte]);
 
+  const geaendertInSicht = (felder: EinstellungsFeld[]) =>
+    felder.filter(feld => angefasst.has(feld.pfad)).length;
+
   if (profileLaden) {
     return <p className="text-sm text-leise">Wird geladen …</p>;
   }
@@ -542,8 +623,9 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
   // `einstellungen/laeufe` wird in `routing.ts` auf `warteschlange` umgelenkt,
   // damit Glocke, Dashboard und Editor nicht ins Leere führen.
   const tabs: { id: EinstellungsAbschnitt; label: string; hash: string }[] = [
+    { id: 'uebersicht', label: 'Ersteinrichtung', hash: 'einstellungen' },
     { id: 'anzeigen', label: 'Anzeigen', hash: 'einstellungen/anzeigen' },
-    { id: 'bot', label: 'Bot', hash: 'einstellungen' },
+    { id: 'bot', label: 'Bot', hash: 'einstellungen/bot' },
     { id: 'profile', label: 'Profile', hash: 'einstellungen/profile' },
     { id: 'browser', label: 'Browser', hash: 'einstellungen/browser' },
     { id: 'passwort', label: 'Passwort', hash: 'einstellungen/passwort' },
@@ -604,6 +686,23 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       </nav>
     </div>
   );
+
+  if (abschnitt === 'uebersicht') {
+    return (
+      <div className="seite">
+        <h1 className="sr-only">Einstellungen</h1>
+        {unternav}
+        <ErsteinrichtungAbschnitt
+          aktiv={aktiv}
+          profile={profile}
+          profileFehler={profileFehler}
+          zugang={zugang}
+          kiStatus={kiStatus}
+          aufZiel={aufZiel}
+        />
+      </div>
+    );
+  }
 
   if (abschnitt === 'profile') {
     return (
@@ -677,6 +776,11 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
 
       {unternav}
 
+      <p className="mb-4 max-w-2xl text-sm text-leise">
+        Die wichtigsten Einstellungen reichen für die meisten Fälle. Weitere technische
+        Optionen findest du bei Bedarf unter „Weitere Einstellungen“.
+      </p>
+
       {fehler && (
         <p role="alert" className="hinweis hinweis-fehler lesebreite mb-4">
           {fehler}
@@ -697,84 +801,74 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
       )}
 
       {!istAnzeigen && (
-        <section className="karte mb-4 p-4">
-          <h2 className="flex items-center gap-2 font-medium text-stark">
-            <KeyRound className="h-5 w-5 text-primary-custom" />
-            Zugangsdaten
-            <InfoTip
-              label="Erklärung zu den Zugangsdaten"
-              text="Der Plattformzugang wird je Profil verschlüsselt unter Profile verwaltet und nicht in der Bot-Konfiguration abgelegt."
-            />
-          </h2>
-          <p className="mt-1 text-sm text-leise">Für dieses Profil.</p>
-          <p className="lesebreite mt-2 text-sm text-normal">
-            {zugang?.passwort_hinterlegt
-              ? `Zugang hinterlegt (${zugang.benutzername}).`
-              : 'Noch kein Zugang hinterlegt – Läufe können sich nicht anmelden.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => aufZiel('einstellungen/profile')}
-            className="btn-ghost mt-3"
-          >
-            Zu den Profil-Zugängen
-          </button>
-        </section>
-      )}
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          <section className="karte p-4">
+            <h2 className="flex items-center gap-2 font-medium text-stark">
+              <KeyRound className="h-5 w-5 text-primary-custom" />
+              Zugangsdaten
+              <InfoTip
+                label="Erklärung zu den Zugangsdaten"
+                text="Der Plattformzugang wird je Profil verschlüsselt unter Profile verwaltet und nicht in der Bot-Konfiguration abgelegt."
+              />
+            </h2>
+            <p className="mt-1 text-sm text-leise">Für dieses Profil.</p>
+            <p className="lesebreite mt-2 text-sm text-normal">
+              {zugang?.passwort_hinterlegt
+                ? `Zugang hinterlegt (${zugang.benutzername}).`
+                : 'Noch kein Zugang hinterlegt – Läufe können sich nicht anmelden.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => aufZiel('einstellungen/profile')}
+              className="btn-ghost mt-3"
+            >
+              Zu den Profil-Zugängen
+            </button>
+          </section>
 
-      {!istAnzeigen && (
-        <TaeglicherAbgleich
-          stand={abgleichStand}
-          laedt={abgleichLaedt}
-          fehler={abgleichFehler}
-          deaktiviert={speichert}
-          aufAenderung={abgleichAendern}
-        />
-      )}
+          <TaeglicherAbgleich
+            stand={abgleichStand}
+            laedt={abgleichLaedt}
+            fehler={abgleichFehler}
+            deaktiviert={speichert}
+            aufAenderung={abgleichAendern}
+          />
 
-      {!istAnzeigen && (
-        <AutomatischesVerlaengern
-          stand={verlaengernStand}
-          laedt={verlaengernLaedt}
-          fehler={verlaengernFehler}
-          deaktiviert={speichert}
-          aufAenderung={verlaengernAendern}
-        />
+          <AutomatischesVerlaengern
+            stand={verlaengernStand}
+            laedt={verlaengernLaedt}
+            fehler={verlaengernFehler}
+            deaktiviert={speichert}
+            aufAenderung={verlaengernAendern}
+          />
+        </div>
       )}
 
       {!istAnzeigen && <SicherungAbschnitt profil={aktiv.slug} />}
 
       {/* Zählzeile + Alle auf/zu unter der Reiterzeile (AP-2.19/2.47). Die Suche
           sitzt seit AP-2.47 rechts neben den Reitern wie in Meine Anzeigen. */}
-      {!istAnzeigen && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <p className="text-xs text-leise">
-            {sucheAktiv
-              ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
-              : `${felderGesamt} Einstellungen in ${reiterGruppen.length} Gruppen`}
-          </p>
-          {!sucheAktiv && (
-            <button
-              type="button"
-              onClick={() => alleKlappen(!alleOffen)}
-              className="btn-ghost ml-auto flex-shrink-0"
-            >
-              {alleOffen
-                ? <><ChevronsDownUp className="h-4 w-4" aria-hidden /> Alle zuklappen</>
-                : <><ChevronsUpDown className="h-4 w-4" aria-hidden /> Alle aufklappen</>}
-            </button>
-          )}
-        </div>
-      )}
-
-      {sichtbareGruppen.length === 0 ? (
-        <p className="leer">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <p className="text-xs text-leise">
           {sucheAktiv
-            ? `Keine Einstellung passt zu „${suche.trim()}".`
-            : 'Für diesen Bereich sind keine Einstellungen verfügbar.'}
+            ? `${felderSichtbar} von ${felderGesamt} Einstellungen`
+            : `${wichtigeFelderGesamt} wichtige Einstellungen`}
         </p>
-      ) : (
-        <div className="space-y-3">
+        {!sucheAktiv && sichtbareGruppen.length > 0 && (
+          <button
+            type="button"
+            onClick={() => alleKlappen(!alleOffen)}
+            className="btn-ghost ml-auto flex-shrink-0"
+          >
+            {alleOffen
+              ? <><ChevronsDownUp className="h-4 w-4" aria-hidden /> Alle zuklappen</>
+              : <><ChevronsUpDown className="h-4 w-4" aria-hidden /> Alle aufklappen</>}
+          </button>
+        )}
+      </div>
+
+      {sichtbareGruppen.length > 0 && (
+        <div className={abschnitt === 'bot' ? 'grid gap-3 md:grid-cols-2' : 'space-y-3'}>
           {sichtbareGruppen.map(({ gruppe, felder }) => (
             <Gruppe
               key={gruppe.id}
@@ -784,14 +878,51 @@ export function EinstellungenSeite({ abschnitt, aufZiel }: { abschnitt: Einstell
               onChange={aendern}
               offen={offeneGruppen[gruppe.id] ?? !gruppe.eingeklappt}
               aufOffen={offen => setOffeneGruppen(vorher => ({ ...vorher, [gruppe.id]: offen }))}
-              geaendert={geaendertIn(gruppe)}
+              geaendert={geaendertInSicht(felder)}
               ohneKlapp={sucheAktiv || istAnzeigen}
             />
           ))}
         </div>
       )}
 
-      {!istAnzeigen && <KiHinweis aufZiel={aufZiel} />}
+      {!sucheAktiv && weitereGruppen.length > 0 && (
+        <details className="karte mt-4">
+          <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-stark">
+            <span className="flex-1">Weitere Einstellungen</span>
+            <span className="text-xs font-normal text-leise">
+              {weitereFelderGesamt} technische Optionen
+            </span>
+          </summary>
+          <div className="border-t p-3" style={{ borderColor: 'var(--karte-rand)' }}>
+            <p className="px-1 text-sm text-leise">
+              Diese Optionen musst du normalerweise nicht ändern. Die Voreinstellungen sind
+              für die meisten Fälle passend.
+            </p>
+            <div className={abschnitt === 'bot' ? 'grid gap-3 md:grid-cols-2' : 'space-y-3'}>
+              {weitereGruppen.map(({ gruppe, felder }) => (
+                <Gruppe
+                  key={gruppe.id}
+                  gruppe={gruppe}
+                  felder={felder}
+                  werte={werte}
+                  onChange={aendern}
+                  offen={offeneGruppen[gruppe.id] ?? !gruppe.eingeklappt}
+                  aufOffen={offen => setOffeneGruppen(vorher => ({ ...vorher, [gruppe.id]: offen }))}
+                  geaendert={geaendertInSicht(felder)}
+                />
+              ))}
+            </div>
+          </div>
+        </details>
+      )}
+
+      {sichtbareGruppen.length === 0 && (sucheAktiv || weitereGruppen.length === 0) && (
+        <p className="leer">
+          {sucheAktiv
+            ? `Keine Einstellung passt zu „${suche.trim()}".`
+            : 'Für diesen Bereich sind keine wichtigen Einstellungen verfügbar.'}
+        </p>
+      )}
 
       {/* Dieselbe feste Leiste wie im Anzeigeneditor (AP-2.15/2.19): innen auf
           `.seite`-Breite, damit Speichern mit der rechten Kante der Karten
@@ -859,7 +990,7 @@ function TaeglicherAbgleich({
   const zuletzt = zeit(stand?.letzter_lauf_am ?? null);
 
   return (
-    <section className="karte mb-4 p-4">
+    <section className="karte p-4">
       <h2 className="flex items-center gap-2 font-medium text-stark">
         <CalendarClock className="h-5 w-5 text-primary-custom" />
         Täglicher Abgleich
@@ -947,7 +1078,7 @@ function AutomatischesVerlaengern({
   const zuletzt = zeit(stand?.letzter_lauf_am ?? null);
 
   return (
-    <section className="karte mb-4 p-4">
+    <section className="karte p-4">
       <h2 className="flex items-center gap-2 font-medium text-stark">
         <CalendarClock className="h-5 w-5 text-primary-custom" />
         Automatisch verlängern
@@ -1015,24 +1146,128 @@ function AutomatischesVerlaengern({
   );
 }
 
-function KiHinweis({ aufZiel }: { aufZiel: (ziel: string) => void }) {
+function ErsteinrichtungAbschnitt({
+  aktiv, profile, profileFehler, zugang, kiStatus, aufZiel,
+}: {
+  aktiv: Profil | null;
+  profile: Profil[];
+  profileFehler: string | null;
+  zugang: ZugangStatus | null;
+  kiStatus: KiStatus | null;
+  aufZiel: (ziel: string) => void;
+}) {
+  const profilFertig = profileFehler === null && profile.length > 0;
+  const plattformFertig = Boolean(aktiv && zugang?.passwort_hinterlegt);
+  const kiFertig = kiStatus?.hinterlegt === true;
+  const bekannteSchritte = [profilFertig, plattformFertig, kiFertig].filter(Boolean).length;
+  const kiGehostet = kiStatus?.modus === 'gehostet';
+
   return (
-    <section className="karte mt-6 p-4">
-      <h2 className="flex items-center gap-2 font-medium text-stark">
-        <Sparkles className="h-5 w-5 text-primary-custom" />
-        LLM-Schlüssel
-      </h2>
-      <p className="lesebreite mt-1 text-sm text-leise">
-        Der Schlüssel zum KI-Anbieter gilt für die ganze Installation, nicht für ein
-        Profil, und wird nicht in der Bot-Konfiguration gespeichert. Verwalten unter Profile.
-      </p>
-      <button
-        type="button"
-        onClick={() => aufZiel('einstellungen/profile')}
-        className="btn-ghost mt-3"
-      >
-        Zum KI-Zugang
+    <div className="pb-8">
+      <div className="mb-6 max-w-2xl">
+        <h1 className="seite-titel">Ersteinrichtung</h1>
+        <p className="mt-2 text-base text-normal">
+          Richte die drei Dinge ein, die du für einen Lauf und für neue Anzeigen brauchst.
+          Danach kannst du die technischen Einstellungen einfach ausblenden lassen.
+        </p>
+        <p className="mt-2 text-sm text-leise">
+          {bekannteSchritte} von 3 wichtigen Schritten erledigt.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <EinrichtungKarte
+          nummer={1}
+          icon={Users}
+          titel={profilFertig ? 'Profil ist angelegt' : 'Profil anlegen'}
+          text={profileFehler
+            ? 'Die Profile konnten gerade nicht geprüft werden.'
+            : profilFertig
+              ? `Aktives Profil: ${aktiv?.anzeigename ?? profile[0]?.anzeigename ?? 'ausgewählt'}.`
+              : 'Ein Profil steht für ein Kleinanzeigen-Konto.'}
+          fertig={profilFertig}
+          fehler={profileFehler}
+          aufZiel={() => aufZiel('einstellungen/profile')}
+          aktion={profilFertig ? 'Profile verwalten' : 'Profil anlegen'}
+        />
+
+        <EinrichtungKarte
+          nummer={2}
+          icon={KeyRound}
+          titel={plattformFertig ? 'Kleinanzeigen-Zugang ist hinterlegt' : 'Kleinanzeigen-Zugang hinterlegen'}
+          text={plattformFertig
+            ? `Benutzername: ${zugang?.benutzername || 'hinterlegt'}.`
+            : aktiv
+              ? 'Ohne diesen Zugang können keine Läufe starten.'
+              : 'Lege zuerst ein Profil an und hinterlege dort den Zugang.'}
+          fertig={plattformFertig}
+          aufZiel={() => aufZiel('einstellungen/profile')}
+          aktion={plattformFertig ? 'Zugang verwalten' : 'Zugang hinterlegen'}
+          deaktiviert={!aktiv}
+        />
+
+        <EinrichtungKarte
+          nummer={3}
+          icon={Sparkles}
+          titel={kiFertig ? 'KI-Zugang ist bereit' : 'KI-Zugang einrichten'}
+          text={kiStatus === null
+            ? 'Der Status konnte gerade nicht geladen werden.'
+            : kiFertig
+              ? `${kiGehostet ? 'Vom Betreiber bereitgestellt' : 'Eigener Zugang hinterlegt'} · bis zu ${kiStatus.max_bilder ?? 4} Fotos je Entwurf.`
+              : kiGehostet
+                ? 'Der KI-Zugang wird vom Betreiber bereitgestellt.'
+                : 'Für die Erkennung aus Fotos kannst du hier deinen eigenen Zugang hinterlegen.'}
+          fertig={kiFertig}
+          aufZiel={() => aufZiel('einstellungen/profile')}
+          aktion={kiGehostet ? undefined : 'KI-Zugang öffnen'}
+          deaktiviert={kiStatus === null || kiGehostet}
+        />
+      </div>
+
+      {profilFertig && plattformFertig && kiFertig && (
+        <p className="hinweis mt-4 flex items-center gap-2">
+          <Check className="h-4 w-4" aria-hidden /> Die Ersteinrichtung ist abgeschlossen.
+        </p>
+      )}
+
+      <button type="button" onClick={() => aufZiel('einstellungen/darstellung')} className="btn-ghost mt-6">
+        <Monitor className="h-4 w-4" aria-hidden /> Darstellung öffnen
       </button>
+    </div>
+  );
+}
+
+function EinrichtungKarte({
+  nummer, icon: Icon, titel, text, fertig, fehler, aufZiel, aktion, deaktiviert = false,
+}: {
+  nummer: number;
+  icon: LucideIcon;
+  titel: string;
+  text: string;
+  fertig: boolean;
+  fehler?: string | null;
+  aufZiel: () => void;
+  aktion?: string;
+  deaktiviert?: boolean;
+}) {
+  return (
+    <section className={`karte einrichtung-karte p-4 ${fertig ? 'einrichtung-karte-fertig' : ''}`}>
+      <div className="flex items-start gap-3">
+        <span className="neue-anzeige-schritt" aria-hidden>{fertig ? <Check className="h-4 w-4" /> : nummer}</span>
+        <div className="min-w-0 flex-1">
+          <h2 className="flex items-center gap-2 font-medium text-stark">
+            <Icon className="h-5 w-5 text-primary-custom" aria-hidden />
+            {titel}
+          </h2>
+          <p className="mt-1 text-sm text-normal">{text}</p>
+          {fehler && <p role="alert" className="mt-2 text-xs text-red-700">{fehler}</p>}
+        </div>
+        {aktion && (
+          <button type="button" onClick={aufZiel} disabled={deaktiviert} className="btn-ghost flex-shrink-0">
+            {aktion}<ArrowRight className="h-4 w-4" aria-hidden />
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -1046,14 +1281,14 @@ function DarstellungAbschnitt() {
   const { wahl, setWahl, effektiv } = useThema();
 
   const optionen: { wert: ThemaWahl; titel: string; text: string; icon: LucideIcon }[] = [
-    { wert: 'hell', titel: 'Hell', text: 'Immer helles Erscheinungsbild.', icon: Sun },
-    { wert: 'dunkel', titel: 'Dunkel', text: 'Immer dunkles Erscheinungsbild.', icon: Moon },
     {
       wert: 'system',
       titel: 'System',
       text: 'Folgt dem Betriebssystem und wechselt automatisch mit.',
       icon: Monitor,
     },
+    { wert: 'hell', titel: 'Hell', text: 'Immer helles Erscheinungsbild.', icon: Sun },
+    { wert: 'dunkel', titel: 'Dunkel', text: 'Immer dunkles Erscheinungsbild.', icon: Moon },
   ];
 
   return (

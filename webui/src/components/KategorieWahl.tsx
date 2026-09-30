@@ -96,8 +96,8 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
           ) : (
             <span className="block text-sm text-leise">Keine Kategorie gesetzt</span>
           )}
-          <span className="mt-0.5 block break-words text-xs text-leise">{wert || '—'}</span>
         </div>
+        <span className="kategorie-wert-pfad">{wert || '—'}</span>
       </div>
     );
   }
@@ -137,7 +137,7 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
       <div className="feld kategorie-wert-feld">
         {/* Die Kopfzeile bleibt einzeilig (AP-2.35/AP-2.42). Lange Kategorien
             werden im Feld gekürzt, der vollständige Name bleibt im title
-            sichtbar; der Nummernpfad bleibt daneben als kurze Kennung stehen. */}
+            sichtbar. Der Nummernpfad steht bewusst unter der Box. */}
         <span className="kategorie-wert-inhalt">
         {bekannt ? (
           <span className="block truncate text-sm text-stark" title={bekannt.name}>{bekannt.name}</span>
@@ -150,7 +150,6 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
           <span className="block text-sm text-leise">Keine Kategorie gesetzt</span>
         )}
         </span>
-        {wert && <span className="kategorie-wert-pfad">{wert}</span>}
         <button
           type="button"
           className="kategorie-suche-knopf"
@@ -162,6 +161,7 @@ export function KategorieWahl({ wert, aufAenderung, bearbeitbar = true, kompakt 
           <Search className="h-4 w-4" aria-hidden />
         </button>
       </div>
+      {wert && <span className="kategorie-wert-pfad">{wert}</span>}
 
       {offen && (
         <div className="karte absolute z-20 mt-1 w-full p-2">

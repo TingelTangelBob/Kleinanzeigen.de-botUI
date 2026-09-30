@@ -4,10 +4,10 @@
 // Fotos rein, Anzeigenentwurf raus (AP-4.4, AP-4.6).
 // UI-Anpassung 2026-09-04: beste Katalogkategorie nach der Bildanalyse vorauswählen.
 //
-// Der Ablauf ist bewusst dreigeteilt und jeder Teil hat seinen eigenen
-// Zustand: Bilder wählen → erkennen lassen → Rückfragen beantworten und
-// anlegen. Nur der mittlere Schritt kostet Geld, und nur er ruft den Anbieter.
-// Das Beantworten der Rückfragen läuft ohne zweiten Aufruf.
+// Der Ablauf ist bewusst dreigeteilt: Erkennen → prüfen → hochladen. Das
+// Hochladen meint hier den nächsten, ausdrücklich vom Menschen ausgelösten
+// Plattformschritt im Bestand; vorher wird die Anzeige nur lokal gespeichert.
+// Nur der Erkennen-Schritt kostet Geld, und nur er ruft den Anbieter.
 //
 // Was der Fortschrittsanzeige zugrunde liegt, ist echt gemessen und nicht
 // geschätzt: Das Hochladen meldet der Browser prozentgenau, die Wartezeit
@@ -15,7 +15,7 @@
 // wäre genau die Sorte grüner Haken, an der dieses Projekt schon einmal
 // hängengeblieben ist.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, ImagePlus, Loader2, Sparkles, Trash2,
 } from 'lucide-react';
@@ -23,6 +23,7 @@ import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { hashFuerAnzeige } from '../routing';
 import type { KiEntwurf, KiKosten, KiStatus } from '../types';
+import { KiEntwurfWarteschlange } from './KiEntwurfWarteschlange';
 import { ProfilWarteschlange } from './ProfilWarteschlange';
 
 /** Woran der Vorgang gerade ist. Jede Stufe entspricht etwas Messbarem. */
@@ -32,15 +33,17 @@ type Stufe =
   | { art: 'warten'; sekunden: number }
   | { art: 'anlegen' };
 
-const MAX_BILDER = 4;
+const STANDARD_MAX_BILDER = 4;
 
 /** Was der Bot beim Hochladen spaeter wieder lesen kann. HEIC gehoert nicht dazu. */
 const ERLAUBTE_TYPEN = ['image/jpeg', 'image/png', 'image/gif'];
 
 export function NeueAnzeigeSeite({
   aufZiel,
+  erkennungId = null,
 }: {
   aufZiel?: (ziel: string) => void;
+  erkennungId?: number | null;
 }) {
   const { aktiv } = useProfil();
   const profil = aktiv?.slug ?? '';
@@ -50,6 +53,7 @@ export function NeueAnzeigeSeite({
   const [vorschauen, setVorschauen] = useState<string[]>([]);
   const [stufe, setStufe] = useState<Stufe>({ art: 'ruhe' });
   const [entwurf, setEntwurf] = useState<KiEntwurf | null>(null);
+  const [beschreibung, setBeschreibung] = useState('');
   const [kosten, setKosten] = useState<KiKosten | null>(null);
   const [antworten, setAntworten] = useState<Record<string, string>>({});
   const [kategorie, setKategorie] = useState<string | null>(null);
@@ -58,11 +62,52 @@ export function NeueAnzeigeSeite({
   // etwas anklickt oder eintippt - die Schaetzung fuellt ihn nicht.
   const [preis, setPreis] = useState<number | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
-  const [angelegt, setAngelegt] = useState<string | null>(null);
+  const [angelegt, setAngelegt] = useState<{ titel: string; datei: string } | null>(null);
+  const [pruefErkennungId, setPruefErkennungId] = useState<number | null>(erkennungId);
+  // Der Server ist die Quelle der Wahrheit. Die Vorgabe greift nur solange der
+  // Status noch nicht geladen ist; direkte HTTP-Aufrufe werden zusätzlich im
+  // Backend begrenzt.
+  const maxBilder = Math.max(1, kiStatus?.max_bilder ?? STANDARD_MAX_BILDER);
+  const kiBereit = kiStatus?.hinterlegt === true;
 
   useEffect(() => {
     void api.ki.status().then(setKiStatus).catch(() => setKiStatus(null));
   }, []);
+
+  // Wenn der Server eine kleinere Bildgrenze vorgibt, darf ein schon geöffneter
+  // Browser diese Grenze nicht durch einen früheren Status umgehen.
+  useEffect(() => {
+    setDateien(vorher => vorher.slice(0, maxBilder));
+  }, [maxBilder]);
+
+  // Ein Dashboard- oder Warteschlangen-Link kann einen fertigen Entwurf direkt
+  // wieder in den Prüfbereich öffnen. Die Bilder müssen dafür nicht erneut im
+  // Browser liegen - sie hält der Server bis zum lokalen Speichern vor.
+  useEffect(() => {
+    setPruefErkennungId(erkennungId);
+    if (erkennungId === null || !profil || typeof api.ki?.erkennung !== 'function') return;
+    let verworfen = false;
+    void api.ki.erkennung(profil, erkennungId)
+      .then(lauf => {
+        if (verworfen || !lauf.entwurf) return;
+        setEntwurf(lauf.entwurf);
+        setBeschreibung(lauf.entwurf.beschreibung);
+        setKategorie(lauf.entwurf.kategorie_vorschlaege[0]?.wert ?? null);
+        setKosten(lauf.kosten);
+        setAntworten({});
+        setVersandpakete([]);
+        setPreis(null);
+        setAngelegt(null);
+        setDateien([]);
+        setStufe({ art: 'ruhe' });
+      })
+      .catch(ursache => {
+        if (!verworfen) {
+          setFehler(ursache instanceof ApiFehler ? ursache.message : 'Der Entwurf konnte nicht geladen werden.');
+        }
+      });
+    return () => { verworfen = true; };
+  }, [erkennungId, profil]);
 
   // Vorschaubilder sind Objekt-URLs. Ohne Freigabe hält der Browser die Bilder
   // im Speicher, solange die Seite offen ist - bei Handyfotos schnell spürbar.
@@ -96,11 +141,13 @@ export function NeueAnzeigeSeite({
 
     const brauchbar = gewaehlt.filter(datei => ERLAUBTE_TYPEN.includes(datei.type));
     if (brauchbar.length === 0) return;
-    setDateien(vorher => [...vorher, ...brauchbar].slice(0, MAX_BILDER));
+    setDateien(vorher => [...vorher, ...brauchbar].slice(0, maxBilder));
   };
 
   const zuruecksetzen = () => {
     setEntwurf(null);
+    setPruefErkennungId(null);
+    setBeschreibung('');
     setKosten(null);
     setAntworten({});
     setKategorie(null);
@@ -113,9 +160,25 @@ export function NeueAnzeigeSeite({
 
   const erkennen = async () => {
     if (dateien.length === 0 || !profil) return;
+    const zuStarten = dateien;
     setFehler(null);
     zuruecksetzen();
     setStufe({ art: 'hochladen', anteil: 0 });
+
+    // Der neue Weg antwortet nach dem Speichern der Bilder. Die eigentliche
+    // Analyse läuft serverseitig weiter, dadurch bleibt die Fotoauswahl frei
+    // und eine zweite Erkennung kann sofort gestartet werden.
+    if (typeof api.ki?.erkennungStarten === 'function') {
+      try {
+        await api.ki.erkennungStarten(profil, zuStarten);
+        setDateien([]);
+      } catch (ursache) {
+        setFehler(ursache instanceof ApiFehler ? ursache.message : 'Die Erkennung konnte nicht gestartet werden.');
+      } finally {
+        setStufe({ art: 'ruhe' });
+      }
+      return;
+    }
 
     // Ab dem Moment, in dem der Upload durch ist, läuft die Uhr. Sie ist die
     // einzige ehrliche Auskunft über eine Wartezeit, die wir nicht aufteilen
@@ -133,6 +196,7 @@ export function NeueAnzeigeSeite({
         }
       });
       setEntwurf(antwort.entwurf);
+      setBeschreibung(antwort.entwurf.beschreibung);
       // Die API liefert nur Kategorien, die gegen den echten Katalog abgeglichen
       // wurden. Die beste davon wird als Entwurf vorausgewählt und kann vor dem
       // lokalen Anlegen weiterhin geändert oder entfernt werden.
@@ -151,13 +215,18 @@ export function NeueAnzeigeSeite({
     setFehler(null);
     setStufe({ art: 'anlegen' });
     try {
-      const ergebnis = await api.ki.anlegen(profil, entwurf, antworten, dateien, {
-        kategorie, versandpakete, preis,
-      });
-      setAngelegt(ergebnis.titel);
-      if (aufZiel) {
-        aufZiel(hashFuerAnzeige('eigene', ergebnis.datei, true));
-      }
+      const ergebnis = pruefErkennungId !== null
+        ? await api.ki.erkennungAnlegen(profil, pruefErkennungId, {
+          antworten,
+          beschreibung,
+          kategorie,
+          versandpakete,
+          preis,
+        })
+        : await api.ki.anlegen(profil, { ...entwurf, beschreibung }, antworten, dateien, {
+          kategorie, versandpakete, preis,
+        });
+      setAngelegt({ titel: ergebnis.titel, datei: ergebnis.datei });
     } catch (ursache) {
       setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
     } finally {
@@ -171,69 +240,92 @@ export function NeueAnzeigeSeite({
     // Gleiche Inhaltskante wie Bestand/Übersicht (AP-2.51): `.seite` = 72rem.
     // `.seite-breit` bleibt dem Editor vorbehalten (AP-2.24). Fließtext bleibt
     // über `.lesebreite` gedeckelt.
-    <div className="seite">
-      <div className="seite-kopf mb-5">
-        <div>
-          <h1 className="sr-only">Neue Anzeige</h1>
-          <p className="seite-beschrieb">
-        Fotos hochladen, erkennen lassen, Rückfragen beantworten. Die Anzeige wird
-        anschließend <strong>lokal angelegt</strong> – veröffentlicht wird sie nicht.
-          </p>
-        </div>
-      </div>
+    <div className="seite neue-anzeige-seite">
+      <section className="karte neue-anzeige-einstieg mb-5 p-4 sm:p-5">
+        <h1 className="sr-only">Neue Anzeige</h1>
+        <p className="neue-anzeige-intro-text">
+          Fotos hochladen, Vorschlag erkennen lassen und selbst prüfen.
+          Danach wird die Anzeige <strong>nur lokal gespeichert</strong> – veröffentlicht wird sie nicht.
+        </p>
+      </section>
 
-      {kiStatus && !kiStatus.hinterlegt && <SchluesselFehlt />}
+      <Ablauf aktuell={angelegt ? 3 : entwurf ? 2 : 1} />
 
       {/* Vor dem Formular, nicht darunter (AP-2.21): Die Auskunft, dass noch
           ein Lauf aussteht, ist erst danach wertlos. */}
       {profil && <ProfilWarteschlange profil={profil} />}
+      {profil && aufZiel && <KiEntwurfWarteschlange profil={profil} aufZiel={aufZiel} />}
 
-      <DatenschutzHinweis bildkante={kiStatus?.bildkante ?? 768} />
+      <section className="karte p-4 sm:p-5">
+        <SchrittKopf
+          nummer={1}
+          titel="Erkennen"
+          text={`Wähle bis zu ${maxBilder} Fotos. Mehrere Ansichten helfen bei der Erkennung.`}
+        />
 
-      <BildAuswahl
-        dateien={dateien}
-        vorschauen={vorschauen}
-        gesperrt={stufe.art !== 'ruhe'}
-        aufWaehlen={dateienWaehlen}
-        aufEntfernen={index => {
-          setDateien(vorher => vorher.filter((_, i) => i !== index));
-          zuruecksetzen();
-        }}
-      />
+        <p className="mb-2 text-sm font-medium text-stark">Fotos auswählen</p>
+        <BildAuswahl
+          dateien={dateien}
+          vorschauen={vorschauen}
+          maxBilder={maxBilder}
+          gesperrt={stufe.art !== 'ruhe'}
+          aufWaehlen={dateienWaehlen}
+          aufEntfernen={index => {
+            setDateien(vorher => vorher.filter((_, i) => i !== index));
+            zuruecksetzen();
+          }}
+        />
 
-      {fehler && (
-        <p role="alert" className="hinweis hinweis-fehler lesebreite mb-4">
-          {fehler}
-        </p>
-      )}
+        {fehler && (
+          <p role="alert" className="hinweis hinweis-fehler lesebreite mb-4">
+            {fehler}
+          </p>
+        )}
 
-      {stufe.art !== 'ruhe' ? (
-        <Fortschritt stufe={stufe} />
-      ) : (
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => void erkennen()}
-            disabled={dateien.length === 0 || !profil || !kiStatus?.hinterlegt}
-            className="btn-primaer w-full sm:w-auto"
-          >
-            <Sparkles className="h-4 w-4" />
-            {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
-          </button>
-          {/* Ein grauer Knopf ohne Begruendung laesst den Nutzer raten. */}
-          {(dateien.length === 0 || !profil || !kiStatus?.hinterlegt) && (
-            <p className="lesebreite mt-2 text-center text-xs text-leise sm:text-left">
-              {kiStatus === null
-                ? 'Der Zustand des KI-Zugangs ließ sich nicht laden – ist das Backend erreichbar?'
-                : !kiStatus.hinterlegt
-                  ? 'Es fehlt der OpenAI-Schlüssel.'
-                  : !profil
-                    ? 'Zuerst ein Profil anlegen und auswählen.'
-                    : 'Wähle mindestens ein Foto.'}
-            </p>
-          )}
-        </div>
-      )}
+        {stufe.art !== 'ruhe' ? (
+          <Fortschritt stufe={stufe} />
+        ) : (
+          <div className="neue-anzeige-aktionen">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+              <button
+                type="button"
+                onClick={() => void erkennen()}
+                disabled={dateien.length === 0 || !profil || !kiBereit}
+                className="btn-primaer min-h-12 w-full sm:w-auto"
+              >
+                <Sparkles className="h-4 w-4" />
+                {entwurf ? 'Noch einmal erkennen lassen' : 'Erkennen lassen'}
+              </button>
+              {kiBereit && (
+                <DatenschutzHinweis
+                  bildkante={kiStatus?.bildkante ?? 512}
+                  maxBilder={maxBilder}
+                />
+              )}
+            </div>
+            {/* Die Einrichtung steht in der Seitenleiste. Direkt am gesperrten
+                Knopf bleibt nur eine kurze, hilfreiche Weiterleitung. */}
+            {(dateien.length === 0 || !profil || !kiBereit) && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-leise">
+                <span>
+                  {kiStatus === null
+                    ? 'Der KI-Zugang konnte gerade nicht geprüft werden.'
+                    : !kiBereit
+                      ? 'Ersteinrichtung abschließen, um Fotos erkennen zu lassen.'
+                      : !profil
+                        ? 'Zuerst ein Profil anlegen und auswählen.'
+                        : 'Wähle mindestens ein Foto.'}
+                </span>
+                {(!kiBereit || !profil) && aufZiel && (
+                  <button type="button" onClick={() => aufZiel('einstellungen')} className="font-medium underline">
+                    Einrichtung öffnen
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {entwurf && !angelegt && (
         <Ergebnis
@@ -247,11 +339,13 @@ export function NeueAnzeigeSeite({
             return neu;
           })}
           offen={offeneFragen.length}
-          gesperrt={stufe.art !== 'ruhe'}
+          stufe={stufe}
           aufAnlegen={() => void anlegen()}
           kategorie={kategorie}
           versandpakete={versandpakete}
           preis={preis}
+          beschreibung={beschreibung}
+          setBeschreibung={setBeschreibung}
           setKategorie={setKategorie}
           setVersandpakete={setVersandpakete}
           setPreis={setPreis}
@@ -259,82 +353,116 @@ export function NeueAnzeigeSeite({
       )}
 
       {angelegt && (
-        <div className="hinweis lesebreite">
+        <div className="karte neue-anzeige-erfolg mt-4 p-4 sm:p-5">
           <p className="flex items-center gap-2 font-medium">
             <Check className="h-5 w-5" />
-            „{angelegt}“ liegt jetzt im Bestand.
+            „{angelegt.titel}“ liegt jetzt im Bestand.
           </p>
-          <p className="mt-2 text-sm">
+          <p className="mt-2 max-w-2xl text-sm text-normal">
             Sie ist <strong>nicht</strong> veröffentlicht. Unter „Anzeigen“ lässt sie sich
             bearbeiten – Versand und weitere Angaben lassen sich dort ergänzen – und von dort aus hochladen.
           </p>
-          <a href="#bestand" className="mt-3 inline-block text-sm font-medium underline">
-            Zum Bestand
-          </a>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {aufZiel ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => aufZiel(hashFuerAnzeige('eigene', angelegt.datei, true))}
+                  className="btn-primaer"
+                >
+                  Anzeige öffnen und hochladen
+                </button>
+                <button type="button" onClick={() => aufZiel('anzeigen/eigene')} className="btn-ghost">
+                  Zum Bestand
+                </button>
+              </>
+            ) : (
+              <a href={hashFuerAnzeige('eigene', angelegt.datei, true)} className="btn-primaer">
+                Anzeige öffnen und hochladen
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function SchluesselFehlt() {
+function Ablauf({ aktuell }: { aktuell: 1 | 2 | 3 }) {
   return (
-    <div className="hinweis hinweis-warn lesebreite mb-4 flex items-start gap-3">
-      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden />
-      <p>
-        Es ist noch kein OpenAI-Schlüssel hinterlegt. Ohne ihn kann nichts erkannt werden –
-        einzutragen unter <a href="#profile" className="font-medium underline">Profile</a>.
-      </p>
+    <nav className="neue-anzeige-ablauf" aria-label="Ablauf der neuen Anzeige">
+      {(['Erkennen', 'Prüfen', 'Hochladen'] as const).map((titel, index) => {
+        const nummer = index + 1;
+        const erledigt = nummer < aktuell;
+        return (
+          <span
+            key={titel}
+            className={`neue-anzeige-ablauf-schritt ${
+              erledigt ? 'neue-anzeige-ablauf-schritt-erledigt' : ''
+            } ${nummer === aktuell ? 'neue-anzeige-ablauf-schritt-aktiv' : ''}`}
+            aria-current={nummer === aktuell ? 'step' : undefined}
+          >
+            <span className="neue-anzeige-ablauf-nummer" aria-hidden>
+              {erledigt ? <Check className="h-3.5 w-3.5" /> : nummer}
+            </span>
+            <span className="truncate">{titel}</span>
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
+function SchrittKopf({ nummer, titel, text }: { nummer: number; titel: string; text: string }) {
+  return (
+    <div className="mb-4 flex items-start gap-3">
+      <span className="neue-anzeige-schritt" aria-hidden>{nummer}</span>
+      <div>
+        <h2 className="text-lg font-semibold text-stark">{titel}</h2>
+        <p className="mt-1 text-sm text-leise">{text}</p>
+      </div>
     </div>
   );
 }
 
 /** AP-4.7: Vor dem ersten Versand muss klar sein, dass Bilder das Haus verlassen. */
-function DatenschutzHinweis({ bildkante }: { bildkante: number }) {
-  const [offen, setOffen] = useState(false);
+function DatenschutzHinweis({ bildkante, maxBilder }: { bildkante: number; maxBilder: number }) {
+  const erklaerungId = useId();
   return (
-    <div className="karte lesebreite mb-4 p-3 text-sm">
-      <button
-        type="button"
-        onClick={() => setOffen(!offen)}
-        aria-expanded={offen}
-        // `py-1` bringt die Zeile auf 24px Trefferhöhe (AP-2.34) - vorher 20px
-        // und damit unter dem Mindestmaß aus WCAG 2.5.8.
-        className="flex w-full items-start gap-2 py-1 text-left text-normal"
+    <div
+      className="neue-anzeige-datenschutz-gruppe"
+      role="group"
+      aria-label="Datenschutz-Hinweis"
+    >
+      <div
+        className="karte neue-anzeige-datenschutz p-3 text-sm text-normal"
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
+        <AlertTriangle className="h-4 w-4 flex-shrink-0 text-leise" aria-hidden />
         <span>
           Die Fotos werden an OpenAI geschickt.{' '}
-          <span className="underline">{offen ? 'Weniger' : 'Was genau passiert?'}</span>
+          <span className="underline">Was genau passiert?</span>
         </span>
-      </button>
-      {offen && (
-        <ul className="mt-2 list-disc space-y-1 pl-9 text-normal">
-          <li>Vor dem Versand wird jedes Bild auf höchstens {bildkante} px verkleinert.</li>
-          <li>
-            Alle Metadaten werden entfernt – auch die GPS-Koordinaten, die Handyfotos
-            mitbringen und die bei einer Aufnahme zu Hause die Wohnadresse sind.
-          </li>
-          <li>Höchstens {MAX_BILDER} Bilder gehen mit; weitere werden nicht gesendet.</li>
-          <li>
-            Wenn im aktiven Profil <strong>veröffentlichte</strong> Anzeigen liegen, gehen
-            höchstens fünf ihrer Beschreibungstexte als Stilvorlage mit – ohne E-Mail-Adressen
-            und Telefonnummern. Eigene Entwürfe, die nie online waren, bleiben außen vor:
-            Sonst ahmt das Modell sich selbst nach. Ohne veröffentlichte Anzeigen gilt eine
-            feste Stilvorgabe, und es gehen nur die Fotos raus.
-          </li>
-          <li>Prüfe trotzdem, was im Hintergrund zu sehen ist. Das kann keine Software für dich.</li>
-        </ul>
-      )}
+      </div>
+      <div id={erklaerungId} className="neue-anzeige-datenschutz-popover" role="tooltip">
+        <p>
+          Vor dem Versand werden die Fotos auf höchstens {bildkante} px verkleinert und alle
+          Metadaten entfernt. Höchstens {maxBilder} Fotos werden gesendet.
+        </p>
+        <p className="mt-2">
+          Es geht nur der Entwurf an OpenAI, keine Nachrichten. Prüfe trotzdem den Hintergrund
+          der Fotos selbst.
+        </p>
+      </div>
     </div>
   );
 }
 
 function BildAuswahl({
-  dateien, vorschauen, gesperrt, aufWaehlen, aufEntfernen,
+  dateien, vorschauen, maxBilder, gesperrt, aufWaehlen, aufEntfernen,
 }: {
   dateien: File[];
   vorschauen: string[];
+  maxBilder: number;
   gesperrt: boolean;
   aufWaehlen: (liste: FileList | null) => void;
   aufEntfernen: (index: number) => void;
@@ -395,7 +523,7 @@ function BildAuswahl({
                 )}
               </div>
             ))}
-            {dateien.length < MAX_BILDER && !gesperrt && (
+            {dateien.length < maxBilder && !gesperrt && (
               <button
                 type="button"
                 onClick={() => eingabe.current?.click()}
@@ -422,8 +550,8 @@ function BildAuswahl({
         }}
       />
       <p className="lesebreite mt-2 text-xs text-leise">
-        {dateien.length} von {MAX_BILDER} Fotos. Mehrere Ansichten helfen – Vorderseite,
-        Rückseite, Typenschild. JPEG, PNG oder GIF.
+        {dateien.length} von {maxBilder} Fotos. Mehrere Ansichten helfen – Vorderseite,
+        Rückseite, Typenschild.
       </p>
     </div>
   );
@@ -433,7 +561,7 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
   const text =
     stufe.art === 'hochladen' ? `Fotos werden hochgeladen … ${Math.round(stufe.anteil * 100)} %`
       : stufe.art === 'warten' ? `Das Modell sieht sich die Fotos an … ${stufe.sekunden} s`
-        : 'Anzeige wird angelegt …';
+        : 'Anzeige wird lokal gespeichert …';
 
   return (
     <div className="karte lesebreite mb-6 p-4" role="status" aria-live="polite">
@@ -460,8 +588,9 @@ function Fortschritt({ stufe }: { stufe: Stufe }) {
 }
 
 function Ergebnis({
-  entwurf, kosten, antworten, aufAntwort, aufZuruecknehmen, offen, gesperrt, aufAnlegen,
+  entwurf, kosten, antworten, aufAntwort, aufZuruecknehmen, offen, stufe, aufAnlegen,
   kategorie, versandpakete, preis, setKategorie, setVersandpakete, setPreis,
+  beschreibung, setBeschreibung,
 }: {
   entwurf: KiEntwurf;
   kosten: KiKosten | null;
@@ -469,15 +598,18 @@ function Ergebnis({
   kategorie: string | null;
   versandpakete: string[];
   preis: number | null;
+  beschreibung: string;
+  setBeschreibung: (wert: string) => void;
   setKategorie: (wert: string | null) => void;
   setVersandpakete: (werte: string[]) => void;
   setPreis: (wert: number | null) => void;
   aufAntwort: (id: string, wert: string) => void;
   aufZuruecknehmen: (id: string) => void;
   offen: number;
-  gesperrt: boolean;
+  stufe: Stufe;
   aufAnlegen: () => void;
 }) {
+  const gesperrt = stufe.art !== 'ruhe';
   return (
     <div className="space-y-4">
       {entwurf.sicherheit === 'niedrig' && (
@@ -491,11 +623,29 @@ function Ergebnis({
       )}
 
       <div className="karte lesebreite p-4">
-        <h2 className="mb-3 font-medium text-stark">Vorschlag</h2>
+        <SchrittKopf
+          nummer={2}
+          titel="Prüfen"
+          text="Prüfe Titel, Beschreibung und Vorschläge. Rückfragen kannst du direkt beantworten."
+        />
+        <h3 className="mb-3 font-medium text-stark">Vorschlag</h3>
         <dl className="space-y-3 text-sm">
           <Zeile bezeichnung="Titel">{entwurf.titel}</Zeile>
           <Zeile bezeichnung="Beschreibung">
-            <span className="whitespace-pre-wrap">{entwurf.beschreibung}</span>
+            <label className="block">
+              <span className="sr-only">Beschreibung bearbeiten</span>
+              <textarea
+                value={beschreibung}
+                onChange={e => setBeschreibung(e.target.value)}
+                rows={7}
+                maxLength={4000}
+                disabled={gesperrt}
+                className="feld mt-1 min-h-36 resize-y"
+              />
+              <span className="mt-1 block text-xs text-leise">
+                Du kannst den Vorschlag vor dem Anlegen direkt ändern ({beschreibung.length}/4000).
+              </span>
+            </label>
           </Zeile>
           <Zeile bezeichnung="Zustand">{entwurf.zustand_text ?? 'nicht erkennbar'}</Zeile>
           <Zeile bezeichnung="Preis">
@@ -569,18 +719,32 @@ function Ergebnis({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={aufAnlegen}
-        disabled={gesperrt}
-        className="btn-primaer w-full sm:w-auto"
-      >
-        <Check className="h-4 w-4" />
-        {offen > 0 ? `Anzeige anlegen (${offen} Rückfrage${offen === 1 ? '' : 'n'} offen)` : 'Anzeige anlegen'}
-      </button>
-      <p className="lesebreite text-center text-xs text-leise sm:text-left">
-        Legt die Anzeige nur lokal an. Nichts geht dabei online.
-      </p>
+      <section className="karte p-4">
+        <SchrittKopf
+          nummer={3}
+          titel="Hochladen"
+          text="Speichere die geprüfte Anzeige zuerst lokal. Im Bestand kannst du sie anschließend ausdrücklich hochladen."
+        />
+        {gesperrt ? (
+          <Fortschritt stufe={stufe} />
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={aufAnlegen}
+              className="btn-primaer w-full sm:w-auto"
+            >
+              <Check className="h-4 w-4" />
+              {offen > 0
+                ? `Anzeige lokal speichern (${offen} Rückfrage${offen === 1 ? '' : 'n'} offen)`
+                : 'Anzeige lokal speichern'}
+            </button>
+            <p className="lesebreite mt-2 text-center text-xs text-leise sm:text-left">
+              Dabei wird nichts online veröffentlicht.
+            </p>
+          </>
+        )}
+      </section>
     </div>
   );
 }

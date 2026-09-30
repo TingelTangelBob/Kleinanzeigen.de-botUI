@@ -106,6 +106,18 @@ describe('WarteschlangeSeite', () => {
     expect(screen.getByText('gescheitert')).toBeDefined();
   });
 
+  it('zeigt beendeten sync-order nicht unter „Zuletzt beendet"', async () => {
+    jobsListe.mockResolvedValue([
+      job({ id: 3, befehl: 'sync-order', zustand: 'fertig', beendet_am: '2026-09-02T09:00:00Z' }),
+    ]);
+
+    render(<WarteschlangeSeite />);
+
+    expect(await screen.findByText('Zuletzt beendet')).toBeDefined();
+    expect(screen.queryByText('sync-order')).toBeNull();
+    expect(screen.getByText('Noch kein Lauf abgeschlossen.')).toBeDefined();
+  });
+
   it('meldet leere Abschnitte, statt sie zu verstecken', async () => {
     render(<WarteschlangeSeite />);
 
@@ -141,6 +153,8 @@ describe('WarteschlangeSeite', () => {
 
     const diagnose = await screen.findByText('Diagnose');
     await userEvent.click(diagnose);
+    const bestaetigung = await screen.findByRole('dialog');
+    await userEvent.click(within(bestaetigung).getByRole('button', { name: 'Lauf starten' }));
 
     expect(jobsStarten).toHaveBeenCalledWith('test', 'diagnose');
   });

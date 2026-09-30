@@ -4,7 +4,7 @@
 // Test of the responsive page title in the application topbar (AP-2.33 / AP-2.55).
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Route } from '../routing';
 import { useKopfAktionen } from '../context/kopfAktionenKontext';
 import { Layout } from './Layout';
@@ -14,6 +14,7 @@ const profilMock = vi.hoisted(() => ({
   aktiv: null as null | { slug: string; anzeigename: string; angelegt_am: string; geaendert_am: string },
   waehlen: vi.fn(),
 }));
+const zugangMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 
 vi.mock('../context/useAuth', () => ({
   useAuth: () => ({ status: { name: 'Test' }, abmelden: vi.fn() }),
@@ -28,7 +29,10 @@ vi.mock('../hooks/useThema', () => ({
 }));
 
 vi.mock('../services/api', () => ({
-  api: { jobs: { liste: vi.fn().mockResolvedValue([]) } },
+  api: {
+    jobs: { liste: vi.fn().mockResolvedValue([]) },
+    profile: { zugang: (...a: unknown[]) => zugangMock(...a) },
+  },
 }));
 
 vi.mock('./Glocke', () => ({ Glocke: () => null }));
@@ -39,6 +43,7 @@ const route = (seite: Route['seite'], anzeigen: Route['anzeigen'] = 'eigene'): R
   einstellung: 'bot',
   anzeigeDatei: null,
   anzeigeBearbeiten: false,
+  erkennungId: null,
 });
 
 const aktivProfil = {
@@ -182,5 +187,31 @@ describe('Layout: Topbar-Dichte mobil (AP-2.55)', () => {
     expect(mobil).not.toBeNull();
     expect(mobil?.closest('header.topbar')).toBeNull();
     expect(mobil?.className).toContain('md:hidden');
+  });
+});
+
+describe('Layout: fehlende Ersteinrichtung (AP-2.60)', () => {
+  it('zeigt die Ersteinrichtung direkt über den Einstellungen', async () => {
+    profilMock.aktiv = aktivProfil;
+    profilMock.profile = [aktivProfil];
+    zugangMock.mockResolvedValue({
+      benutzername: '', passwort_hinterlegt: false, geaendert_am: '',
+    });
+    const aufZiel = vi.fn();
+
+    render(
+      <Layout route={route('uebersicht')} aufZiel={aufZiel}>
+        <p>Inhalt</p>
+      </Layout>,
+    );
+
+    const card = await screen.findByText('Ersteinrichtung abschließen');
+    expect(card.closest('.sidebar-zugang')?.textContent).toContain(
+      'Profil, Zugang und KI-Zugang einrichten.',
+    );
+    expect(card.closest('aside')?.textContent).toContain('Einstellungen');
+
+    fireEvent.click(screen.getByRole('button', { name: /Einrichtung öffnen/ }));
+    expect(aufZiel).toHaveBeenCalledWith('einstellungen');
   });
 });

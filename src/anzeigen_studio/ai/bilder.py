@@ -7,10 +7,10 @@
 # Zwei Gruende, warum hier ueberhaupt etwas passiert, und der zweite ist der
 # wichtigere:
 #
-# 1. KOSTEN. Ein Bild wird beim Anbieter in Token umgerechnet, kachelweise:
-#    70 Grundtoken plus 140 je 512-px-Kachel. 768 px ergeben vier Kacheln, also
-#    630 Token. Ein Handyfoto mit 4032 px waere ein Vielfaches davon, ohne fuer
-#    die Erkennung eines Verkaufsgegenstands mehr zu liefern.
+# 1. KOSTEN. Ein Bild wird beim Anbieter in Token umgerechnet. Eine kleine,
+#    einheitliche Bildkante reicht fuer die Erkennung eines Verkaufsgegenstands;
+#    ein Handyfoto mit 4032 px waere deutlich mehr Daten, ohne entsprechend mehr
+#    Nutzen zu liefern.
 #
 # 2. DATENSCHUTZ. Fotos von Verkaufsgegenstaenden zeigen oft mehr als den
 #    Gegenstand - die Wohnung, ein Kennzeichen, Papiere im Hintergrund. Und sie
@@ -123,7 +123,9 @@ def vorbereiten(inhalt: bytes, *, kante: int) -> VorbereitetesBild:
     )
 
 
-def alle_vorbereiten(inhalte: list[bytes], *, kante: int) -> list[VorbereitetesBild]:
+def alle_vorbereiten(
+    inhalte: list[bytes], *, kante: int, max_bilder: int = MAX_BILDER,
+) -> list[VorbereitetesBild]:
     """Bereitet mehrere Bilder vor und begrenzt ihre Zahl.
 
     Ueberzaehlige werden weggelassen, nicht abgelehnt: Wer sechs Fotos
@@ -132,7 +134,8 @@ def alle_vorbereiten(inhalte: list[bytes], *, kante: int) -> list[VorbereitetesB
     if not inhalte:
         raise FachlicherFehler("Ohne Bild gibt es nichts zu erkennen.", status = 400, feld = "bilder")
 
-    ausgewaehlt = inhalte[:MAX_BILDER]
-    if len(inhalte) > MAX_BILDER:
-        LOG.info("Nur die ersten %d von %d Bildern gehen an den Anbieter", MAX_BILDER, len(inhalte))
+    max_bilder = max(1, min(MAX_BILDER, max_bilder))
+    ausgewaehlt = inhalte[:max_bilder]
+    if len(inhalte) > max_bilder:
+        LOG.info("Nur die ersten %d von %d Bildern gehen an den Anbieter", max_bilder, len(inhalte))
     return [vorbereiten(inhalt, kante = kante) for inhalt in ausgewaehlt]

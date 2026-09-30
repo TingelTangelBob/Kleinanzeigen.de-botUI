@@ -92,6 +92,11 @@ def test_mehr_bilder_als_erlaubt_werden_gekappt_statt_abgelehnt() -> None:
     assert len(ki_bilder.alle_vorbereiten(inhalte, kante = 768)) == ki_bilder.MAX_BILDER
 
 
+def test_installationsgrenze_begrenzt_die_vorbereitung_weiter() -> None:
+    inhalte = [_foto(400, 300) for _ in range(4)]
+    assert len(ki_bilder.alle_vorbereiten(inhalte, kante = 768, max_bilder = 2)) == 2
+
+
 def test_ohne_bild_gibt_es_nichts_zu_erkennen() -> None:
     with pytest.raises(FachlicherFehler):
         ki_bilder.alle_vorbereiten([], kante = 768)

@@ -130,7 +130,7 @@ def lesen(conn: sqlite3.Connection, *, schluessel: str | None) -> str:
     ).fetchone()
     if row is None:
         raise FachlicherFehler(
-            "Es ist kein OpenAI-Schlüssel hinterlegt. Er lässt sich unter „Profil“ eintragen.",
+            "Der KI-Zugang ist noch nicht eingerichtet. Öffne die Ersteinrichtung.",
             status = 409,
         )
     return tresor_oder_fehler(schluessel).entschluesseln(row["chiffre"])

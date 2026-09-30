@@ -26,6 +26,12 @@ services:
       ANZEIGEN_STUDIO_SECRET_KEY: ${ANZEIGEN_STUDIO_SECRET_KEY:-}
       ANZEIGEN_STUDIO_DATA_DIR: /data
       ANZEIGEN_STUDIO_DEV: ${ANZEIGEN_STUDIO_DEV:-false}
+      # In der Open-Source-Variante bleibt `GEHOSTET` aus; der Nutzer kann den
+      # KI-Schluessel in der Oberflaeche verschluesselt hinterlegen. Gehostete
+      # Installationen setzen den Betreiber-Schluessel nur ueber .env.
+      ANZEIGEN_STUDIO_GEHOSTET: ${ANZEIGEN_STUDIO_GEHOSTET:-false}
+      ANZEIGEN_STUDIO_OPENAI_API_KEY: ${ANZEIGEN_STUDIO_OPENAI_API_KEY:-}
+      ANZEIGEN_STUDIO_KI_MAX_BILDER: ${ANZEIGEN_STUDIO_KI_MAX_BILDER:-4}
       TZ: Europe/Berlin
       # Der Bot waehlt seine Sprache aus LANG (utils/i18n.py). Ohne diese Zeile
       # steht dort C.UTF-8, und das gesamte Protokoll erscheint auf Englisch -

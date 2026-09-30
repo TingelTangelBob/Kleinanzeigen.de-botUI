@@ -42,11 +42,12 @@ _ENDPUNKT: Final[str] = "https://api.openai.com/v1/responses"
 #: Anfrage der Oberflaeche fuer immer festhaelt.
 _FRIST_S: Final[float] = 90.0
 
-#: Aufloesungsstufe je Bild. "high" statt "low": Der Unterschied sind rund
-#: 560 Token je Bild, also etwa 0,03 Cent bei drei Bildern. Der Zustand eines
-#: Gegenstands - Kratzer, Abnutzung, Vollstaendigkeit - ist genau das, was auf
-#: einem 512er-Vorschaubild verschwindet.
-_BILD_STUFE: Final[str] = "high"
+#: Fuer den ersten Entwurf genuegt die sparsame Stufe: Gegenstand, Marke und
+#: grobe Gebrauchsspuren bleiben erkennbar, waehrend die API keine grosse
+#: Detailanalyse anfordert. Die Anwendung fordert bewusst keine zweite
+#: Detailrunde an; Rueckfragen und die abschliessende Pruefung bleiben beim
+#: Menschen.
+_BILD_STUFE: Final[str] = "low"
 
 
 @dataclass(frozen = True, slots = True)

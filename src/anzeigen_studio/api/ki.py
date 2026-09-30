@@ -3,35 +3,36 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # HTTP-Endpunkte des KI-Entwurfsmoduls (AP-4.1, AP-4.4, AP-4.6).
+# Geaendert am 2026-09-13: asynchrone, persistente Erkennungswarteschlange.
 #
-# Zwei Wege, und dass es zwei sind, ist Absicht:
+# Drei Wege, und dass der Hintergrundweg getrennt ist, ist Absicht:
 #
 #   POST /api/ki/entwurf   Bilder rein, Vorschlag und Rueckfragen raus.
 #                          Kostet Geld. Legt nichts an.
+#   POST /api/ki/erkennungen Bilder rein, Analyse laeuft im Hintergrund.
+#                            Kostet Geld. Der Entwurf bleibt zur Pruefung liegen.
 #   POST /api/ki/anlegen   Vorschlag plus Antworten rein, Anzeigendatei raus.
 #                          Kostet nichts. Ruft den Anbieter NICHT noch einmal.
 #
-# Der zweite Weg nimmt die Bilder erneut entgegen, statt sie zwischen den
-# Aufrufen serverseitig zu halten. Das spart einen Zwischenspeicher mit
-# Verfallszeit, den man aufraeumen und begrenzen muesste - und die Bilder
-# liegen ohnehin noch im Browser.
+# Der direkte Entwurf bleibt als kompatibler API-Weg bestehen. Neue Anzeigen
+# nutzen die wartende Variante, damit weitere Erkennungen nicht auf die erste
+# Antwort warten muessen.
 
 from __future__ import annotations
 
 import json
 import logging
 import sqlite3
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from pydantic import BaseModel, Field
 
 from anzeigen_studio import bestand as bestand_dienst
-from anzeigen_studio.ai import anbieter as anbieter_dienst
 from anzeigen_studio.ai import bilder as ki_bilder
 from anzeigen_studio.ai import budget as budget_dienst
 from anzeigen_studio.ai import entwurf as entwurf_dienst
-from anzeigen_studio.ai import stil as stil_dienst
+from anzeigen_studio.ai import entwurf_lauf, erkennungswarteschlange
 from anzeigen_studio.ai import vorschlag as vorschlag_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.core import db, ki_zugang
@@ -47,14 +48,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 router = APIRouter(prefix = "/api/ki", tags = ["KI"])
-
-#: Preise des eingestellten Modells in USD je 1 Mio. Token, Stand 2026-08-27.
-#: Nur zur Anzeige - abgerechnet wird beim Anbieter. Steht hier, damit die
-#: Oberflaeche sagen kann, was ein Entwurf gekostet hat, statt es zu verschweigen.
-#: Quelle und Vergleich: 00_Agentenordner/04_Serververwaltung/KI-API-Zugaenge.md
-_PREIS_EINGABE_USD_JE_TOKEN = 0.20 / 1_000_000
-_PREIS_AUSGABE_USD_JE_TOKEN = 1.20 / 1_000_000
-
 
 def _verbindung(request: Request) -> Iterator[sqlite3.Connection]:
     cfg: Settings = request.app.state.settings
@@ -94,6 +87,11 @@ class StatusAusgabe(BaseModel):
     verbrauch_usd: float = 0.0
     budget_usd: float = 0.0
     verbrauch_aufrufe: int = 0
+    #: Open-Source-Installationen verwalten den Schluessel selbst; in der
+    #: gehosteten Variante bleibt er beim Betreiber.
+    modus: Literal["open_source", "gehostet"]
+    schluessel_selbst_setzbar: bool
+    max_bilder: int
 
 
 class SchluesselEingabe(BaseModel):
@@ -112,20 +110,34 @@ def _status_ausgabe(
         verbrauch_usd = round(stand.usd, 4),
         budget_usd = round(stand.grenze_usd, 2),
         verbrauch_aufrufe = stand.aufrufe,
+        modus = "gehostet" if cfg.hosted else "open_source",
+        schluessel_selbst_setzbar = not cfg.hosted,
+        max_bilder = cfg.ki_max_bilder,
     )
 
 
 @router.get("/status", response_model = StatusAusgabe)
 def status(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
-    z = ki_zugang.status(conn, schluessel = cfg.secret_key)
+    z = (
+        ki_zugang.status(conn, schluessel = cfg.secret_key)
+        if not cfg.hosted
+        else None
+    )
     return _status_ausgabe(
         conn, cfg,
-        hinterlegt = z.hinterlegt, endet_auf = z.endet_auf, geaendert_am = z.geaendert_am,
+        hinterlegt = bool(cfg.openai_api_schluessel) if z is None else z.hinterlegt,
+        endet_auf = None if z is None else z.endet_auf,
+        geaendert_am = None if z is None else z.geaendert_am,
     )
 
 
 @router.put("/schluessel", response_model = StatusAusgabe)
 def schluessel_setzen(daten: SchluesselEingabe, conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
+    if cfg.hosted:
+        raise FachlicherFehler(
+            "Der KI-Zugang wird bei dieser gehosteten Installation vom Betreiber bereitgestellt.",
+            status = 403,
+        )
     z = ki_zugang.setzen(conn, daten.api_schluessel, schluessel = cfg.secret_key)
     LOG.info("OpenAI-Schlüssel hinterlegt")  # ohne Wert, auch nicht gekuerzt
     return _status_ausgabe(
@@ -136,6 +148,11 @@ def schluessel_setzen(daten: SchluesselEingabe, conn: Verbindung, cfg: Konfigura
 
 @router.delete("/schluessel", response_model = StatusAusgabe)
 def schluessel_entfernen(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
+    if cfg.hosted:
+        raise FachlicherFehler(
+            "Der KI-Zugang wird bei dieser gehosteten Installation vom Betreiber bereitgestellt.",
+            status = 403,
+        )
     ki_zugang.entfernen(conn)
     LOG.info("OpenAI-Schlüssel entfernt")
     return _status_ausgabe(
@@ -144,6 +161,14 @@ def schluessel_entfernen(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
 
 
 # ------------------------------------------------------------------ Entwurf
+
+def _bilder_pruefen(bilder: list[UploadFile], cfg: Settings) -> None:
+    if len(bilder) > cfg.ki_max_bilder:
+        raise FachlicherFehler(
+            f"Bitte höchstens {cfg.ki_max_bilder} Bilder auswählen.",
+            status = 413, feld = "bilder",
+        )
+
 
 class OptionAusgabe(BaseModel):
     text: str
@@ -217,6 +242,31 @@ class KostenAusgabe(BaseModel):
 class EntwurfAntwort(BaseModel):
     entwurf: EntwurfAusgabe
     kosten: KostenAusgabe
+
+
+class ErkennungAusgabe(BaseModel):
+    """Ein Hintergrundlauf fuer die Anzeige im Dashboard und in der Queue."""
+
+    id: int
+    profil_slug: str
+    zustand: str
+    eingereicht_am: str
+    gestartet_am: str | None
+    beendet_am: str | None
+    bilder: int
+    entwurf: EntwurfAusgabe | None
+    kosten: KostenAusgabe | None
+    meldung: str | None
+
+
+class ErkennungAnlegenEingabe(BaseModel):
+    """Menschliche Entscheidungen zum lokalen Speichern eines Entwurfs."""
+
+    antworten: dict[str, str] = Field(default_factory = dict)
+    beschreibung: str | None = None
+    kategorie: str | None = None
+    versandpakete: list[str] = Field(default_factory = list)
+    preis: float | None = None
 
 
 def _als_ausgabe(
@@ -295,75 +345,115 @@ async def entwurf_erzeugen(
 ) -> EntwurfAntwort:
     """Schickt die Bilder an den Anbieter und gibt den Vorschlag zurueck.
 
-    Der einzige Weg, der Geld kostet. Er legt nichts an und veraendert nichts.
+    Dieser direkte Weg kostet Geld. Er legt nichts an und veraendert nichts.
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
-    api_schluessel = ki_zugang.lesen(conn, schluessel = cfg.secret_key)
 
-    # Vor dem Aufruf, nicht danach: Eine Grenze, die erst nach dem Bezahlen
-    # greift, ist keine.
-    budget_dienst.pruefen(conn, grenze_usd = cfg.ki_budget_usd)
+    # Vor dem Lesen und vor dem Anbieteraufruf: Auch ein direkter HTTP-Aufruf
+    # darf die sichtbare Obergrenze der Installation nicht umgehen.
+    _bilder_pruefen(bilder, cfg)
 
     inhalte = await _dateien_lesen(bilder)
-
-    vorbereitet = ki_bilder.alle_vorbereiten(inhalte, kante = cfg.ki_bildkante)
-    LOG.info(
-        "KI-Entwurf: %d Bilder, %d KB nach der Verkleinerung (vorher %d KB)",
-        len(vorbereitet),
-        sum(b.bytes_nachher for b in vorbereitet) // 1024,
-        sum(b.bytes_vorher for b in vorbereitet) // 1024,
-    )
-
-    dienst = anbieter_dienst.OpenAI(api_schluessel = api_schluessel, modell = cfg.ki_modell)
-    stilprofil = stil_dienst.aus_bestand(wurzel)
-    antwort = await dienst.erkennen(
-        vorbereitet,
-        anweisung = entwurf_dienst.anweisung(stilprofil.anweisungsteil()),
-        schema = entwurf_dienst.schema(),
-        schema_name = "anzeigenentwurf",
-    )
-
-    usd = (antwort.token_eingabe * _PREIS_EINGABE_USD_JE_TOKEN
-           + antwort.token_ausgabe * _PREIS_AUSGABE_USD_JE_TOKEN)
-
-    # Gebucht wird VOR dem Auswerten der Antwort: Bezahlt ist sie auch dann,
-    # wenn sich daraus kein brauchbarer Entwurf lesen laesst. Ein
-    # Verbrauchsbuch, das nur gelungene Aufrufe kennt, zaehlt ausgerechnet die
-    # teure Fehlersuche nicht mit.
-    budget_dienst.buchen(
+    ergebnis = await entwurf_lauf.erzeugen(
         conn,
+        cfg,
         profil_slug = profil,
-        modell = antwort.modell,
-        token_eingabe = antwort.token_eingabe,
-        token_ausgabe = antwort.token_ausgabe,
-        mikro_usd = round(usd * budget_dienst.MIKRO_JE_USD),
-    )
-    stand = budget_dienst.verbrauch(conn, grenze_usd = cfg.ki_budget_usd)
-
-    ergebnis = entwurf_dienst.aus_antwort(antwort.daten)
-    LOG.info(
-        "KI-Entwurf fertig: %d/%d Token, rund %.4f USD, %d Rückfragen, "
-        "Monatsstand %.4f von %.2f USD",
-        antwort.token_eingabe, antwort.token_ausgabe, usd, len(ergebnis.fragen),
-        stand.usd, stand.grenze_usd,
+        profil_wurzel = wurzel,
+        inhalte = inhalte,
     )
 
     return EntwurfAntwort(
         # Der Bestand wird erst hier gelesen, nicht vor dem Anbieteraufruf:
         # Ohne brauchbaren Titel gaebe es nichts zu vergleichen.
-        entwurf = _als_ausgabe(ergebnis, bestand_dienst.bestand_lesen(wurzel)),
-        kosten = KostenAusgabe(
-            modell = antwort.modell,
-            token_eingabe = antwort.token_eingabe,
-            token_ausgabe = antwort.token_ausgabe,
-            usd = round(usd, 6),
-            bilder_gesendet = len(vorbereitet),
-            bytes_gesendet = sum(b.bytes_nachher for b in vorbereitet),
-            stil_eigene_texte = len(stilprofil.beispiele),
-            verbrauch_usd = round(stand.usd, 4),
-            budget_usd = round(stand.grenze_usd, 2),
-        ),
+        entwurf = _als_ausgabe(ergebnis.entwurf, bestand_dienst.bestand_lesen(wurzel)),
+        kosten = KostenAusgabe(**entwurf_lauf.kosten_zu_dict(ergebnis.kosten)),
     )
+
+
+def _erkennung_als_ausgabe(
+    erkennung: erkennungswarteschlange.Erkennung,
+    bestand: list[bestand_dienst.BestandsAnzeige] | None = None,
+) -> ErkennungAusgabe:
+    entwurf: EntwurfAusgabe | None = None
+    if erkennung.entwurf is not None:
+        entwurf = _als_ausgabe(
+            entwurf_lauf.entwurf_aus_dict(erkennung.entwurf), bestand,
+        )
+    kosten = (
+        None if erkennung.kosten is None
+        else KostenAusgabe(
+            **entwurf_lauf.kosten_zu_dict(entwurf_lauf.kosten_aus_dict(erkennung.kosten)),
+        )
+    )
+    return ErkennungAusgabe(
+        id = erkennung.id,
+        profil_slug = erkennung.profil_slug,
+        zustand = erkennung.zustand,
+        eingereicht_am = erkennung.eingereicht_am,
+        gestartet_am = erkennung.gestartet_am,
+        beendet_am = erkennung.beendet_am,
+        bilder = erkennung.bilder,
+        entwurf = entwurf,
+        kosten = kosten,
+        meldung = erkennung.meldung,
+    )
+
+
+@router.post("/erkennungen", response_model = ErkennungAusgabe, status_code = 202)
+async def erkennung_starten(
+    request: Request,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Form()],
+    bilder: Annotated[list[UploadFile], File()],
+) -> ErkennungAusgabe:
+    """Nimmt Bilder an und reiht die teure Analyse im Hintergrund ein."""
+    p = profile_dienst.nach_slug(conn, profil)
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    if p is None:  # `_profil_wurzel` wirft bereits; nur fuer den Typchecker.
+        raise FachlicherFehler("Profil nicht gefunden.", status = 404, feld = "profil")
+    _bilder_pruefen(bilder, cfg)
+    inhalte = await _dateien_lesen(bilder)
+    if not inhalte:
+        raise FachlicherFehler("Ohne Bild kann kein Entwurf erkannt werden.", status = 400, feld = "bilder")
+
+    warteschlange: erkennungswarteschlange.ErkennungsWarteschlange = request.app.state.ki_warteschlange
+    lauf = await warteschlange.einreihen(
+        conn,
+        profil_id = p.id,
+        profil_slug = p.slug,
+        profil_wurzel = wurzel,
+        inhalte = inhalte,
+    )
+    return _erkennung_als_ausgabe(lauf)
+
+
+@router.get("/erkennungen", response_model = list[ErkennungAusgabe])
+def erkennungen(
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Query(min_length = 1, max_length = 32)],
+) -> list[ErkennungAusgabe]:
+    """Liefert laufende und pruefbare Entwuerfe eines Profils."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    bestand = bestand_dienst.bestand_lesen(wurzel)
+    return [
+        _erkennung_als_ausgabe(lauf, bestand)
+        for lauf in erkennungswarteschlange.liste(conn, profil)
+    ]
+
+
+@router.get("/erkennungen/{erkennung_id}", response_model = ErkennungAusgabe)
+def erkennung_einzeln(
+    erkennung_id: int,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Query(min_length = 1, max_length = 32)],
+) -> ErkennungAusgabe:
+    """Liest einen Entwurf nur aus dem angefragten Profil."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    lauf = erkennungswarteschlange.einzeln(conn, erkennung_id, profil)
+    return _erkennung_als_ausgabe(lauf, bestand_dienst.bestand_lesen(wurzel))
 
 
 class AnlegenAntwort(BaseModel):
@@ -406,6 +496,58 @@ def _pakete_lesen(roh: str | None) -> list[str]:
     return namen
 
 
+def _anzeige_anlegen_aus_inhalten(
+    wurzel: Path,
+    *,
+    roh_entwurf: dict[str, Any],
+    roh_antworten: dict[str, Any],
+    inhalte: list[bytes],
+    kategorie: str | None,
+    versandpakete: list[str],
+    preis: float | None,
+) -> AnlegenAntwort:
+    """Legt einen bereits geprueften Entwurf mit seinen Bildern lokal an."""
+    vorschlag = entwurf_dienst.aus_antwort(roh_entwurf)
+    antworten = {str(k): str(v) for k, v in roh_antworten.items() if v is not None}
+    fertig = entwurf_dienst.anwenden(vorschlag, antworten)
+
+    if not inhalte:
+        raise FachlicherFehler("Ohne Bild wird keine Anzeige angelegt.", status = 400, feld = "bilder")
+
+    felder = entwurf_dienst.als_anzeigenfelder(fertig)
+
+    # Kategorie und Versand kommen NUR, wenn der Mensch einen Vorschlag
+    # angeklickt hat. Beide werden gegen den Katalog geprueft, nicht
+    # uebernommen wie geliefert: Der Weg fuehrt zwar ueber unsere eigene
+    # Oberflaeche, aber ein Endpunkt ist eine Schnittstelle und keine
+    # Vertrauensbeziehung.
+    if kategorie:
+        if not any(k.wert == kategorie for k in katalog.kategorien()):
+            raise FachlicherFehler(
+                "Diese Kategorie steht nicht im Katalog.", status = 422, feld = "kategorie",
+            )
+        felder["category"] = kategorie
+
+    # Ein Preis kommt nur ueber diesen Weg in die Anzeige - angeklickt oder
+    # eingetippt, nie aus der Schaetzung, siehe `als_anzeigenfelder`.
+    if preis is not None:
+        if preis <= 0:
+            raise FachlicherFehler(
+                "Ein Preis muss groesser als null sein.", status = 422, feld = "preis",
+            )
+        felder["price"] = round(preis, 2)
+        felder["price_type"] = "NEGOTIABLE"
+
+    if versandpakete:
+        felder["shipping_type"] = "SHIPPING"
+        felder["shipping_options"] = versandpakete
+
+    angelegt = anlegen_dienst.anlegen(wurzel, felder, inhalte)
+    return AnlegenAntwort(
+        datei = angelegt.datei, titel = angelegt.titel, bilder = angelegt.bilder,
+    )
+
+
 @router.post("/anlegen", response_model = AnlegenAntwort, status_code = 201)
 async def anzeige_anlegen(
     conn: Verbindung,
@@ -426,6 +568,8 @@ async def anzeige_anlegen(
     """
     wurzel = _profil_wurzel(conn, cfg, profil)
 
+    _bilder_pruefen(bilder, cfg)
+
     try:
         roh_entwurf: dict[str, Any] = json.loads(entwurf_json)
         roh_antworten: dict[str, Any] = json.loads(antworten_json or "{}")
@@ -434,45 +578,52 @@ async def anzeige_anlegen(
     if not isinstance(roh_entwurf, dict) or not isinstance(roh_antworten, dict):
         raise FachlicherFehler("Der Entwurf hatte die falsche Form.", status = 400)
 
-    vorschlag = entwurf_dienst.aus_antwort(roh_entwurf)
-    antworten = {str(k): str(v) for k, v in roh_antworten.items() if v is not None}
-    fertig = entwurf_dienst.anwenden(vorschlag, antworten)
-
     inhalte = await _dateien_lesen(bilder)
-    if not inhalte:
-        raise FachlicherFehler("Ohne Bild wird keine Anzeige angelegt.", status = 400, feld = "bilder")
-
-    felder = entwurf_dienst.als_anzeigenfelder(fertig)
-
-    # Kategorie und Versand kommen NUR, wenn der Mensch einen Vorschlag
-    # angeklickt hat. Beide werden gegen den Katalog geprueft, nicht
-    # uebernommen wie geliefert: Der Weg fuehrt zwar ueber unsere eigene
-    # Oberflaeche, aber ein Endpunkt ist eine Schnittstelle und keine
-    # Vertrauensbeziehung.
-    if kategorie:
-        if not any(k.wert == kategorie for k in katalog.kategorien()):
-            raise FachlicherFehler(
-                "Diese Kategorie steht nicht im Katalog.", status = 422, feld = "kategorie",
-            )
-        felder["category"] = kategorie
-
-    # Ein Preis kommt nur ueber diesen Weg in die Anzeige - angeklickt oder
-    # eingetippt, nie aus der Schaetzung. `als_anzeigenfelder` laesst das Feld
-    # sonst leer, siehe die Begruendung dort.
-    if preis is not None:
-        if preis <= 0:
-            raise FachlicherFehler(
-                "Ein Preis muss groesser als null sein.", status = 422, feld = "preis",
-            )
-        felder["price"] = round(preis, 2)
-        felder["price_type"] = "NEGOTIABLE"
-
-    pakete = _pakete_lesen(versandpakete_json)
-    if pakete:
-        felder["shipping_type"] = "SHIPPING"
-        felder["shipping_options"] = pakete
-
-    angelegt = anlegen_dienst.anlegen(wurzel, felder, inhalte)
-    return AnlegenAntwort(
-        datei = angelegt.datei, titel = angelegt.titel, bilder = angelegt.bilder,
+    return _anzeige_anlegen_aus_inhalten(
+        wurzel,
+        roh_entwurf = roh_entwurf,
+        roh_antworten = roh_antworten,
+        inhalte = inhalte,
+        kategorie = kategorie,
+        versandpakete = _pakete_lesen(versandpakete_json),
+        preis = preis,
     )
+
+
+@router.post("/erkennungen/{erkennung_id}/anlegen", response_model = AnlegenAntwort, status_code = 201)
+def erkennung_anlegen(
+    erkennung_id: int,
+    daten: ErkennungAnlegenEingabe,
+    request: Request,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Query(min_length = 1, max_length = 32)],
+) -> AnlegenAntwort:
+    """Speichert einen fertigen Hintergrundentwurf lokal ohne neuen KI-Aufruf."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    warteschlange: erkennungswarteschlange.ErkennungsWarteschlange = request.app.state.ki_warteschlange
+    lauf = warteschlange.fuer_anlegen(conn, erkennung_id, profil)
+    if lauf.entwurf is None:
+        warteschlange.speichern_zuruecksetzen(conn, erkennung_id)
+        raise FachlicherFehler("Zu diesem Lauf gibt es noch keinen Entwurf.", status = 409)
+
+    roh_entwurf = dict(lauf.entwurf)
+    if daten.beschreibung is not None:
+        roh_entwurf["beschreibung"] = daten.beschreibung
+    try:
+        bilder = warteschlange.bilder_fuer_anlegen(conn, erkennung_id, profil, wurzel)
+        ergebnis = _anzeige_anlegen_aus_inhalten(
+            wurzel,
+            roh_entwurf = roh_entwurf,
+            roh_antworten = daten.antworten,
+            inhalte = bilder,
+            kategorie = daten.kategorie,
+            versandpakete = _pakete_lesen(json.dumps(daten.versandpakete)),
+            preis = daten.preis,
+        )
+    except Exception:
+        warteschlange.speichern_zuruecksetzen(conn, erkennung_id)
+        raise
+
+    warteschlange.speichern_abgeschlossen(conn, erkennung_id, profil, wurzel)
+    return ergebnis

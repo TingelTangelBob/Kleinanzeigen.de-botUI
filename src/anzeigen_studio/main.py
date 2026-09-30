@@ -17,8 +17,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from anzeigen_studio import __version__
+from anzeigen_studio.ai import erkennungswarteschlange
 from anzeigen_studio.api import abgleich as abgleich_api
-from anzeigen_studio.api import verlaengern as verlaengern_api
 from anzeigen_studio.api import archiv as archiv_api
 from anzeigen_studio.api import auth as auth_api
 from anzeigen_studio.api import bestand as bestand_api
@@ -28,6 +28,7 @@ from anzeigen_studio.api import jobs as jobs_api
 from anzeigen_studio.api import katalog as katalog_api
 from anzeigen_studio.api import ki as ki_api
 from anzeigen_studio.api import profile as profile_api
+from anzeigen_studio.api import verlaengern as verlaengern_api
 from anzeigen_studio.bestand import tagesabgleich
 from anzeigen_studio.core import db, errors, schutz
 from anzeigen_studio.core.settings import Settings
@@ -77,10 +78,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 alt = tagesabgleich.aufraeumen(conn)
             if alt:
                 LOG.info("%d alte Abgleich-Meldung(en) entfernt", alt)
+            ki_verwaist = erkennungswarteschlange.verwaiste_aufraeumen(conn)
+            if ki_verwaist:
+                LOG.warning(
+                    "%d KI-Erkennung(en) als abgebrochen markiert (Neustart)",
+                    ki_verwaist,
+                )
         finally:
             conn.close()
 
         _app.state.warteschlange = Warteschlange(cfg)
+        _app.state.ki_warteschlange = erkennungswarteschlange.ErkennungsWarteschlange(cfg, parallel = 2)
         # Der Zeitgeber des taeglichen Abgleichs (AP-3.12). Er laeuft immer mit,
         # tut aber nichts, solange kein Profil den Schalter gesetzt hat - die
         # Vorgabe in der Datenbank ist "aus". Ohne diesen Start waere der
@@ -91,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await _app.state.zeitgeber.stillegen()
+            await _app.state.ki_warteschlange.stillegen()
             await _app.state.warteschlange.stillegen()
 
     app = FastAPI(

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 #: Vorgabe des Datenverzeichnisses. Im Container das Volume, lokal ein Unterordner.
@@ -17,7 +17,8 @@ _DEFAULT_DATA_DIR = "/data"
 #: Vorgaben des KI-Moduls. Stehen hier und nicht nur in `from_env`, damit
 #: Dataclass-Vorgabe und Umgebungslesung nicht auseinanderlaufen koennen.
 _DEFAULT_KI_MODELL = "gpt-5.6-luna"
-_DEFAULT_KI_BILDKANTE = 768
+_DEFAULT_KI_BILDKANTE = 512
+_DEFAULT_KI_MAX_BILDER = 4
 
 #: Monatsgrenze fuer KI-Aufrufe in US-Dollar (AP-4.7). Bei rund 0,13 Cent je
 #: Entwurf sind 5 Dollar ueber 3800 Entwuerfe - grosszuegig fuer den
@@ -81,7 +82,7 @@ class Settings:
     #: Schluessel fuer die Verschluesselung der Zugangsdaten (AP-1.4).
     #: Bewusst ohne Vorgabewert - ein fest eingebauter Standardschluessel waere
     #: schlimmer als gar keine Verschluesselung, weil er Sicherheit vortaeuscht.
-    secret_key: str | None
+    secret_key: str | None = field(repr = False)
 
     #: Entwicklungsmodus: ausfuehrlichere Fehler, CORS fuer den Vite-Server.
     dev_mode: bool
@@ -100,9 +101,9 @@ class Settings:
     ki_modell: str = _DEFAULT_KI_MODELL
 
     #: Obergrenze fuer die Bildkante vor dem Versand an den Anbieter (AP-4.7).
-    #: 768 px ergibt vier Kacheln à 140 Token plus 70 Grundtoken = 630 Token je
-    #: Bild. Groesser kostet mehr, ohne fuer die Erkennung eines
-    #: Verkaufsgegenstands erkennbar mehr zu liefern.
+    #: 512 px hält die Bildkosten niedrig und reicht für Gegenstand, Marke und
+    #: grobe Gebrauchsspuren. Größere Bilder kosten mehr, ohne für die Erkennung
+    #: eines Verkaufsgegenstands erkennbar mehr zu liefern.
     ki_bildkante: int = _DEFAULT_KI_BILDKANTE
 
     #: Wie viel je Kalendermonat hoechstens fuer KI-Entwuerfe ausgegeben
@@ -110,6 +111,17 @@ class Settings:
     #: werden kann die Grenze nur um den Betrag eines einzelnen Aufrufs,
     #: weil vorher niemand weiss, wie viele Token eine Antwort braucht.
     ki_budget_usd: float = _DEFAULT_KI_BUDGET_USD
+
+    #: Gehostete Installationen verwenden den vom Betreiber gesetzten
+    #: Anbieter-Schluessel. In der Open-Source-Variante bleibt das Feld leer und
+    #: der Schluessel liegt verschluesselt in der Datenbank.
+    hosted: bool = False
+    openai_api_schluessel: str | None = field(default = None, repr = False)
+
+    #: Harte Obergrenze fuer Bilder je KI-Entwurf. Mehr Bilder wuerden nur mehr
+    #: Verbrauch erzeugen; die Auswahl wird im Browser angezeigt und hier noch
+    #: einmal erzwungen, damit sie nicht per direktem HTTP-Aufruf umgangen wird.
+    ki_max_bilder: int = _DEFAULT_KI_MAX_BILDER
 
     @property
     def database_path(self) -> Path:
@@ -121,6 +133,7 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> Settings:
+        hosted = _env_flag("ANZEIGEN_STUDIO_GEHOSTET")
         return cls(
             data_dir = Path(os.environ.get("ANZEIGEN_STUDIO_DATA_DIR", _DEFAULT_DATA_DIR)),
             secret_key = os.environ.get("ANZEIGEN_STUDIO_SECRET_KEY") or None,
@@ -134,6 +147,15 @@ class Settings:
             ki_budget_usd = _env_kommazahl(
                 "ANZEIGEN_STUDIO_KI_BUDGET_USD", _DEFAULT_KI_BUDGET_USD,
             ),
+            hosted = hosted,
+            openai_api_schluessel = (
+                os.environ.get("ANZEIGEN_STUDIO_OPENAI_API_KEY") or None
+                if hosted else None
+            ),
+            ki_max_bilder = _env_zahl(
+                "ANZEIGEN_STUDIO_KI_MAX_BILDER", _DEFAULT_KI_MAX_BILDER,
+                mindestens = 1, hoechstens = _DEFAULT_KI_MAX_BILDER,
+            ),
         )
 
     def missing_for_production(self) -> list[str]:
@@ -145,4 +167,6 @@ class Settings:
         missing: list[str] = []
         if not self.secret_key:
             missing.append("ANZEIGEN_STUDIO_SECRET_KEY")
+        if self.hosted and not self.openai_api_schluessel:
+            missing.append("ANZEIGEN_STUDIO_OPENAI_API_KEY")
         return missing

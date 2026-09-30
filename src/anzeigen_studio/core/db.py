@@ -395,6 +395,31 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         CREATE INDEX idx_ebay_zugang_profil ON ebay_zugang(profil_id);
         """,
     ),
+    (
+        16,
+        "ki-erkennungswarteschlange",
+        """
+        -- KI-Erkennungen laufen unabhaengig vom Bot und duerfen deshalb auch
+        -- parallel eingereiht werden. Der Entwurf bleibt nach dem Anbieter-
+        -- aufruf zur menschlichen Pruefung erhalten.
+        CREATE TABLE ki_entwurf_lauf (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            profil_id      INTEGER NOT NULL REFERENCES profil(id) ON DELETE CASCADE,
+            bilder_pfad    TEXT NOT NULL,
+            bilder_anzahl  INTEGER NOT NULL,
+            zustand        TEXT NOT NULL,
+            eingereicht_am TEXT NOT NULL,
+            gestartet_am   TEXT,
+            beendet_am     TEXT,
+            entwurf        TEXT,
+            kosten         TEXT,
+            meldung        TEXT
+        );
+
+        CREATE INDEX idx_ki_entwurf_lauf_profil
+            ON ki_entwurf_lauf(profil_id, zustand, id);
+        """,
+    ),
 ]
 
 

@@ -166,11 +166,24 @@ export interface Versandpaket {
 
 // ------------------------------------------------------------------ KI (Phase 4)
 
+/** Ein wählbares KI-Modell. Preise in USD je 1 Mio. Token. */
+export interface KiModell {
+  kennung: string;
+  name: string;
+  beschreibung: string;
+  preis_eingabe_usd: number;
+  preis_ausgabe_usd: number;
+}
+
 export interface KiStatus {
   hinterlegt: boolean;
   endet_auf: string | null;
   geaendert_am: string | null;
+  /** Das Modell, mit dem die nächste Analyse läuft. */
   modell: string;
+  /** Geprüfte Auswahl; leer, wenn der Betreiber das Modell festlegt. */
+  modelle?: KiModell[];
+  modell_waehlbar?: boolean;
   bildkante: number;
   /** Verbrauch des laufenden Kalendermonats und die Grenze dafür (AP-4.7). */
   verbrauch_usd: number;
@@ -181,6 +194,9 @@ export interface KiStatus {
   schluessel_selbst_setzbar: boolean;
   /** Servergrenze je Entwurf, damit keine unerwarteten Bilder versendet werden. */
   max_bilder: number;
+  /** Stapel: gleichzeitige Analysen und Obergrenze wartender je Profil. */
+  parallel?: number;
+  max_offen?: number;
 }
 
 export interface KiOption {
@@ -261,7 +277,8 @@ export type KiErkennungZustand =
   | 'speichert'
   | 'gespeichert'
   | 'gescheitert'
-  | 'abgebrochen';
+  | 'abgebrochen'
+  | 'verworfen';
 
 /** Ein Entwurf, der unabhängig vom geöffneten Browserfenster weiterläuft. */
 export interface KiErkennung {

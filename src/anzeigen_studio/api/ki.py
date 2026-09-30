@@ -4,6 +4,7 @@
 #
 # HTTP-Endpunkte des KI-Entwurfsmoduls (AP-4.1, AP-4.4, AP-4.6).
 # Geaendert am 2026-09-13: asynchrone, persistente Erkennungswarteschlange.
+# Geaendert am 2026-09-30: KI-Modell aus einer geprueften Liste waehlbar.
 #
 # Drei Wege, und dass der Hintergrundweg getrennt ist, ist Absicht:
 #
@@ -33,6 +34,7 @@ from anzeigen_studio.ai import bilder as ki_bilder
 from anzeigen_studio.ai import budget as budget_dienst
 from anzeigen_studio.ai import entwurf as entwurf_dienst
 from anzeigen_studio.ai import entwurf_lauf, erkennungswarteschlange
+from anzeigen_studio.ai import modelle as modell_katalog
 from anzeigen_studio.ai import vorschlag as vorschlag_dienst
 from anzeigen_studio.bestand import anlegen as anlegen_dienst
 from anzeigen_studio.core import db, ki_zugang
@@ -76,11 +78,24 @@ def _profil_wurzel(conn: sqlite3.Connection, cfg: Settings, slug: str) -> Path:
 
 # ---------------------------------------------------------------- Schluessel
 
+class ModellAusgabe(BaseModel):
+    kennung: str
+    name: str
+    beschreibung: str
+    #: USD je 1 Mio. Token - fuer den Preisvergleich in der Auswahl.
+    preis_eingabe_usd: float
+    preis_ausgabe_usd: float
+
+
 class StatusAusgabe(BaseModel):
     hinterlegt: bool
     endet_auf: str | None = None
     geaendert_am: str | None = None
+    #: Das Modell, mit dem der naechste Entwurf erzeugt wird.
     modell: str
+    #: Was zur Auswahl steht. Leer, wenn der Betreiber das Modell festlegt.
+    modelle: list[ModellAusgabe] = []
+    modell_waehlbar: bool = False
     bildkante: int
     #: Verbrauch des laufenden Monats (AP-4.7). Steht im Status, damit die
     #: Grenze sichtbar ist, bevor sie greift - nicht erst als Fehlermeldung.
@@ -92,10 +107,18 @@ class StatusAusgabe(BaseModel):
     modus: Literal["open_source", "gehostet"]
     schluessel_selbst_setzbar: bool
     max_bilder: int
+    #: Stapel-Erkennung: wie viele Analysen gleichzeitig laufen und wie viele
+    #: je Profil hoechstens warten duerfen.
+    parallel: int = 1
+    max_offen: int = erkennungswarteschlange.MAX_OFFEN_JE_PROFIL
 
 
 class SchluesselEingabe(BaseModel):
     api_schluessel: str
+
+
+class ModellEingabe(BaseModel):
+    modell: str = Field(min_length = 1, max_length = 64)
 
 
 def _status_ausgabe(
@@ -106,13 +129,23 @@ def _status_ausgabe(
     stand = budget_dienst.verbrauch(conn, grenze_usd = cfg.ki_budget_usd)
     return StatusAusgabe(
         hinterlegt = hinterlegt, endet_auf = endet_auf, geaendert_am = geaendert_am,
-        modell = cfg.ki_modell, bildkante = cfg.ki_bildkante,
+        modell = modell_katalog.aktiv(conn, cfg).kennung,
+        modelle = [] if cfg.hosted else [
+            ModellAusgabe(
+                kennung = m.kennung, name = m.name, beschreibung = m.beschreibung,
+                preis_eingabe_usd = m.preis_eingabe_usd, preis_ausgabe_usd = m.preis_ausgabe_usd,
+            )
+            for m in modell_katalog.MODELLE
+        ],
+        modell_waehlbar = not cfg.hosted,
+        bildkante = cfg.ki_bildkante,
         verbrauch_usd = round(stand.usd, 4),
         budget_usd = round(stand.grenze_usd, 2),
         verbrauch_aufrufe = stand.aufrufe,
         modus = "gehostet" if cfg.hosted else "open_source",
         schluessel_selbst_setzbar = not cfg.hosted,
         max_bilder = cfg.ki_max_bilder,
+        parallel = cfg.ki_parallel,
     )
 
 
@@ -129,6 +162,18 @@ def status(conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
         endet_auf = None if z is None else z.endet_auf,
         geaendert_am = None if z is None else z.geaendert_am,
     )
+
+
+@router.put("/modell", response_model = StatusAusgabe)
+def modell_waehlen(daten: ModellEingabe, conn: Verbindung, cfg: Konfiguration) -> StatusAusgabe:
+    """Waehlt das Modell fuer kuenftige Entwuerfe.
+
+    Gilt ab der naechsten Analyse, die startet - auch fuer schon wartende.
+    Eine laufende Anfrage beim Anbieter bleibt beim alten Modell.
+    """
+    modell = modell_katalog.waehlen(conn, cfg, daten.modell)
+    LOG.info("KI-Modell gewählt: %s", modell.kennung)
+    return status(conn, cfg)
 
 
 @router.put("/schluessel", response_model = StatusAusgabe)
@@ -454,6 +499,41 @@ def erkennung_einzeln(
     wurzel = _profil_wurzel(conn, cfg, profil)
     lauf = erkennungswarteschlange.einzeln(conn, erkennung_id, profil)
     return _erkennung_als_ausgabe(lauf, bestand_dienst.bestand_lesen(wurzel))
+
+
+@router.post(
+    "/erkennungen/{erkennung_id}/wiederholen", response_model = ErkennungAusgabe, status_code = 202,
+)
+async def erkennung_wiederholen(
+    erkennung_id: int,
+    request: Request,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Query(min_length = 1, max_length = 32)],
+) -> ErkennungAusgabe:
+    """Startet eine gescheiterte Analyse mit den vorgehaltenen Fotos neu. Kostet Geld.
+
+    Asynchron, nicht wegen eines `await`, sondern weil die Warteschlange ihre
+    Aufgabe in der laufenden Ereignisschleife anlegt. Eine `def`-Route liefe
+    im Threadpool, und dort gibt es keine.
+    """
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    warteschlange: erkennungswarteschlange.ErkennungsWarteschlange = request.app.state.ki_warteschlange
+    return _erkennung_als_ausgabe(warteschlange.wiederholen(conn, erkennung_id, profil, wurzel))
+
+
+@router.delete("/erkennungen/{erkennung_id}", status_code = 204)
+def erkennung_verwerfen(
+    erkennung_id: int,
+    request: Request,
+    conn: Verbindung,
+    cfg: Konfiguration,
+    profil: Annotated[str, Query(min_length = 1, max_length = 32)],
+) -> None:
+    """Verwirft einen nicht gebrauchten Entwurf. Legt nichts an, loescht keine Anzeige."""
+    wurzel = _profil_wurzel(conn, cfg, profil)
+    warteschlange: erkennungswarteschlange.ErkennungsWarteschlange = request.app.state.ki_warteschlange
+    warteschlange.verwerfen(conn, erkennung_id, profil, wurzel)
 
 
 class AnlegenAntwort(BaseModel):

@@ -420,6 +420,24 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             ON ki_entwurf_lauf(profil_id, zustand, id);
         """,
     ),
+    (
+        17,
+        "einstellung",
+        """
+        -- Installationsweite Einstellungen ohne Geheimnis (2026-09-30).
+        --
+        -- Erster Eintrag ist das KI-Modell aus der Oberflaeche. Getrennt von
+        -- `einstellung_geheim`: Dort steht nur Chiffrat, und ein Klartextwert
+        -- in derselben Tabelle wuerde die Regel "hier liegt nie Klartext"
+        -- aufweichen. Welche Werte erlaubt sind, prueft die Anwendung
+        -- (ai/modelle.py) - die Tabelle nimmt nur, was dort durchkommt.
+        CREATE TABLE einstellung (
+            schluessel   TEXT PRIMARY KEY,
+            wert         TEXT NOT NULL,
+            geaendert_am TEXT NOT NULL
+        );
+        """,
+    ),
 ]
 
 

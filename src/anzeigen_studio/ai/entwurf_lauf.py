@@ -19,6 +19,7 @@ from anzeigen_studio.ai import anbieter as anbieter_dienst
 from anzeigen_studio.ai import bilder as ki_bilder
 from anzeigen_studio.ai import budget as budget_dienst
 from anzeigen_studio.ai import entwurf as entwurf_dienst
+from anzeigen_studio.ai import modelle as modell_katalog
 from anzeigen_studio.ai import stil as stil_dienst
 from anzeigen_studio.core import ki_zugang
 from anzeigen_studio.core.errors import FachlicherFehler
@@ -30,11 +31,9 @@ if TYPE_CHECKING:
     from anzeigen_studio.core.settings import Settings
 
 
-# Preise des eingestellten Modells in USD je 1 Mio. Token, Stand 2026-08-27.
-# Die Werte sind nur eine Schaetzung fuer die Anzeige; abgerechnet wird beim
-# Anbieter. Die Quelle liegt in 00_Agentenordner/04_Serververwaltung.
-_PREIS_EINGABE_USD_JE_TOKEN = 0.20 / 1_000_000
-_PREIS_AUSGABE_USD_JE_TOKEN = 1.20 / 1_000_000
+# Die Preise je Modell stehen seit dem 2026-09-30 im Katalog (ai/modelle.py),
+# weil das Modell in der Oberflaeche waehlbar ist und nicht mehr eines fuer
+# alle gilt.
 
 
 @dataclass(frozen = True, slots = True)
@@ -99,7 +98,10 @@ async def erzeugen(
         inhalte, kante = cfg.ki_bildkante, max_bilder = cfg.ki_max_bilder,
     )
     stilprofil = stil_dienst.aus_bestand(profil_wurzel)
-    dienst = anbieter_dienst.OpenAI(api_schluessel = api_schluessel, modell = cfg.ki_modell)
+    modell = modell_katalog.aktiv(conn, cfg)
+    dienst = anbieter_dienst.OpenAI(
+        api_schluessel = api_schluessel, modell = modell.kennung, denkstufe = modell.denkstufe,
+    )
     antwort = await dienst.erkennen(
         vorbereitet,
         anweisung = entwurf_dienst.anweisung(stilprofil.anweisungsteil()),
@@ -108,9 +110,9 @@ async def erzeugen(
     )
 
     usd = (
-        antwort.token_eingabe * _PREIS_EINGABE_USD_JE_TOKEN
-        + antwort.token_ausgabe * _PREIS_AUSGABE_USD_JE_TOKEN
-    )
+        antwort.token_eingabe * modell.preis_eingabe_usd
+        + antwort.token_ausgabe * modell.preis_ausgabe_usd
+    ) / 1_000_000
     # Gebucht wird auch bei einer unbrauchbaren strukturierten Antwort: Der
     # Anbieter hat den Aufruf verarbeitet und berechnet ihn moeglicherweise.
     budget_dienst.buchen(

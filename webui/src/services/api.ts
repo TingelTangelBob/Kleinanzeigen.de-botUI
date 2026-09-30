@@ -247,6 +247,9 @@ export const api = {
     schluesselSetzen: (apiSchluessel: string) =>
       anfrage<KiStatus>('/ki/schluessel', { method: 'PUT', ...json({ api_schluessel: apiSchluessel }) }),
     schluesselEntfernen: () => anfrage<KiStatus>('/ki/schluessel', { method: 'DELETE' }),
+    /** Nur Kennungen aus `KiStatus.modelle`; alles andere weist der Server ab. */
+    modellWaehlen: (modell: string) =>
+      anfrage<KiStatus>('/ki/modell', { method: 'PUT', ...json({ modell }) }),
 
     /** Reiht eine Bildanalyse ein; die kostenpflichtige Arbeit läuft danach serverseitig. */
     erkennungStarten: (profil: string, dateien: File[]) => {
@@ -260,6 +263,18 @@ export const api = {
     erkennung: (profil: string, id: number) =>
       anfrage<KiErkennung>(
         `/ki/erkennungen/${id}?profil=${encodeURIComponent(profil)}`,
+      ),
+    /** Startet eine gescheiterte Analyse mit den vorgehaltenen Fotos neu. Kostet Geld. */
+    erkennungWiederholen: (profil: string, id: number) =>
+      anfrage<KiErkennung>(
+        `/ki/erkennungen/${id}/wiederholen?profil=${encodeURIComponent(profil)}`,
+        { method: 'POST' },
+      ),
+    /** Verwirft einen nicht gebrauchten Entwurf. Keine Anzeige wird gelöscht. */
+    erkennungVerwerfen: (profil: string, id: number) =>
+      anfrage<void>(
+        `/ki/erkennungen/${id}?profil=${encodeURIComponent(profil)}`,
+        { method: 'DELETE' },
       ),
     erkennungAnlegen: (profil: string, id: number, daten: KiErkennungAnlegen) =>
       anfrage<KiAnlegenAntwort>(

@@ -32,6 +32,8 @@ services:
       ANZEIGEN_STUDIO_GEHOSTET: ${ANZEIGEN_STUDIO_GEHOSTET:-false}
       ANZEIGEN_STUDIO_OPENAI_API_KEY: ${ANZEIGEN_STUDIO_OPENAI_API_KEY:-}
       ANZEIGEN_STUDIO_KI_MAX_BILDER: ${ANZEIGEN_STUDIO_KI_MAX_BILDER:-4}
+      ANZEIGEN_STUDIO_KI_MODELL: ${ANZEIGEN_STUDIO_KI_MODELL:-gpt-6-luna}
+      ANZEIGEN_STUDIO_KI_PARALLEL: ${ANZEIGEN_STUDIO_KI_PARALLEL:-4}
       TZ: Europe/Berlin
       # Der Bot waehlt seine Sprache aus LANG (utils/i18n.py). Ohne diese Zeile
       # steht dort C.UTF-8, und das gesamte Protokoll erscheint auf Englisch -

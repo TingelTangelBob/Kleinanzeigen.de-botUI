@@ -88,7 +88,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             conn.close()
 
         _app.state.warteschlange = Warteschlange(cfg)
-        _app.state.ki_warteschlange = erkennungswarteschlange.ErkennungsWarteschlange(cfg, parallel = 2)
+        _app.state.ki_warteschlange = erkennungswarteschlange.ErkennungsWarteschlange(
+            cfg, parallel = cfg.ki_parallel,
+        )
         # Der Zeitgeber des taeglichen Abgleichs (AP-3.12). Er laeuft immer mit,
         # tut aber nichts, solange kein Profil den Schalter gesetzt hat - die
         # Vorgabe in der Datenbank ist "aus". Ohne diesen Start waere der

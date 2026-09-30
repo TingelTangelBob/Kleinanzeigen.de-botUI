@@ -89,6 +89,8 @@ class OpenAI:
 
     api_schluessel: str
     modell: str
+    #: `reasoning.effort`, oder None fuer Modelle ohne diese Angabe.
+    denkstufe: str | None = None
 
     async def erkennen(
         self,
@@ -106,7 +108,7 @@ class OpenAI:
             for bild in bilder
         )
 
-        rumpf = {
+        rumpf: dict[str, Any] = {
             "model": self.modell,
             "input": [{"role": "user", "content": inhalt}],
             "text": {
@@ -118,6 +120,9 @@ class OpenAI:
                 },
             },
         }
+
+        if self.denkstufe is not None:
+            rumpf["reasoning"] = {"effort": self.denkstufe}
 
         LOG.info(
             "KI-Anfrage: Modell %s, %d Bilder, %d Byte Bilddaten",

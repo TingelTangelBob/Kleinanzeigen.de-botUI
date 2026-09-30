@@ -16,9 +16,15 @@ _DEFAULT_DATA_DIR = "/data"
 
 #: Vorgaben des KI-Moduls. Stehen hier und nicht nur in `from_env`, damit
 #: Dataclass-Vorgabe und Umgebungslesung nicht auseinanderlaufen koennen.
-_DEFAULT_KI_MODELL = "gpt-5.6-luna"
+_DEFAULT_KI_MODELL = "gpt-6-luna"
 _DEFAULT_KI_BILDKANTE = 512
 _DEFAULT_KI_MAX_BILDER = 4
+
+#: Wie viele Fotoanalysen gleichzeitig beim Anbieter laufen (Stapel-Erkennung,
+#: 2026-09-30). Vier halten einen Stapel von zwanzig Anzeigen bei wenigen
+#: Minuten, ohne das Anfragelimit eines neuen Anbieterkontos zu reizen.
+_DEFAULT_KI_PARALLEL = 4
+_MAX_KI_PARALLEL = 8
 
 #: Monatsgrenze fuer KI-Aufrufe in US-Dollar (AP-4.7). Bei rund 0,13 Cent je
 #: Entwurf sind 5 Dollar ueber 3800 Entwuerfe - grosszuegig fuer den
@@ -91,13 +97,14 @@ class Settings:
     #: Oberflaeche - binary_location startet ein beliebiges Programm (AP-1.11).
     chromium: str
 
-    #: Welches Modell das KI-Entwurfsmodul benutzt (AP-4.1).
+    #: Vorgabe fuer das KI-Modell des Entwurfsmoduls (AP-4.1).
     #:
-    #: Serverseitig gesetzt, nicht aus der Oberflaeche: Ein Modellname geht in
-    #: eine Adresse beim Anbieter ein, und was dort landet, soll nicht aus einem
-    #: Formularfeld stammen. Entschieden am 2026-08-27 auf `gpt-5.6-luna` -
-    #: bildfaehig, ~0,13 Cent je Anzeige. Begruendung und Preisvergleich in
-    #: 00_Agentenordner/04_Serververwaltung/KI-API-Zugaenge.md.
+    #: Entschieden am 2026-08-27 auf `gpt-5.6-luna`, am 2026-09-30 auf
+    #: `gpt-6-luna` angehoben (halber Preis, gleiche Faehigkeiten). Seit dem
+    #: 2026-09-30 laesst sich das Modell auch in der Oberflaeche waehlen -
+    #: aber nur aus der geprueften Liste in `ai/modelle.py`, nie als Freitext.
+    #: Dieser Wert gilt, solange dort nichts gewaehlt ist, und in der
+    #: gehosteten Variante immer.
     ki_modell: str = _DEFAULT_KI_MODELL
 
     #: Obergrenze fuer die Bildkante vor dem Versand an den Anbieter (AP-4.7).
@@ -122,6 +129,10 @@ class Settings:
     #: Verbrauch erzeugen; die Auswahl wird im Browser angezeigt und hier noch
     #: einmal erzwungen, damit sie nicht per direktem HTTP-Aufruf umgangen wird.
     ki_max_bilder: int = _DEFAULT_KI_MAX_BILDER
+
+    #: Gleichzeitige KI-Erkennungen. Mehr beschleunigt einen Stapel, aendert
+    #: aber nichts an den Kosten je Entwurf; der Monatsdeckel greift je Aufruf.
+    ki_parallel: int = _DEFAULT_KI_PARALLEL
 
     @property
     def database_path(self) -> Path:
@@ -155,6 +166,10 @@ class Settings:
             ki_max_bilder = _env_zahl(
                 "ANZEIGEN_STUDIO_KI_MAX_BILDER", _DEFAULT_KI_MAX_BILDER,
                 mindestens = 1, hoechstens = _DEFAULT_KI_MAX_BILDER,
+            ),
+            ki_parallel = _env_zahl(
+                "ANZEIGEN_STUDIO_KI_PARALLEL", _DEFAULT_KI_PARALLEL,
+                mindestens = 1, hoechstens = _MAX_KI_PARALLEL,
             ),
         )
 

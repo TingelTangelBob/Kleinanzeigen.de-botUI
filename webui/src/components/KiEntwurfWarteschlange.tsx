@@ -3,9 +3,10 @@
 //
 // Anzeige der serverseitigen KI-Erkennungen (AP-4.8).
 // Neue Datei, Anzeigen-Studio, 2026-09-13.
+// Geändert am 2026-09-30: Stapel - Nachladen von außen, Wiederholen, Verwerfen.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import { api, ApiFehler } from '../services/api';
 import type { KiErkennung, KiErkennungZustand } from '../types';
 
@@ -35,13 +36,17 @@ export function KiEntwurfWarteschlange({
   profil,
   aufZiel,
   kompakt = false,
+  neuLaden = 0,
 }: {
   profil: string;
   aufZiel: (ziel: string) => void;
   kompakt?: boolean;
+  /** Wechselt der Wert, lädt die Liste neu - etwa nach einer Stapelgruppe. */
+  neuLaden?: number;
 }) {
   const [laeufe, setLaeufe] = useState<KiErkennung[]>([]);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [aktion, setAktion] = useState<number | null>(null);
 
   const laden = useCallback(async () => {
     // Aeltere Test- oder Offline-Oberflaechen koennen das neue Ende noch nicht
@@ -58,8 +63,31 @@ export function KiEntwurfWarteschlange({
 
   useEffect(() => {
     void laden();
-  }, [laden]);
+  }, [laden, neuLaden]);
 
+  const wiederholen = async (id: number) => {
+    setAktion(id);
+    try {
+      await api.ki.erkennungWiederholen(profil, id);
+      await laden();
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Konnte nicht neu gestartet werden.');
+    } finally {
+      setAktion(null);
+    }
+  };
+
+  const verwerfen = async (id: number) => {
+    setAktion(id);
+    try {
+      await api.ki.erkennungVerwerfen(profil, id);
+      await laden();
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Konnte nicht verworfen werden.');
+    } finally {
+      setAktion(null);
+    }
+  };
 
   const laufend = useMemo(() => laeufe.some(lauf => LAUFEND.has(lauf.zustand)), [laeufe]);
   useEffect(() => {
@@ -69,7 +97,7 @@ export function KiEntwurfWarteschlange({
   }, [laufend, laden]);
 
   const sichtbar = useMemo(
-    () => laeufe.filter(lauf => SICHTBAR.has(lauf.zustand)).slice(0, kompakt ? 3 : 30),
+    () => laeufe.filter(lauf => SICHTBAR.has(lauf.zustand)).slice(0, kompakt ? 3 : 100),
     [kompakt, laeufe],
   );
 
@@ -84,6 +112,7 @@ export function KiEntwurfWarteschlange({
   }
 
   const pruefbar = sichtbar.filter(lauf => lauf.zustand === 'pruefen').length;
+  const inArbeit = sichtbar.filter(lauf => LAUFEND.has(lauf.zustand)).length;
   return (
     <section className={kompakt ? 'mb-8' : 'mb-8'}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -91,6 +120,9 @@ export function KiEntwurfWarteschlange({
           <Sparkles className="h-4 w-4 text-primary-custom" aria-hidden />
           KI-Entwürfe prüfen
           {pruefbar > 0 && <span className="merkmal merkmal-gelb">{pruefbar}</span>}
+          {inArbeit > 0 && !kompakt && (
+            <span className="text-xs font-normal text-leise">{inArbeit} in Arbeit</span>
+          )}
         </h2>
         <button type="button" onClick={() => aufZiel('warteschlange')} className="btn-leise">
           Warteschlange <ArrowRight className="h-4 w-4" aria-hidden />
@@ -129,6 +161,30 @@ export function KiEntwurfWarteschlange({
                     className="btn-primaer flex-shrink-0 text-xs"
                   >
                     Prüfen
+                  </button>
+                )}
+                {!kompakt && (lauf.zustand === 'gescheitert' || lauf.zustand === 'abgebrochen') && (
+                  <button
+                    type="button"
+                    onClick={() => void wiederholen(lauf.id)}
+                    disabled={aktion !== null}
+                    className="btn-ghost flex-shrink-0 text-xs"
+                    title="Mit denselben Fotos erneut analysieren. Kostet wie eine neue Erkennung."
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                    Erneut
+                  </button>
+                )}
+                {!kompakt && !LAUFEND.has(lauf.zustand) && (
+                  <button
+                    type="button"
+                    onClick={() => void verwerfen(lauf.id)}
+                    disabled={aktion !== null}
+                    className="btn-leise flex-shrink-0 !px-2"
+                    aria-label={`Entwurf „${titel}“ verwerfen`}
+                    title="Entwurf verwerfen. Es wird keine Anzeige gelöscht."
+                  >
+                    <X className="h-4 w-4" aria-hidden />
                   </button>
                 )}
               </div>

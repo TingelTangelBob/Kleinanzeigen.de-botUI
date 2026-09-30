@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Profile anlegen und Zugangsdaten hinterlegen (AP-2.1/2.10, AP-4.1).
+// Geändert am 2026-09-30: KI-Modell aus der geprüften Liste des Servers wählbar.
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, Plus, Sparkles, Trash2, Users } from 'lucide-react';
@@ -104,6 +105,7 @@ function KiZugang() {
   const [eingabe, setEingabe] = useState('');
   const [laeuft, setLaeuft] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [modellLaeuft, setModellLaeuft] = useState(false);
 
   const laden = useCallback(async () => {
     try {
@@ -132,6 +134,23 @@ function KiZugang() {
     }
   };
 
+  const modellWaehlen = async (kennung: string) => {
+    setFehler(null);
+    setModellLaeuft(true);
+    try {
+      setStatus(await api.ki.modellWaehlen(kennung));
+      window.dispatchEvent(new Event(KI_STATUS_EVENT));
+    } catch (ursache) {
+      setFehler(ursache instanceof ApiFehler ? ursache.message : 'Unbekannter Fehler.');
+    } finally {
+      setModellLaeuft(false);
+    }
+  };
+
+  const modelle = status?.modelle ?? [];
+  const gewaehlt = modelle.find(m => m.kennung === status?.modell);
+  const modellWaehlbar = status?.modell_waehlbar === true && modelle.length > 0;
+
   const entfernen = async () => {
     setFehler(null);
     try {
@@ -157,15 +176,38 @@ function KiZugang() {
 
       {status && (
         <p className="mt-3 text-sm text-normal">
-          Modell: <span className="font-mono text-xs">{status.modell}</span>
+          {!modellWaehlbar && <>Modell: <span className="font-mono text-xs">{status.modell}</span>{' · '}</>}
           {status.hinterlegt ? (
             <>
-              {' · Schlüssel hinterlegt'}
+              {'Schlüssel hinterlegt'}
               {status.endet_auf && <> (endet auf <span className="font-mono text-xs">…{status.endet_auf}</span>)</>}
             </>
-          ) : ' · noch nicht eingerichtet'}
+          ) : 'Noch nicht eingerichtet'}
           {status.max_bilder && <> · bis zu {status.max_bilder} Fotos je Entwurf</>}
         </p>
+      )}
+
+      {modellWaehlbar && (
+        <div className="mt-3 max-w-xl">
+          <label htmlFor="ki-modell" className="text-sm font-medium text-stark">KI-Modell</label>
+          <select
+            id="ki-modell"
+            value={status?.modell ?? ''}
+            disabled={modellLaeuft}
+            onChange={ereignis => void modellWaehlen(ereignis.target.value)}
+            className="feld mt-1"
+          >
+            {!gewaehlt && status && <option value={status.modell}>{status.modell}</option>}
+            {modelle.map(modell => (
+              <option key={modell.kennung} value={modell.kennung}>
+                {modell.name} · {usd(modell.preis_eingabe_usd)} / {usd(modell.preis_ausgabe_usd)} je 1 Mio. Token
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-leise">
+            {gewaehlt?.beschreibung ?? 'Vom Server vorgegeben.'} Gilt ab der nächsten Analyse.
+          </p>
+        </div>
       )}
 
       {fehler && (
@@ -215,6 +257,11 @@ function KiZugang() {
       )}
     </section>
   );
+}
+
+/** Anbieterpreise sind in US-Dollar; angezeigt wird im deutschen Format. */
+function usd(betrag: number): string {
+  return `${betrag.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 }
 
 function NeuesProfil({ aufFertig }: { aufFertig: () => void }) {

@@ -3,6 +3,7 @@
 //
 // Fotos rein, Anzeigenentwurf raus (AP-4.4, AP-4.6).
 // UI-Anpassung 2026-09-04: beste Katalogkategorie nach der Bildanalyse vorauswählen.
+// Geändert am 2026-09-30: Stapel-Erkennung für viele Anzeigen auf einmal.
 //
 // Der Ablauf ist bewusst dreigeteilt: Erkennen → prüfen → hochladen. Das
 // Hochladen meint hier den nächsten, ausdrücklich vom Menschen ausgelösten
@@ -23,7 +24,9 @@ import { api, ApiFehler } from '../services/api';
 import { useProfil } from '../context/useProfil';
 import { hashFuerAnzeige } from '../routing';
 import type { KiEntwurf, KiKosten, KiStatus } from '../types';
+import { fotosPruefen } from '../kiFotos';
 import { KiEntwurfWarteschlange } from './KiEntwurfWarteschlange';
+import { StapelErkennung } from './StapelErkennung';
 import { ProfilWarteschlange } from './ProfilWarteschlange';
 
 /** Woran der Vorgang gerade ist. Jede Stufe entspricht etwas Messbarem. */
@@ -34,9 +37,6 @@ type Stufe =
   | { art: 'anlegen' };
 
 const STANDARD_MAX_BILDER = 4;
-
-/** Was der Bot beim Hochladen spaeter wieder lesen kann. HEIC gehoert nicht dazu. */
-const ERLAUBTE_TYPEN = ['image/jpeg', 'image/png', 'image/gif'];
 
 export function NeueAnzeigeSeite({
   aufZiel,
@@ -64,6 +64,10 @@ export function NeueAnzeigeSeite({
   const [fehler, setFehler] = useState<string | null>(null);
   const [angelegt, setAngelegt] = useState<{ titel: string; datei: string } | null>(null);
   const [pruefErkennungId, setPruefErkennungId] = useState<number | null>(erkennungId);
+  const [stapel, setStapel] = useState(false);
+  // Zähler, damit die Entwurfsliste nach einer eingereihten Stapelgruppe
+  // nachlädt - sie pollt nur, solange sie selbst Laufendes kennt.
+  const [neuLaden, setNeuLaden] = useState(0);
   // Der Server ist die Quelle der Wahrheit. Die Vorgabe greift nur solange der
   // Status noch nicht geladen ist; direkte HTTP-Aufrufe werden zusätzlich im
   // Backend begrenzt.
@@ -126,20 +130,8 @@ export function NeueAnzeigeSeite({
     // auch die FileList. React ruft den Aktualisierer spaeter auf, und dann ist
     // sie leer. Genau daran ist die erste Fassung gescheitert: Datei waehlen
     // ging, danach passierte nichts.
-    const gewaehlt = Array.from(liste);
-
-    const unbrauchbar = gewaehlt.filter(datei => !ERLAUBTE_TYPEN.includes(datei.type));
-    if (unbrauchbar.length > 0) {
-      const heic = unbrauchbar.some(d => /hei[cf]/i.test(d.type) || /\.hei[cf]$/i.test(d.name));
-      setFehler(heic
-        ? 'HEIC-Fotos vom iPhone kann das Studio noch nicht lesen. In den iPhone-Einstellungen '
-          + 'unter Kamera → Formate „Maximale Kompatibilität“ wählen, oder das Foto als JPEG exportieren.'
-        : `Nicht lesbar: ${unbrauchbar.map(d => d.name).join(', ')}. Erlaubt sind JPEG, PNG und GIF.`);
-    } else {
-      setFehler(null);
-    }
-
-    const brauchbar = gewaehlt.filter(datei => ERLAUBTE_TYPEN.includes(datei.type));
+    const { brauchbar, fehler: pruefFehler } = fotosPruefen(Array.from(liste));
+    setFehler(pruefFehler);
     if (brauchbar.length === 0) return;
     setDateien(vorher => [...vorher, ...brauchbar].slice(0, maxBilder));
   };
@@ -172,6 +164,7 @@ export function NeueAnzeigeSeite({
       try {
         await api.ki.erkennungStarten(profil, zuStarten);
         setDateien([]);
+        setNeuLaden(n => n + 1);
       } catch (ursache) {
         setFehler(ursache instanceof ApiFehler ? ursache.message : 'Die Erkennung konnte nicht gestartet werden.');
       } finally {
@@ -254,15 +247,46 @@ export function NeueAnzeigeSeite({
       {/* Vor dem Formular, nicht darunter (AP-2.21): Die Auskunft, dass noch
           ein Lauf aussteht, ist erst danach wertlos. */}
       {profil && <ProfilWarteschlange profil={profil} />}
-      {profil && aufZiel && <KiEntwurfWarteschlange profil={profil} aufZiel={aufZiel} />}
+      {profil && aufZiel && <KiEntwurfWarteschlange profil={profil} aufZiel={aufZiel} neuLaden={neuLaden} />}
 
       <section className="karte p-4 sm:p-5">
         <SchrittKopf
           nummer={1}
           titel="Erkennen"
-          text={`Wähle bis zu ${maxBilder} Fotos. Mehrere Ansichten helfen bei der Erkennung.`}
+          text={stapel
+            ? 'Fotos für mehrere Anzeigen auf einmal wählen. Jede Anzeige wird einzeln erkannt und geprüft.'
+            : `Wähle bis zu ${maxBilder} Fotos. Mehrere Ansichten helfen bei der Erkennung.`}
         />
 
+        <div className="reiter-leiste mb-4" role="group" aria-label="Umfang der Erkennung">
+          <button
+            type="button"
+            onClick={() => setStapel(false)}
+            aria-pressed={!stapel}
+            disabled={stufe.art !== 'ruhe'}
+            className={`reiter ${!stapel ? 'reiter-aktiv' : ''}`}
+          >
+            Eine Anzeige
+          </button>
+          <button
+            type="button"
+            onClick={() => setStapel(true)}
+            aria-pressed={stapel}
+            disabled={stufe.art !== 'ruhe' || typeof api.ki?.erkennungStarten !== 'function'}
+            className={`reiter ${stapel ? 'reiter-aktiv' : ''}`}
+          >
+            Mehrere Anzeigen
+          </button>
+        </div>
+
+        {stapel ? (
+          <StapelErkennung
+            profil={profil}
+            kiStatus={kiStatus}
+            hinweis={<DatenschutzHinweis bildkante={kiStatus?.bildkante ?? 512} maxBilder={maxBilder} />}
+            aufEingereiht={() => setNeuLaden(n => n + 1)}
+          />
+        ) : (<>
         <p className="mb-2 text-sm font-medium text-stark">Fotos auswählen</p>
         <BildAuswahl
           dateien={dateien}
@@ -325,6 +349,7 @@ export function NeueAnzeigeSeite({
             )}
           </div>
         )}
+        </>)}
       </section>
 
       {entwurf && !angelegt && (

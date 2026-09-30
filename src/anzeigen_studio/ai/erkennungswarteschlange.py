@@ -4,6 +4,8 @@
 #
 # Persistente Warteschlange fuer KI-Erkennungen.
 # Neue Datei, Anzeigen-Studio, 2026-09-13.
+# Geaendert am 2026-09-30: Stapel - Obergrenze offener Erkennungen,
+# Wiederholen und Verwerfen.
 #
 # Eine Analyse ist kein Browser-Lauf: Sie braucht weder das Kleinanzeigen-Konto
 # noch den Profil-Browser. Deshalb hat sie eine eigene kleine Warteschlange und
@@ -34,6 +36,12 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 OFFENE_ZUSTAENDE = frozenset({"wartet", "laeuft", "speichert"})
+
+#: Hoechstens so viele Erkennungen duerfen je Profil gleichzeitig warten oder
+#: laufen (Stapel-Erkennung, 2026-09-30). Jede kostet Geld; eine Oberflaeche,
+#: die in einer Schleife haengt, soll an dieser Stelle stehen bleiben und
+#: nicht erst am Monatsdeckel.
+MAX_OFFEN_JE_PROFIL = 50
 LISTEN_ZUSTAENDE = frozenset({"wartet", "laeuft", "pruefen", "gescheitert", "abgebrochen"})
 
 
@@ -107,7 +115,7 @@ def _zeile(conn: sqlite3.Connection, erkennung_id: int, profil_slug: str | None 
     return cast("sqlite3.Row", gefunden)
 
 
-def liste(conn: sqlite3.Connection, profil_slug: str, *, limit: int = 30) -> list[Erkennung]:
+def liste(conn: sqlite3.Connection, profil_slug: str, *, limit: int = 100) -> list[Erkennung]:
     """Offene, pruefbare und fehlgeschlagene Entwuerfe eines Profils."""
     zeilen = conn.execute(
         "SELECT e.*, p.slug AS profil_slug "
@@ -185,6 +193,17 @@ class ErkennungsWarteschlange:
         """Legt Bilder ab, schreibt den Lauf und startet ihn im Hintergrund."""
         eingereicht = _jetzt()
         with db.transaction(conn):
+            offen = int(conn.execute(
+                "SELECT COUNT(*) FROM ki_entwurf_lauf "
+                "WHERE profil_id = ? AND zustand IN ('wartet', 'laeuft')",
+                (profil_id,),
+            ).fetchone()[0])
+            if offen >= MAX_OFFEN_JE_PROFIL:
+                raise FachlicherFehler(
+                    f"Es warten bereits {offen} Fotoanalysen. Bitte warten, bis ein Teil "
+                    "fertig ist, und den Rest danach einreihen.",
+                    status = 429,
+                )
             cursor = conn.execute(
                 "INSERT INTO ki_entwurf_lauf "
                 "(profil_id, bilder_pfad, bilder_anzahl, zustand, eingereicht_am) "
@@ -211,12 +230,71 @@ class ErkennungsWarteschlange:
                 conn.execute("DELETE FROM ki_entwurf_lauf WHERE id = ?", (erkennung_id,))
             raise
 
+        self._starten(erkennung_id, profil_slug, profil_wurzel, relativ.as_posix())
+        return einzeln(conn, erkennung_id, profil_slug)
+
+    def _starten(
+        self, erkennung_id: int, profil_slug: str, profil_wurzel: Path, bild_relativ: str,
+    ) -> None:
         aufgabe = asyncio.create_task(
-            self._arbeiten(erkennung_id, profil_slug, profil_wurzel, relativ.as_posix()),
+            self._arbeiten(erkennung_id, profil_slug, profil_wurzel, bild_relativ),
         )
         self._aufgaben[erkennung_id] = aufgabe
         aufgabe.add_done_callback(lambda _aufgabe: self._aufgaben.pop(erkennung_id, None))
+
+    def wiederholen(
+        self, conn: sqlite3.Connection, erkennung_id: int, profil_slug: str, profil_wurzel: Path,
+    ) -> Erkennung:
+        """Reiht eine gescheiterte oder abgebrochene Analyse mit denselben Bildern neu ein.
+
+        Gedacht fuer Stapel: Bremst der Anbieter bei vielen Anfragen, sollen
+        die betroffenen Entwuerfe nicht einzeln neu hochgeladen werden muessen.
+        Kostet wie eine neue Erkennung.
+        """
+        with db.transaction(conn):
+            zeile = _zeile(conn, erkennung_id, profil_slug)
+            if zeile["zustand"] not in {"gescheitert", "abgebrochen"}:
+                raise FachlicherFehler(
+                    "Nur fehlgeschlagene oder abgebrochene Analysen lassen sich wiederholen.",
+                    status = 409,
+                )
+            relativ = str(zeile["bilder_pfad"])
+            if not relativ or not any(_bilderpfad(profil_wurzel, relativ).glob("bild-*.bin")):
+                raise FachlicherFehler(
+                    "Zu dieser Analyse liegen keine Fotos mehr vor. Bitte neu hochladen.",
+                    status = 409,
+                )
+            conn.execute(
+                "UPDATE ki_entwurf_lauf SET zustand = 'wartet', gestartet_am = NULL, "
+                "beendet_am = NULL, entwurf = NULL, kosten = NULL, meldung = NULL WHERE id = ?",
+                (erkennung_id,),
+            )
+        self._starten(erkennung_id, profil_slug, profil_wurzel, relativ)
         return einzeln(conn, erkennung_id, profil_slug)
+
+    def verwerfen(
+        self, conn: sqlite3.Connection, erkennung_id: int, profil_slug: str, profil_wurzel: Path,
+    ) -> None:
+        """Entfernt einen nicht gebrauchten Entwurf samt vorgehaltenen Fotos.
+
+        Wartende und laufende Analysen bleiben unberuehrt: Die Anfrage ist
+        womoeglich schon beim Anbieter und wird ohnehin berechnet.
+        """
+        with db.transaction(conn):
+            zeile = _zeile(conn, erkennung_id, profil_slug)
+            if zeile["zustand"] not in {"pruefen", "gescheitert", "abgebrochen"}:
+                raise FachlicherFehler(
+                    "Eine laufende Analyse kann nicht verworfen werden.", status = 409,
+                )
+            conn.execute(
+                "UPDATE ki_entwurf_lauf SET zustand = 'verworfen', beendet_am = ? WHERE id = ?",
+                (_jetzt(), erkennung_id),
+            )
+        relativ = str(zeile["bilder_pfad"])
+        if relativ:
+            ziel = _bilderpfad(profil_wurzel, relativ)
+            if ziel.exists():
+                shutil.rmtree(ziel)
 
     async def _arbeiten(
         self, erkennung_id: int, profil_slug: str, profil_wurzel: Path, bild_relativ: str,

@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Any, Final, Mapping
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import Any, Final
 
 from anzeigen_studio.marketplaces.ebay.mapping_data import (
     BLOCKIERTE_PREISTYPEN,
@@ -59,10 +60,7 @@ class EbayMappingAnzeige:
             condition = daten["zustand"]
 
         pakete_roh = daten.get("shipping_options") or daten.get("versandpakete") or ()
-        if isinstance(pakete_roh, list | tuple):
-            pakete = tuple(str(p) for p in pakete_roh)
-        else:
-            pakete = ()
+        pakete = tuple(str(p) for p in pakete_roh) if isinstance(pakete_roh, list | tuple) else ()
 
         bilder_roh = daten.get("images") or daten.get("bild_urls") or ()
         bild_urls: list[str] = []
@@ -81,7 +79,7 @@ class EbayMappingAnzeige:
             titel = str(daten.get("title") or daten.get("titel") or ""),
             beschreibung = str(daten.get("description") or daten.get("beschreibung") or ""),
             kategorie = _opt_str(daten.get("category", daten.get("kategorie"))),
-            preis = preis,  # type: ignore[arg-type]
+        preis = preis,
             preistyp = _opt_str(preistyp),
             versandart = _opt_str(daten.get("shipping_type", daten.get("versandart"))),
             versandpakete = pakete,
@@ -221,51 +219,48 @@ def _preis_aufloesen(
     anzeige: EbayMappingAnzeige,
     absicht: EbayMappingAbsicht,
 ) -> tuple[Decimal | None, EbayFeldfehler | None]:
-    if absicht.ebay_preis is not None and str(absicht.ebay_preis).strip() != "":
+    preis: Decimal | None = None
+    fehler: EbayFeldfehler | None = None
+    if absicht.ebay_preis is not None and str(absicht.ebay_preis).strip():
         preis = _preis_als_decimal(absicht.ebay_preis)
         if preis is None:
-            return None, EbayFeldfehler("preis", "Festpreis ist ungültig.")
-        if preis <= 0:
-            return None, EbayFeldfehler("preis", "Festpreis muss größer als 0 sein.")
-        return preis, None
+            fehler = EbayFeldfehler("preis", "Festpreis ist ungültig.")
+        elif preis <= 0:
+            fehler = EbayFeldfehler("preis", "Festpreis muss größer als 0 sein.")
+    else:
+        preistyp = _opt_str(anzeige.preistyp)
+        if preistyp is not None:
+            typ = preistyp.upper()
+            if typ in BLOCKIERTE_PREISTYPEN:
+                fehler = EbayFeldfehler(
+                    "price_type",
+                    f"Preistyp „{typ}“ ist kein Festpreis – Auktionen/VB/zu verschenken "
+                    "sind im MVP nicht erlaubt.",
+                )
+            elif typ not in FESTPREIS_TYPEN:
+                fehler = EbayFeldfehler(
+                    "price_type",
+                    f"Unbekannter Preistyp „{typ}“ – nur FIXED (Festpreis) ist erlaubt.",
+                )
 
-    preistyp = _opt_str(anzeige.preistyp)
-    if preistyp is not None:
-        typ = preistyp.upper()
-        if typ in BLOCKIERTE_PREISTYPEN:
-            return None, EbayFeldfehler(
-                "price_type",
-                f"Preistyp „{typ}“ ist kein Festpreis – Auktionen/VB/zu verschenken "
-                "sind im MVP nicht erlaubt.",
+        if fehler is None and anzeige.preis is None:
+            fehler = EbayFeldfehler(
+                "preis",
+                "Festpreis fehlt (weder eBay-Preis noch Anzeigenpreis).",
             )
-        if typ not in FESTPREIS_TYPEN:
-            return None, EbayFeldfehler(
+        # Ohne Preistyp: nicht stillschweigend FIXED annehmen.
+        elif fehler is None and preistyp is None:
+            fehler = EbayFeldfehler(
                 "price_type",
-                f"Unbekannter Preistyp „{typ}“ – nur FIXED (Festpreis) ist erlaubt.",
+                "Preistyp fehlt – für eBay ist Festpreis (FIXED) erforderlich.",
             )
-
-    if anzeige.preis is None:
-        return None, EbayFeldfehler(
-            "preis",
-            "Festpreis fehlt (weder eBay-Preis noch Anzeigenpreis).",
-        )
-
-    # Ohne Preistyp: nur akzeptieren wenn numerisch gültig und > 0, aber
-    # explizit FIXED verlangen wenn price_type gesetzt war – oben erledigt.
-    # Fehlt price_type komplett → blockieren (kein stilles FIXED annehmen),
-    # außer ebay_preis war gesetzt (oben).
-    if preistyp is None:
-        return None, EbayFeldfehler(
-            "price_type",
-            "Preistyp fehlt – für eBay ist Festpreis (FIXED) erforderlich.",
-        )
-
-    preis = _preis_als_decimal(anzeige.preis)
-    if preis is None:
-        return None, EbayFeldfehler("preis", "Festpreis ist ungültig.")
-    if preis <= 0:
-        return None, EbayFeldfehler("preis", "Festpreis muss größer als 0 sein.")
-    return preis, None
+        elif fehler is None:
+            preis = _preis_als_decimal(anzeige.preis)
+            if preis is None:
+                fehler = EbayFeldfehler("preis", "Festpreis ist ungültig.")
+            elif preis <= 0:
+                fehler = EbayFeldfehler("preis", "Festpreis muss größer als 0 sein.")
+    return preis, fehler
 
 
 def _merkmale_pruefen(
@@ -378,9 +373,8 @@ def anzeige_nach_ebay_payload(
             hinweise = tuple(hinweise),
         )
 
-    assert kategorie is not None
-    assert zustand_id is not None
-    assert preis is not None
+    if kategorie is None or zustand_id is None or preis is None:
+        raise RuntimeError("Interner Fehler: erfolgreiche eBay-Prüfung ohne Pflichtwert.")
 
     preis_str = _preis_formatieren(preis)
     aspekten = _aspekte_payload(merkmale)

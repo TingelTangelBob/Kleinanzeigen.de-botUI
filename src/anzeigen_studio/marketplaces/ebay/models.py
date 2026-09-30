@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 
 #: Persistenzformat der Token-Zeile. Steigt nur bei inkompatiblen Aenderungen.

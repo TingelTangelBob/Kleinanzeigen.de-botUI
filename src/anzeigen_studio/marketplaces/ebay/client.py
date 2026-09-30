@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from http import HTTPStatus
 from typing import Final, Protocol
 from urllib.parse import quote
 
@@ -34,6 +35,8 @@ from anzeigen_studio.marketplaces.ebay.models import (
     EbayUmgebung,
     EbayWiederaufnahmeAktion,
 )
+
+__all__ = ["EbayApiFehler"]
 
 LOG = logging.getLogger(__name__)
 
@@ -159,14 +162,14 @@ def klassifiziere_http(
     body: dict[str, object] | list[object] | None = None,
 ) -> EbaySchreibAusgang:
     """Mappt HTTP auf Auth / Rate-Limit / Fehler / Erfolg / unklar."""
-    if status == 401:
+    if status == HTTPStatus.UNAUTHORIZED:
         return EbaySchreibAusgang.AUTH
-    if status == 429:
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
         return EbaySchreibAusgang.RATE_LIMIT
-    if 200 <= status < 300:
+    if HTTPStatus.OK <= status < HTTPStatus.MULTIPLE_CHOICES:
         return EbaySchreibAusgang.ERFOLG
     # 5xx nach Schreibversuch: remote kann trotzdem durch sein → unklar
-    if schreibversuch and status >= 500:
+    if schreibversuch and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
         return EbaySchreibAusgang.UNKLAR
     _ = body
     return EbaySchreibAusgang.FEHLER
@@ -233,7 +236,7 @@ class EbayClient:
             # Timeout / Netz: nach Schreibversuch → unklar (Remote ggf. schon ok)
             ausgang = (
                 EbaySchreibAusgang.UNKLAR
-                if schreibversuch or fehler.status == 504
+                if schreibversuch or fehler.status == HTTPStatus.GATEWAY_TIMEOUT
                 else EbaySchreibAusgang.FEHLER
             )
             return EbayApiFehler(
@@ -303,7 +306,7 @@ class EbayClient:
             schreibversuch = False,
         )
         if isinstance(ergebnis, EbayApiFehler):
-            if ergebnis.http_status == 404:
+            if ergebnis.http_status == HTTPStatus.NOT_FOUND:
                 return EbayInventoryItemStand(sku = sku_s, vorhanden = False)
             return ergebnis
         titel = None
@@ -360,7 +363,7 @@ class EbayClient:
             schreibversuch = False,
         )
         if isinstance(ergebnis, EbayApiFehler):
-            if ergebnis.http_status == 404:
+            if ergebnis.http_status == HTTPStatus.NOT_FOUND:
                 return []
             return ergebnis
         angebote: list[EbayOfferStand] = []
@@ -501,7 +504,7 @@ class EbayClient:
         if isinstance(inventory, EbayApiFehler):
             if inventory.ausgang in {EbaySchreibAusgang.AUTH, EbaySchreibAusgang.RATE_LIMIT}:
                 return inventory
-            return EbaySkuAbgleich(
+            ergebnis: EbaySkuAbgleich | EbayApiFehler = EbaySkuAbgleich(
                 sku = sku_s,
                 inventory = EbayInventoryItemStand(sku = sku_s, vorhanden = False),
                 offer = None,
@@ -512,8 +515,8 @@ class EbayClient:
                 ),
             )
 
-        if not inventory.vorhanden:
-            return EbaySkuAbgleich(
+        elif not inventory.vorhanden:
+            ergebnis = EbaySkuAbgleich(
                 sku = sku_s,
                 inventory = inventory,
                 offer = None,
@@ -521,62 +524,64 @@ class EbayClient:
                 hinweis = "Kein Inventory Item zur SKU – zuerst createOrReplaceInventoryItem.",
             )
 
-        offers = self.get_offers_for_sku(sku_s)
-        if isinstance(offers, EbayApiFehler):
-            if offers.ausgang in {EbaySchreibAusgang.AUTH, EbaySchreibAusgang.RATE_LIMIT}:
-                return offers
-            return EbaySkuAbgleich(
-                sku = sku_s,
-                inventory = inventory,
-                offer = None,
-                naechste_aktion = EbayWiederaufnahmeAktion.NICHTS_STATUS_PRUEFEN,
-                hinweis = (
-                    f"Offers zur SKU nicht lesbar ({offers.meldung}). "
-                    "Status prüfen – kein createOffer."
-                ),
-            )
-
-        if not offers:
-            return EbaySkuAbgleich(
-                sku = sku_s,
-                inventory = inventory,
-                offer = None,
-                naechste_aktion = EbayWiederaufnahmeAktion.OFFER_ANLEGEN,
-                hinweis = "Inventory vorhanden, kein Offer – createOffer einmalig anlegen.",
-            )
-
-        # Erstes Offer zur SKU (MVP: ein Artikel / Menge 1)
-        offer = offers[0]
-        status = (offer.status or "").upper()
-        if offer.listing_id or status == "PUBLISHED":
-            return EbaySkuAbgleich(
-                sku = sku_s,
-                inventory = inventory,
-                offer = offer,
-                naechste_aktion = EbayWiederaufnahmeAktion.NICHTS_STATUS_PRUEFEN,
-                hinweis = (
-                    f"Offer {offer.offer_id} bereits veröffentlicht "
-                    f"(listingId={offer.listing_id!r}). Nicht erneut publishOffer."
-                ),
-            )
-        if offer.offer_id:
-            return EbaySkuAbgleich(
-                sku = sku_s,
-                inventory = inventory,
-                offer = offer,
-                naechste_aktion = EbayWiederaufnahmeAktion.PUBLISH,
-                hinweis = (
-                    f"Offer {offer.offer_id} vorhanden und unveröffentlicht – "
-                    "publishOffer; kein erneutes createOffer."
-                ),
-            )
-        return EbaySkuAbgleich(
-            sku = sku_s,
-            inventory = inventory,
-            offer = offer,
-            naechste_aktion = EbayWiederaufnahmeAktion.OFFER_AKTUALISIEREN,
-            hinweis = "Offer-Eintrag unvollständig – aktualisieren statt neu anlegen.",
-        )
+        else:
+            offers = self.get_offers_for_sku(sku_s)
+            if isinstance(offers, EbayApiFehler):
+                if offers.ausgang in {EbaySchreibAusgang.AUTH, EbaySchreibAusgang.RATE_LIMIT}:
+                    return offers
+                ergebnis = EbaySkuAbgleich(
+                    sku = sku_s,
+                    inventory = inventory,
+                    offer = None,
+                    naechste_aktion = EbayWiederaufnahmeAktion.NICHTS_STATUS_PRUEFEN,
+                    hinweis = (
+                        f"Offers zur SKU nicht lesbar ({offers.meldung}). "
+                        "Status prüfen – kein createOffer."
+                    ),
+                )
+            elif not offers:
+                ergebnis = EbaySkuAbgleich(
+                    sku = sku_s,
+                    inventory = inventory,
+                    offer = None,
+                    naechste_aktion = EbayWiederaufnahmeAktion.OFFER_ANLEGEN,
+                    hinweis = "Inventory vorhanden, kein Offer – createOffer einmalig anlegen.",
+                )
+            else:
+                # Erstes Offer zur SKU (MVP: ein Artikel / Menge 1)
+                offer = offers[0]
+                status = (offer.status or "").upper()
+                if offer.listing_id or status == "PUBLISHED":
+                    ergebnis = EbaySkuAbgleich(
+                        sku = sku_s,
+                        inventory = inventory,
+                        offer = offer,
+                        naechste_aktion = EbayWiederaufnahmeAktion.NICHTS_STATUS_PRUEFEN,
+                        hinweis = (
+                            f"Offer {offer.offer_id} bereits veröffentlicht "
+                            f"(listingId={offer.listing_id!r}). Nicht erneut publishOffer."
+                        ),
+                    )
+                elif offer.offer_id:
+                    ergebnis = EbaySkuAbgleich(
+                        sku = sku_s,
+                        inventory = inventory,
+                        offer = offer,
+                        naechste_aktion = EbayWiederaufnahmeAktion.PUBLISH,
+                        hinweis = (
+                            f"Offer {offer.offer_id} vorhanden und unveröffentlicht – "
+                            "publishOffer; kein erneutes createOffer."
+                        ),
+                    )
+                else:
+                    ergebnis = EbaySkuAbgleich(
+                        sku = sku_s,
+                        inventory = inventory,
+                        offer = offer,
+                        naechste_aktion = EbayWiederaufnahmeAktion.OFFER_AKTUALISIEREN,
+                        hinweis = "Offer-Eintrag unvollständig – aktualisieren statt neu anlegen.",
+                    )
+        return ergebnis
 
 
 def _titel_aus_payload(payload: dict[str, object]) -> str | None:

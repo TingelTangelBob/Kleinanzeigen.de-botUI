@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import sqlite3
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -44,7 +45,10 @@ def _verbindung(request: Request) -> Iterator[sqlite3.Connection]:
 
 
 def _einstellungen(request: Request) -> Settings:
-    return request.app.state.settings
+    einstellungen = request.app.state.settings
+    if not isinstance(einstellungen, Settings):
+        raise RuntimeError("App-Einstellungen fehlen.")
+    return einstellungen
 
 
 Verbindung = Annotated[sqlite3.Connection, Depends(_verbindung)]
@@ -63,7 +67,7 @@ def _profil_id(conn: sqlite3.Connection, slug: str) -> int:
     return p.id
 
 
-def _status_ausgabe(st: EbayZugangStatus) -> "StatusAusgabe":
+def _status_ausgabe(st: EbayZugangStatus) -> StatusAusgabe:
     return StatusAusgabe(
         profil_id = st.profil_id,
         umgebung = st.umgebung.value,
@@ -186,7 +190,7 @@ def oauth_starten(
 
 
 @router.get("/oauth/callback", response_model = None)
-def oauth_callback(
+def oauth_callback(  # noqa: PLR0917 - FastAPI injiziert Request, Verbindung und Query-Parameter separat.
     request: Request,
     conn: Verbindung,
     cfg: Konfiguration,
@@ -195,7 +199,7 @@ def oauth_callback(
     error: str | None = None,
     error_description: str | None = None,
 ) -> RedirectResponse | HTMLResponse:
-    """eBay Redirect. Oeffentlich, aber state an Sitzung gebunden."""
+    """EBay-Weiterleitung. Oeffentlich, aber state an Sitzung gebunden."""
     try:
         st = oauth.callback_abschliessen(
             conn,
@@ -209,7 +213,7 @@ def oauth_callback(
     except FachlicherFehler as fehler:
         return HTMLResponse(
             _callback_html(ok = False, meldung = fehler.meldung),
-            status_code = fehler.status if fehler.status >= 400 else 400,
+            status_code = fehler.status if fehler.status >= HTTPStatus.BAD_REQUEST else HTTPStatus.BAD_REQUEST,
         )
 
     # Hash-Route der Oberflaeche; UI fuer eBay folgt in AP-E-09.
@@ -253,10 +257,9 @@ def verbindung_entfernen(
 def _callback_html(*, ok: bool, meldung: str) -> str:
     titel = "eBay verbunden" if ok else "eBay-Verbindung fehlgeschlagen"
     return (
-        "<!DOCTYPE html><html lang=\"de\"><head><meta charset=\"utf-8\">"
+        '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">'
         f"<title>{titel}</title></head><body>"
         f"<h1>{titel}</h1><p>{meldung}</p>"
-        "<p><a href=\"/#einstellungen\">Zurück zu den Einstellungen</a></p>"
+        '<p><a href="/#einstellungen">Zurück zu den Einstellungen</a></p>'
         "</body></html>"
     )
-

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any, cast
 
 from anzeigen_studio.marketplaces.ebay.mapping import (
     EbayMappingAbsicht,
@@ -18,6 +19,10 @@ from anzeigen_studio.marketplaces.ebay.mapping import (
 )
 from anzeigen_studio.marketplaces.ebay.models import MARKETPLACE_ID_DE, WAEHRUNG_EUR
 from anzeigen_studio.marketplaces.ebay.validation import dry_run_pruefen
+
+
+def _payload(payload: dict[str, object] | None) -> dict[str, Any]:
+    return cast(dict[str, Any], payload or {})
 
 
 def _absicht(**overrides: object) -> EbayMappingAbsicht:
@@ -113,7 +118,7 @@ def test_fixture1_festpreis_handy_payload_reproduzierbar() -> None:
     assert ergebnis.inventory_payload is not None
     assert ergebnis.offer_payload is not None
 
-    inv = ergebnis.inventory_payload
+    inv = _payload(ergebnis.inventory_payload)
     assert inv["condition"] == "NEW"
     assert inv["availability"]["shipToLocationAvailability"]["quantity"] == 1
     assert inv["product"]["title"] == "Fairphone 5 256GB"
@@ -122,7 +127,7 @@ def test_fixture1_festpreis_handy_payload_reproduzierbar() -> None:
         "Modell": ["5"],
     }
 
-    offer = ergebnis.offer_payload
+    offer = _payload(ergebnis.offer_payload)
     assert offer["marketplaceId"] == MARKETPLACE_ID_DE
     assert offer["format"] == "FIXED_PRICE"
     assert offer["categoryId"] == "9355"
@@ -160,10 +165,11 @@ def test_fixture2_tablet_ebay_preis_ueberschreibt_zustand_like_new() -> None:
     )
     assert ergebnis.ok is True
     assert ergebnis.offer_payload is not None
-    assert ergebnis.offer_payload["categoryId"] == "171485"
-    assert ergebnis.offer_payload["pricingSummary"]["price"]["value"] == "349.95"
+    offer = _payload(ergebnis.offer_payload)
+    assert offer["categoryId"] == "171485"
+    assert offer["pricingSummary"]["price"]["value"] == "349.95"
     assert ergebnis.inventory_payload is not None
-    assert ergebnis.inventory_payload["condition"] == "LIKE_NEW"
+    assert _payload(ergebnis.inventory_payload)["condition"] == "LIKE_NEW"
 
 
 def test_fixture3_unbekannte_kategorie_feldfehler() -> None:
@@ -255,7 +261,7 @@ def test_ka_versandpakete_nicht_als_policy() -> None:
     assert any(f.feld == "fulfillment_policy_id" for f in ergebnis.feldfehler)
     # Auch wenn KA-Pakete gesetzt sind, kein stilles Mapping
     assert all(
-        "DHL" not in (ergebnis.offer_payload or {}).get("listingPolicies", {}).get("fulfillmentPolicyId", "")
+        "DHL" not in _payload(ergebnis.offer_payload).get("listingPolicies", {}).get("fulfillmentPolicyId", "")
         for _ in (0,)
     )
 
@@ -267,7 +273,7 @@ def test_decimal_cent_genau_kein_float_ballast() -> None:
     )
     assert ergebnis.ok is True
     assert ergebnis.offer_payload is not None
-    assert ergebnis.offer_payload["pricingSummary"]["price"]["value"] == "19.90"
+    assert _payload(ergebnis.offer_payload)["pricingSummary"]["price"]["value"] == "19.90"
     # String-Eingabe mit Komma
     ergebnis2 = anzeige_nach_ebay_payload(
         _anzeige_festpreis_handy(),
@@ -275,7 +281,7 @@ def test_decimal_cent_genau_kein_float_ballast() -> None:
     )
     assert ergebnis2.ok is True
     assert ergebnis2.offer_payload is not None
-    assert ergebnis2.offer_payload["pricingSummary"]["price"]["value"] == "19.90"
+    assert _payload(ergebnis2.offer_payload)["pricingSummary"]["price"]["value"] == "19.90"
 
 
 def test_readonly_dataclass_eingabe() -> None:

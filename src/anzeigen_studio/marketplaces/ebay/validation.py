@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from typing import Final
 from urllib.parse import urlparse
 
 from anzeigen_studio.marketplaces.ebay.models import (
@@ -28,6 +29,8 @@ from anzeigen_studio.marketplaces.ebay.models import (
     EbayUmgebung,
 )
 
+MAX_TITEL_LAENGE: Final[int] = 80
+
 
 def _leer(wert: object) -> bool:
     if wert is None:
@@ -39,10 +42,7 @@ def _leer(wert: object) -> bool:
 
 def _preis_als_decimal(roh: Decimal | str) -> Decimal | None:
     try:
-        if isinstance(roh, Decimal):
-            wert = roh
-        else:
-            wert = Decimal(str(roh).strip().replace(",", "."))
+        wert = roh if isinstance(roh, Decimal) else Decimal(str(roh).strip().replace(",", "."))
     except (InvalidOperation, AttributeError, ValueError):
         return None
     if wert.is_nan() or wert.is_infinite():
@@ -61,9 +61,7 @@ def ist_abrufbare_bild_url(url: str) -> bool:
     geparst = urlparse(text)
     if geparst.scheme not in {"http", "https"}:
         return False
-    if not geparst.netloc:
-        return False
-    return True
+    return bool(geparst.netloc)
 
 
 def dry_run_pruefen(
@@ -83,8 +81,8 @@ def dry_run_pruefen(
         fehler.append(EbayFeldfehler("sku", "SKU fehlt. Vor dem ersten API-Schreiben dauerhaft vergeben."))
     if _leer(eingabe.titel):
         fehler.append(EbayFeldfehler("titel", "Titel fehlt."))
-    elif len(eingabe.titel.strip()) > 80:
-        fehler.append(EbayFeldfehler("titel", "Titel darf höchstens 80 Zeichen haben."))
+    elif len(eingabe.titel.strip()) > MAX_TITEL_LAENGE:
+        fehler.append(EbayFeldfehler("titel", f"Titel darf höchstens {MAX_TITEL_LAENGE} Zeichen haben."))
     if _leer(eingabe.beschreibung):
         fehler.append(EbayFeldfehler("beschreibung", "Beschreibung fehlt."))
     if _leer(eingabe.kategorie_id):

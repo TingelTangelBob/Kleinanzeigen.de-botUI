@@ -20,7 +20,8 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Final, Protocol, Sequence
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Final, Protocol
 from urllib.parse import urlencode
 
 from anzeigen_studio.core.errors import FachlicherFehler
@@ -34,6 +35,7 @@ from anzeigen_studio.marketplaces.ebay.models import (
 
 if TYPE_CHECKING:
     import sqlite3
+    from collections.abc import Sequence
 
 LOG = logging.getLogger(__name__)
 
@@ -153,8 +155,6 @@ _state_lock = threading.Lock()
 _pending: dict[str, PendingOAuth] = {}
 _refresh_guards: dict[tuple[int, str], threading.Lock] = {}
 _refresh_guards_meta = threading.Lock()
-
-
 
 
 def _umgebung(wert: EbayUmgebung | str) -> EbayUmgebung:
@@ -391,13 +391,15 @@ def _state_nehmen(
 
 
 def _basic_auth(app_id: str, app_secret: str) -> str:
-    roh = f"{app_id}:{app_secret}".encode("utf-8")
+    roh = f"{app_id}:{app_secret}".encode()
     return "Basic " + base64.b64encode(roh).decode("ascii")
 
 
 def _ablauf_aus_expires_in(expires_in: object) -> str | None:
+    if not isinstance(expires_in, (str, bytes, bytearray, int, float)):
+        return None
     try:
-        sekunden = int(expires_in)  # type: ignore[arg-type]
+        sekunden = int(expires_in)
     except (TypeError, ValueError):
         return None
     if sekunden <= 0:
@@ -480,7 +482,7 @@ def callback_abschliessen(
         },
         timeout = HTTP_TIMEOUT_S,
     )
-    if antwort.status_code != 200 or not antwort.body:
+    if antwort.status_code != HTTPStatus.OK or not antwort.body:
         raise _token_fehler(antwort.status_code, antwort.body, antwort.text)
 
     access, refresh, access_ablauf, refresh_ablauf = _tokens_aus_antwort(antwort.body)
@@ -551,7 +553,7 @@ def tokens_auffrischen(
             },
             timeout = HTTP_TIMEOUT_S,
         )
-        if antwort.status_code != 200 or not antwort.body:
+        if antwort.status_code != HTTPStatus.OK or not antwort.body:
             # Widerruf / ungueltiger Refresh → lokal als erneut verbinden markieren.
             if antwort.status_code in {400, 401}:
                 credentials.als_erneut_verbinden(conn, profil_id, umg)

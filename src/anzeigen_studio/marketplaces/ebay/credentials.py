@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Final, Sequence
+from typing import TYPE_CHECKING, Final
 
 from anzeigen_studio.core.crypto import tresor_oder_fehler
 from anzeigen_studio.core.db import transaction
@@ -29,7 +30,7 @@ from anzeigen_studio.marketplaces.ebay.models import (
 )
 
 if TYPE_CHECKING:
-    import sqlite3
+    from collections.abc import Sequence
 
 #: Platzhalter: ``None`` als Argument bedeutet „bestehenden Wert behalten“.
 _BEHALTEN: Final[object] = object()
@@ -89,10 +90,11 @@ def _zeile_zu_status(row: sqlite3.Row) -> EbayZugangStatus:
 
 
 def _laden(conn: sqlite3.Connection, profil_id: int, umgebung: EbayUmgebung) -> sqlite3.Row | None:
-    return conn.execute(
+    zeile = conn.execute(
         "SELECT * FROM ebay_zugang WHERE profil_id = ? AND umgebung = ?",
         (profil_id, umgebung.value),
     ).fetchone()
+    return zeile if isinstance(zeile, sqlite3.Row) else None
 
 
 def status(
@@ -160,10 +162,12 @@ def speichern(
             return alt_blob
         if neu is None:
             return None
-        assert isinstance(neu, str)
+        if not isinstance(neu, str):
+            raise FachlicherFehler("Geheimnisse müssen als Zeichenkette übergeben werden.")
         if not neu:
             raise FachlicherFehler("Geheimnisse dürfen nicht leer sein.")
-        assert tresor is not None
+        if tresor is None:
+            raise FachlicherFehler("Verschlüsselungsschlüssel fehlt.", status = 503)
         return tresor.verschluesseln(neu)
 
     def _feld(neu: object, alt: object) -> object:
@@ -188,7 +192,8 @@ def speichern(
     if scopes is _BEHALTEN:
         scopes_text = "" if vorher is None else (vorher["scopes"] or "")
     else:
-        assert scopes is None or isinstance(scopes, (list, tuple))
+        if scopes is not None and not isinstance(scopes, (list, tuple)):
+            raise FachlicherFehler("Scopes müssen als Liste oder Tupel übergeben werden.", feld = "scopes")
         scopes_text = _scopes_als_text(scopes)
 
     access_ablauf = _feld(
@@ -201,15 +206,12 @@ def speichern(
     )
 
     if verbindung is _BEHALTEN:
-        if vorher is None:
-            verb = EbayVerbindung.NICHT_VERBUNDEN
-        else:
-            verb = EbayVerbindung(vorher["verbindung"])
+        verb = EbayVerbindung.NICHT_VERBUNDEN if vorher is None else EbayVerbindung(vorher["verbindung"])
     elif verbindung is None:
         verb = EbayVerbindung.NICHT_VERBUNDEN
     else:
         try:
-            verb = verbindung if isinstance(verbindung, EbayVerbindung) else EbayVerbindung(verbindung)
+            verb = verbindung if isinstance(verbindung, EbayVerbindung) else EbayVerbindung(str(verbindung))
         except ValueError as fehler:
             raise FachlicherFehler(
                 "Unbekannter Verbindungsstatus.",
@@ -219,7 +221,8 @@ def speichern(
     if schema_version is _BEHALTEN:
         schema = SCHEMA_VERSION if vorher is None else int(vorher["schema_version"])
     else:
-        assert isinstance(schema_version, int)
+        if not isinstance(schema_version, int):
+            raise FachlicherFehler("schema_version muss eine Ganzzahl sein.", feld = "schema_version")
         if schema_version < 1:
             raise FachlicherFehler("schema_version muss ≥ 1 sein.", feld = "schema_version")
         schema = schema_version
@@ -244,10 +247,10 @@ def speichern(
             verbunden_am = vorher["verbunden_am"]
         else:
             verbunden_am = jetzt
-    elif vorher is not None and verb == EbayVerbindung(vorher["verbindung"]):
+    elif vorher is not None:
         verbunden_am = vorher["verbunden_am"]
     else:
-        verbunden_am = None if verb != EbayVerbindung.VERBUNDEN else jetzt
+        verbunden_am = None
 
     with transaction(conn):
         if vorher is None:
@@ -401,6 +404,8 @@ def lesen(
 
     def _entsch(blob: object) -> str | None:
         if blob is None:
+            return None
+        if not isinstance(blob, (bytes, bytearray, memoryview)):
             return None
         return tresor.entschluesseln(bytes(blob))
 

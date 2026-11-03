@@ -637,7 +637,11 @@ kleinanzeigen_bot/extract.py:
   _download_images_from_ad_page:
     "Found %s.": "%s gefunden."
     "Downloaded %s.": "%s heruntergeladen."
-    "No image area found. Continuing without downloading images.": "Keine Bildbereiche gefunden. Fahre ohne Bilder-Download fort."
+
+  _extract_geloeschte_anzeige:
+    "Deleted ad %s has no category: %s": "Gelöschte Anzeige %s hat keine Kategorie: %s"
+    "Deleted ad %s has no images: %s": "Gelöschte Anzeige %s hat keine Bilder: %s"
+    "Ad %s is deleted on Kleinanzeigen. Saving an inactive local copy.": "Anzeige %s ist auf Kleinanzeigen gelöscht. Speichere eine inaktive lokale Kopie."
 
   _log_download_name_truncation:
     "Download name truncated {id} placeholder: template='%s', max_length=%d, id='%s', rendered='%s'": "Download-Name hat {id} Platzhalter gekürzt: Vorlage='%s', max_length=%d, id='%s', gerendert='%s'"

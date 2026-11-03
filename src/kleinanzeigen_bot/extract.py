@@ -20,10 +20,13 @@ from typing import Any, Final
 # Anzeigen-Studio-Fork 2026-08-31: GeloeschteAnzeige, BelenConf darf None sein.
 from kleinanzeigen_bot.model.ad_model import ContactPartial
 
-from .model.ad_model import OPTION_NAME_BY_CARRIER_CODE, AdPartial, MAX_TITLE_LENGTH, validate_condition_api_mapping
+from .model.ad_model import MAX_TITLE_LENGTH, OPTION_NAME_BY_CARRIER_CODE, AdPartial, validate_condition_api_mapping
 from .model.config_model import AutoPriceReductionConfig, Config
 from .utils import dicts, files, i18n, loggers, misc, reflect
 from .utils.web_scraping_mixin import Browser, By, Element, WebScrapingMixin
+
+# Anzeigen-Studio-Fork 2026-11-03: Mindestlänge für gesicherte Titel gelöschter Anzeigen als Konstante.
+_MIN_TITLE_LENGTH_GELOESCHT:Final[int] = 10
 
 __all__ = [
     "AdExtractor",
@@ -842,7 +845,7 @@ class AdExtractor(WebScrapingMixin):
         gekuerzt = title.strip()
         if len(gekuerzt) > MAX_TITLE_LENGTH:
             gekuerzt = gekuerzt[: MAX_TITLE_LENGTH - 1].rstrip() + "…"
-        if len(gekuerzt) < 10:
+        if len(gekuerzt) < _MIN_TITLE_LENGTH_GELOESCHT:
             gekuerzt = (gekuerzt + " (gelöscht)")[:MAX_TITLE_LENGTH]
 
         beschreibung = (
@@ -858,8 +861,8 @@ class AdExtractor(WebScrapingMixin):
             roh = (await self.web_text(By.ID, "viewad-description-text")).strip()
             if roh:
                 beschreibung = roh
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as ex:  # noqa: BLE001
+            LOG.debug("Deleted ad %s has no description: %s", ad_id, ex)
 
         bilder: list[str] = []
         try:
@@ -871,8 +874,8 @@ class AdExtractor(WebScrapingMixin):
         preistyp = "NOT_APPLICABLE"
         try:
             preis, preistyp = await self._extract_pricing_info_from_ad_page()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as ex:  # noqa: BLE001
+            LOG.debug("Deleted ad %s has no price: %s", ad_id, ex)
 
         info: dict[str, Any] = {
             "active": False if active_override is None else active_override,
@@ -929,7 +932,8 @@ class AdExtractor(WebScrapingMixin):
         belen_roh = await self.web_execute("window.BelenConf")
         belen_conf: dict[str, Any] = belen_roh if isinstance(belen_roh, dict) else {}
         ua = belen_conf.get("universalAnalyticsOpts")
-        dimensions: dict[str, Any] = ua.get("dimensions") if isinstance(ua, dict) and isinstance(ua.get("dimensions"), dict) else {}
+        dims_roh = ua.get("dimensions") if isinstance(ua, dict) else None
+        dimensions: dict[str, Any] = dims_roh if isinstance(dims_roh, dict) else {}
 
         # Extract ad type from BelenConf - more reliable than URL pattern matching
         # BelenConf contains "ad_type":"WANTED" or "ad_type":"OFFER" in dimensions

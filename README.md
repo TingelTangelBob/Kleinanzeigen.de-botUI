@@ -1,8 +1,20 @@
 <!--
-Fork-Hinweis, hinzugefügt 2026-08-22 durch die Anzeigen-Studio-Fork-Weiterentwicklung.
-Einzige Änderung an dieser Datei; der übrige Inhalt stammt unverändert aus dem Upstream.
+Fork-Teil, hinzugefügt 2026-08-22, ausgebaut 2026-11-03 durch die Anzeigen-Studio-Fork-Weiterentwicklung.
+Der Teil ab „Upstream-Dokumentation" stammt unverändert aus dem Upstream.
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
+
+# Anzeigen-Studio
+
+[![Anzeigen-Studio](https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/actions/workflows/anzeigen-studio.yml/badge.svg)](https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/actions/workflows/anzeigen-studio.yml)
+[![Build](https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/actions/workflows/build.yml/badge.svg)](https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI/actions/workflows/build.yml)
+[![Lizenz: AGPL-3.0-or-later](https://img.shields.io/badge/Lizenz-AGPL--3.0--or--later-blue.svg)](LICENSE.txt)
+
+**Anzeigen-Studio** ist eine selbst gehostete, deutschsprachige Weboberfläche für den
+[`kleinanzeigen-bot`](https://github.com/Second-Hand-Friends/kleinanzeigen-bot). Damit verwaltest du deine
+Kleinanzeigen im Browser statt in YAML-Dateien und auf der Kommandozeile: Bestand vom Konto holen, Anzeigen
+bearbeiten, Fotos verwalten, Läufe starten und beobachten. Aus Fotos lässt sich außerdem ein KI-Entwurf
+erstellen, den du selbst prüfst.
 
 > ## ⚠️ Dies ist ein Fork
 >
@@ -11,18 +23,252 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 > und wird von dessen Autoren **weder betreut noch unterstützt**.
 > Fehlermeldungen zu diesem Fork gehören hierher, nicht in den Upstream-Bugtracker.
 >
-> Ziel des Forks ist eine selbst gehostete Weboberfläche für den Bot, ein Modul zur
-> KI-gestützten Anzeigenerstellung sowie eine reine Leseansicht des Postfachs.
-> Der Bot-Kern unter `src/kleinanzeigen_bot/` bleibt dabei so unverändert wie möglich,
-> damit Updates aus dem Upstream weiter übernommen werden können.
+> Der Bot-Kern unter `src/kleinanzeigen_bot/` bleibt so unverändert wie möglich, damit Updates aus dem
+> Upstream weiter übernommen werden können. Herkunft, Lizenzpflichten und die Liste der geänderten
+> Upstream-Dateien stehen in [`NOTICE.md`](NOTICE.md).
 >
-> Herkunft, Lizenzpflichten und die Liste geänderter Upstream-Dateien: [`NOTICE.md`](NOTICE.md).
->
-> **Lizenz:** AGPL-3.0-or-later. Wird die Weboberfläche über ein Netzwerk auch von anderen
-> Personen benutzt, greift § 13 – der Quelltext der laufenden Fassung muss diesen dann
-> angeboten werden. Siehe [`NOTICE.md`](NOTICE.md).
->
-> Der folgende Text stammt unverändert aus dem Upstream.
+> **Lizenz:** AGPL-3.0-or-later. Wird die Weboberfläche über ein Netzwerk auch von anderen Personen benutzt,
+> greift § 13: Der Quelltext der laufenden Fassung muss diesen Personen angeboten werden.
+
+## Inhalt
+
+1. [Screenshots](#screenshots)
+1. [Funktionen](#funktionen)
+1. [Neu im Herbst 2026](#neu)
+1. [Grundsätze](#grundsaetze)
+1. [Installation und Start](#installation)
+1. [Konfiguration](#konfiguration)
+1. [Projektstruktur](#projektstruktur)
+1. [Tests und CI](#tests)
+1. [Weitere Dokumentation](#dokumentation)
+1. [Rechtliche Hinweise und Lizenz](#rechtliches)
+1. [Upstream-Dokumentation (kleinanzeigen-bot, englisch)](#upstream)
+
+## <a name="screenshots"></a>Screenshots
+
+Alle Screenshots zeigen eine Demo-Installation mit erfundenen Anzeigen und Platzhalterfotos. Es ist kein
+echtes Konto verbunden.
+
+| Übersicht | Meine Anzeigen |
+|---|---|
+| ![Übersicht mit Kennzahlen und den neuesten Anzeigen](docs/screenshots/uebersicht.png) | ![Bestandsliste mit Filtern, Hinweisen und Aktionen je Anzeige](docs/screenshots/anzeigen.png) |
+| **Anzeige ansehen und bearbeiten** | **Neue Anzeige aus Fotos** |
+| ![Anzeigeneditor mit Kategorie, Versand, Preis, Kontakt und Bildern](docs/screenshots/anzeige-detail.png) | ![Assistent „Neue Anzeige“: Erkennen, Prüfen, Hochladen](docs/screenshots/neue-anzeige.png) |
+| **Ersteinrichtung** | **Mobil** |
+| ![Ersteinrichtung mit Profil, Kleinanzeigen-Zugang und KI-Zugang](docs/screenshots/einstellungen.png) | <img src="docs/screenshots/mobil-anzeigen.png" alt="Meine Anzeigen auf dem Smartphone" width="260"> |
+
+## <a name="funktionen"></a>Funktionen
+
+### Bestand und Bearbeitung
+
+- **Meine Anzeigen**: Liste aller eigenen Anzeigen mit Vorschaubild, Preis, Fälligkeit und Hinweisen,
+  zum Beispiel „Versand ohne Paket“. Filter für *Aktiv*, *Lokal geändert*, *Gelöscht* und *Alle*, dazu eine
+  Suche und Sammelaktionen für mehrere Anzeigen.
+- **Von anderen**: Fremde Anzeigen lassen sich über eingefügte Links holen und als Vorlage verwenden.
+- **Archiv**: Lokal archivierte und nicht mehr aktive Anzeigen, ohne dass dafür etwas am Konto passiert.
+- **Anzeigeneditor**: Titel, Beschreibung, Art, Preis und Preistyp, „Direkt kaufen“ sowie die Kontaktdaten.
+  Kategorie und Versandpakete wählst du aus dem echten Katalog, statt sie einzutippen.
+- **Bilder**: hinzufügen, per Drag-and-drop sortieren und entfernen. Das erste Bild ist das Titelbild.
+- **Versionen**: Frühere Fassungen einer Anzeige werden gespeichert und lassen sich zurücksetzen.
+- **Duplizieren und Vorlagen**: Anzeigen kopieren und wiederkehrende Angaben als Vorlage speichern.
+- **Schutz vor Datenverlust**: Bevor ein Download lokale Änderungen überschreiben würde, kommt eine Warnung.
+  Speichern ist immer lokal, veröffentlicht wird erst beim Hochladen.
+
+### Konto und Läufe
+
+- **Vom Konto holen**: Lädt den Bestand des Kleinanzeigen-Kontos herunter. Fehlerhafte Einzelanzeigen werden
+  übersprungen, statt den ganzen Lauf abzubrechen.
+- **Hochladen**: Der Dialog zeigt vor dem Lauf, was sich ändert. Eine vorhandene Anzeige lässt sich bewusst
+  neu einstellen.
+- **Online löschen** sowie automatisches, kostenloses **Verlängern** fälliger Anzeigen.
+- **Täglicher Abgleich** mit dem Konto: Reihenfolge wie auf der Plattform; was dort fehlt, wird lokal entfernt.
+  Meldungen erscheinen in der Glocke.
+- **Warteschlange**: Bot-Läufe laufen je Profil nacheinander, mit Live-Protokoll, Wartezeit-Anzeige,
+  Laufbestätigung vor dem Start und Abbruch.
+- **Browsersicht**: Bei Captcha oder Zwei-Faktor-Abfrage hält der Lauf an, und du übernimmst im
+  eingebetteten Browser. Das Studio umgeht keine Bot-Erkennung.
+- **Mehrere Profile** mit globalem Profilumschalter. Kleinanzeigen-Zugangsdaten werden verschlüsselt
+  gespeichert und erst zur Laufzeit eingespeist.
+
+### KI-Entwürfe aus Fotos
+
+- Aus bis zu vier Fotos entsteht ein **Anzeigenentwurf** mit Titel, Beschreibung, Kategorie- und
+  Versandvorschlag aus dem echten Katalog sowie einer **Preisspanne**.
+- **Stapel-Erkennung**: Mehrere Gegenstände auf einmal erkennen lassen. Die Erkennungen liegen in einer
+  dauerhaften Warteschlange und laufen parallel.
+- **Stil**: Entwürfe orientieren sich am Ton deiner bisherigen Anzeigen.
+- **Kostengrenze** und wählbares KI-Modell (Vorgabe: `gpt-6-luna`).
+- Fotos werden vor dem Versand verkleinert und von Metadaten wie GPS-Koordinaten befreit.
+- Ein Entwurf wird nur **lokal** gespeichert. Veröffentlicht wird nichts ohne deine ausdrückliche Bestätigung.
+
+### Betrieb
+
+- **Ersteinrichtung**: Assistent für Profil, Kleinanzeigen-Zugang und KI-Zugang.
+- **Sicherung**: Profilarchiv als ZIP exportieren und importieren, ohne Geheimnisse. Siehe
+  [`docs/SICHERUNG.md`](docs/SICHERUNG.md).
+- **Anmeldung** an der Weboberfläche, **Dunkelmodus** und ein mobiles Layout.
+- **Zwei Varianten**: Open Source, bei der jeder Betreiber seinen eigenen KI-Schlüssel hinterlegt, oder
+  gehostet, bei der der Schlüssel beim Betreiber bleibt.
+
+### In Arbeit
+
+- **eBay.de**: Machbarkeit, OAuth gegen die Sandbox, Feld-Mapping und ein Client mit lokalem Dry-Run sind
+  umgesetzt. Produktionsaufrufe sind gesperrt. Siehe [`docs/EBAY-MACHBARKEIT.md`](docs/EBAY-MACHBARKEIT.md) und
+  [`docs/PLATTFORMEN-VINTED-EBAY.md`](docs/PLATTFORMEN-VINTED-EBAY.md).
+- **Postfach**: Eine reine Leseansicht der Kleinanzeigen-Nachrichten ist geplant. Senden oder Antworten ist
+  ausdrücklich nicht vorgesehen.
+
+## <a name="neu"></a>Neu im Herbst 2026
+
+- KI-Modell in den Einstellungen wählbar (Vorgabe `gpt-6-luna`) und **Stapel-Erkennung** für mehrere Anzeigen.
+- Laufbestätigung vor jedem Bot-Lauf, **Ersteinrichtung** und KI-Entwürfe direkt in der Oberfläche.
+- Gehostete Variante, Bildgrenze pro Entwurf und eine dauerhafte Erkennungswarteschlange.
+- **Versionen** einer Anzeige speichern und zurücksetzen.
+- Abgleich mit dem Konto entfernt lokal, was auf dem Konto fehlt. Nicht mehr erreichbare Anzeigen erscheinen
+  als Laufmeldung.
+- Vorhandene Anzeigen bewusst neu einstellen, automatisches kostenloses Verlängern.
+- Navigation mit „Von anderen“ und „Archiv“, überarbeitetes mobiles Layout von „Meine Anzeigen“.
+- Erste eBay-Bausteine (siehe [In Arbeit](#funktionen)).
+
+## <a name="grundsaetze"></a>Grundsätze
+
+- **KI liefert nur Entwürfe.** Ohne Bestätigung in der Oberfläche wird nichts veröffentlicht.
+- **Ein Browser pro Profil, ein Lauf zur Zeit.** Gegen dasselbe Konto laufen nie zwei Läufe parallel.
+- **Keine Umgehung von Captchas** oder Bot-Erkennung. Stattdessen übernimmst du in der Browsersicht.
+- **Das Postfach bleibt schreibgeschützt.** Fremde Nachrichten gehen nie an einen KI-Anbieter.
+- **Geheimnisse bleiben geheim.** Passwörter stehen nie in `config.yaml`, Logs, Screenshots oder Diagnosedateien.
+
+## <a name="installation"></a>Installation und Start
+
+Voraussetzungen: Docker mit Docker Compose. Entwicklung und Bau laufen ebenfalls in Docker.
+
+```bash
+git clone https://github.com/TingelTangelBob/Kleinanzeigen.de-botUI.git
+cd Kleinanzeigen.de-botUI
+
+cp .env.example .env
+# In .env mindestens ANZEIGEN_STUDIO_SECRET_KEY setzen, zum Beispiel mit:
+openssl rand -base64 32
+
+docker compose up -d --build
+```
+
+Danach ist die Oberfläche unter <http://127.0.0.1:8080> erreichbar. Beim ersten Aufruf legst du den Zugang zur
+Weboberfläche an, danach führt dich die Ersteinrichtung durch Profil, Kleinanzeigen-Zugang und KI-Zugang.
+
+- Die Oberfläche ist bewusst nur an `127.0.0.1` gebunden. Für einen Test im Heimnetz gibt es
+  `docker/anzeigen-studio/docker-compose.lan.yml`. Für den Dauerbetrieb gehört ein Reverse Proxy mit HTTPS oder
+  ein VPN davor.
+- Das Backend hat keinen eigenen Port nach außen. Daten liegen im Docker-Volume `studio-data`.
+- Bitte erst mit einem Testkonto ausprobieren. Die Nutzung gegen ein echtes Konto liegt in deiner Verantwortung
+  (siehe [Rechtliche Hinweise](#rechtliches)).
+
+### Entwicklung
+
+Das Frontend (`webui/`, React, Vite, Tailwind) kann im Entwicklungsmodus gegen ein laufendes Backend arbeiten:
+
+```bash
+cd webui
+npm ci
+VITE_API_TARGET=http://127.0.0.1:8000 npm run dev   # Vite-Server auf Port 5173, /api wird durchgereicht
+```
+
+Das Backend (`src/anzeigen_studio/`, FastAPI) ist eine App-Fabrik:
+`uvicorn anzeigen_studio.main:create_app --factory`. Die Abhängigkeiten stehen in
+`docker/anzeigen-studio/requirements.txt` und `requirements-bot.txt`.
+
+## <a name="konfiguration"></a>Konfiguration
+
+Die Konfiguration läuft über Umgebungsvariablen in `.env`. Die Vorlage ist [`.env.example`](.env.example).
+**Niemals echte Schlüssel committen.** `.env` ist per `.gitignore` ausgeschlossen.
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `ANZEIGEN_STUDIO_SECRET_KEY` | *(leer)* | Schlüssel für die Verschlüsselung der Zugangsdaten, z. B. `openssl rand -base64 32`. Ohne ihn lassen sich keine Zugangsdaten speichern. |
+| `ANZEIGEN_STUDIO_GEHOSTET` | `false` | `false`: Open-Source-Variante, der KI-Schlüssel wird in der Oberfläche hinterlegt. `true`: gehostete Variante, der Schlüssel kommt nur aus `.env`. |
+| `ANZEIGEN_STUDIO_OPENAI_API_KEY` | *(leer)* | Nur für die gehostete Variante: `<dein-api-schluessel>`. |
+| `ANZEIGEN_STUDIO_KI_MAX_BILDER` | `4` | Höchstzahl der Fotos pro KI-Entwurf. |
+| `ANZEIGEN_STUDIO_KI_MODELL` | `gpt-6-luna` | Vorgabe für das KI-Modell. Gehostet gilt immer dieser Wert. |
+| `ANZEIGEN_STUDIO_KI_PARALLEL` | `4` | Gleichzeitige Fotoanalysen (1–8). |
+| `ANZEIGEN_STUDIO_DEV` | `false` | Entwicklungsmodus mit ausführlicheren Fehlermeldungen. |
+| `EBAY_SANDBOX_APP_ID`, `EBAY_SANDBOX_CERT_ID`, `EBAY_SANDBOX_RUNAME` | *(auskommentiert)* | Nur für die eBay-Sandbox: `<app-id>`, `<cert-id>`, `<runame>`. |
+
+Bot-Einstellungen wie Verlängern, Abgleich und Standardwerte für Anzeigen setzt du in der Oberfläche unter
+**Einstellungen**. Die vollständige Referenz der Bot-Konfiguration steht in
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) und [`docs/AD_CONFIGURATION.md`](docs/AD_CONFIGURATION.md).
+
+## <a name="projektstruktur"></a>Projektstruktur
+
+```text
+.
+├── src/
+│   ├── kleinanzeigen_bot/      # Bot-Kern aus dem Upstream (möglichst unverändert, Änderungen in NOTICE.md)
+│   └── anzeigen_studio/        # Backend des Studios (FastAPI)
+│       ├── api/                #   REST-Endpunkte (/api/…)
+│       ├── ai/                 #   KI-Entwürfe, Stil, Budget, Erkennungswarteschlange
+│       ├── bestand/            #   Anzeigenbestand lesen, bearbeiten, Versionen, Abgleich
+│       ├── botbridge/          #   Bot als Unterprozess, Ereignisse, config.yaml
+│       ├── jobs/               #   Warteschlange, Taktung, Aufräumen
+│       ├── katalog/            #   Kategorien und Versandpakete
+│       ├── core/               #   Datenbank, Anmeldung, Verschlüsselung, Profile
+│       └── marketplaces/ebay/  #   eBay-Anbindung (Sandbox)
+├── webui/                      # Frontend (React, TypeScript, Vite, Tailwind)
+├── tests/                      # Tests des Upstream-Bots
+├── tests_studio/               # Tests des Studio-Backends
+├── docker/anzeigen-studio/     # Dockerfiles, nginx, Compose-Zusatz für das Heimnetz
+├── docs/                       # Dokumentation (Fork-Dokumente auf Deutsch)
+└── docker-compose.yml          # Stack aus backend und webui
+```
+
+## <a name="tests"></a>Tests und CI
+
+Bei jedem Push laufen **zwei** Workflows. Beide müssen grün sein:
+
+- [`anzeigen-studio.yml`](.github/workflows/anzeigen-studio.yml) prüft den Fork: SPDX-Kennungen,
+  Backend (ruff, mypy, pytest auf `tests_studio/`), Frontend (ESLint, `tsc`, Build) und den Containerbau.
+- [`build.yml`](.github/workflows/build.yml) ist die Upstream-Pipeline über zehn Betriebssystem- und
+  Python-Kombinationen: pip-audit, ruff, mypy, basedpyright sowie Unit-, Integrations- und Smoke-Tests.
+
+Lokal, in Docker:
+
+```bash
+docker compose build                     # enthält ESLint, tsc, Vitest und Build des Frontends
+docker compose run --rm backend pytest   # Backend-Tests
+python3 scripts/check_spdx.py            # Lizenzkennungen der Fork-Dateien
+```
+
+Für den Upstream-Teil gelten die Befehle aus [`CONTRIBUTING.md`](CONTRIBUTING.md) und
+[`docs/TESTING.md`](docs/TESTING.md), etwa `pdm run ruff check`, `pdm run mypy` und `pdm run ci:test:unit`.
+
+## <a name="dokumentation"></a>Weitere Dokumentation
+
+| Dokument | Inhalt |
+|---|---|
+| [`NOTICE.md`](NOTICE.md) | Herkunft, Lizenzpflichten, geänderte Upstream-Dateien |
+| [`docs/SICHERUNG.md`](docs/SICHERUNG.md) | Profilarchiv und Volumensicherung |
+| [`docs/RUNDLAUF.md`](docs/RUNDLAUF.md) | Herunterladen, Bearbeiten, Hochladen: was dabei verloren gehen kann |
+| [`docs/ONLINE-LOESCHEN.md`](docs/ONLINE-LOESCHEN.md) | Anzeigen auf der Plattform löschen |
+| [`docs/PLATTFORM-REIHENFOLGE.md`](docs/PLATTFORM-REIHENFOLGE.md) | Reihenfolge und täglicher Abgleich mit dem Konto |
+| [`docs/EBAY-MACHBARKEIT.md`](docs/EBAY-MACHBARKEIT.md), [`docs/EBAY-OAUTH-SANDBOX.md`](docs/EBAY-OAUTH-SANDBOX.md), [`docs/EBAY-MAPPING.md`](docs/EBAY-MAPPING.md), [`docs/EBAY-CLIENT-DRY-RUN.md`](docs/EBAY-CLIENT-DRY-RUN.md) | eBay-Anbindung |
+| [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md) | Upstream-Änderungen übernehmen |
+| [`docs/LIZENZEN.md`](docs/LIZENZEN.md) | Lizenzen der Abhängigkeiten |
+| [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md) | Rechtsrahmen und Nutzungsbedingungen |
+
+## <a name="rechtliches"></a>Rechtliche Hinweise und Lizenz
+
+Die Verwendung dieses Programms kann unter Umständen gegen die zum jeweiligen Zeitpunkt bei kleinanzeigen.de
+geltenden Nutzungsbedingungen verstoßen. Es liegt in deiner Verantwortung, die rechtliche Zulässigkeit der Nutzung
+zu prüfen. Die Nutzung erfolgt auf eigenes Risiko. Details stehen in [`docs/RECHTLICHES.md`](docs/RECHTLICHES.md).
+
+Lizenz: [AGPL-3.0-or-later](LICENSE.txt). Neue Dateien des Forks tragen die SPDX-Kennung
+`AGPL-3.0-or-later`. Upstream-Copyright: © Sebastian Thomschke und Mitwirkende.
+
+---
+
+# <a name="upstream"></a>Upstream-Dokumentation (kleinanzeigen-bot)
+
+> Der folgende Text stammt unverändert aus dem Upstream und ist englisch. Er beschreibt die Kommandozeile des
+> Bots, auf dem das Studio aufbaut.
 
 ---
 
